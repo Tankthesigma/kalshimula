@@ -1,0 +1,89 @@
+# Kalshi settlement stations. Settlement is daily-max temperature
+# in Local Standard Time (NO DST) — that's why every offset below is
+# the station's *standard* time offset year-round.
+#
+# `ghcnd_id` strings include the `GHCND:` prefix expected by NCEI CDO.
+# The new Access Data Service wants the bare station id (e.g.
+# USW00094728); strip the prefix at call time.
+
+cities:
+  nyc:
+    name: New York City
+    nws_station: KNYC
+    ghcnd_id: GHCND:USW00094728
+    lat: 40.7794
+    lon: -73.9692
+    tz: America/New_York
+    lst_offset_hours: -5
+  chicago:
+    name: Chicago
+    nws_station: KMDW
+    ghcnd_id: GHCND:USW00014819
+    lat: 41.7868
+    lon: -87.7522
+    tz: America/Chicago
+    lst_offset_hours: -6
+  miami:
+    name: Miami
+    nws_station: KMIA
+    ghcnd_id: GHCND:USW00012839
+    lat: 25.7906
+    lon: -80.3164
+    tz: America/New_York
+    lst_offset_hours: -5
+  austin:
+    name: Austin
+    nws_station: KAUS
+    ghcnd_id: GHCND:USW00013904
+    lat: 30.1945
+    lon: -97.6699
+    tz: America/Chicago
+    lst_offset_hours: -6
+  la:
+    name: Los Angeles
+    nws_station: KLAX
+    ghcnd_id: GHCND:USW00023174
+    lat: 33.9381
+    lon: -118.3889
+    tz: America/Los_Angeles
+    lst_offset_hours: -8
+  denver:
+    name: Denver
+    nws_station: KDEN
+    ghcnd_id: GHCND:USW00003017
+    lat: 39.8328
+    lon: -104.6575
+    tz: America/Denver
+    lst_offset_hours: -7
+  philadelphia:
+    name: Philadelphia
+    nws_station: KPHL
+    ghcnd_id: GHCND:USW00013739
+    lat: 39.8729
+    lon: -75.2437
+    tz: America/New_York
+    lst_offset_hours: -5
+  houston:
+    name: Houston
+    nws_station: KIAH
+    ghcnd_id: GHCND:USW00012960
+    lat: 29.9844
+    lon: -95.3414
+    tz: America/Chicago
+    lst_offset_hours: -6
+  phoenix:
+    name: Phoenix
+    nws_station: KPHX
+    ghcnd_id: GHCND:USW00023183
+    lat: 33.4373
+    lon: -112.0078
+    tz: America/Phoenix
+    lst_offset_hours: -7
+  boston:
+    name: Boston
+    nws_station: KBOS
+    ghcnd_id: GHCND:USW00014739
+    lat: 42.3606
+    lon: -71.0097
+    tz: America/New_York
+    lst_offset_hours: -5
