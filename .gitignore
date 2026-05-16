@@ -14,3 +14,7 @@ artifacts/
 *.log
 .DS_Store
 Thumbs.db
+
+# claude-mem plugin generates these per-session; not project content
+CLAUDE.md
+**/CLAUDE.md
