@@ -20,9 +20,16 @@ from datetime import date, datetime
 
 import httpx
 
-from src.fetchers.common import safe_float
+from src.fetchers.common import normalize_station, safe_float
 
 ASOS_CSV_URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
+
+_TIMESTAMP_FORMATS = (
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M",
+    "%Y-%m-%dT%H:%M:%S",
+)
 
 
 @dataclass(frozen=True)
@@ -34,20 +41,18 @@ class AsosHourlyObservation:
 
 
 def _parse_valid(value: str) -> datetime | None:
-    """Accept ``YYYY-MM-DD HH:MM`` or ``YYYY-MM-DD HH:MM:SS``, plus the ``T``
-    separator. Return None for anything we can't parse."""
+    """Accept the common ISO/ASOS timestamp shapes; return None on anything else.
+
+    Trailing ``Z`` is dropped (IEM occasionally emits it for UTC).
+    """
     if not isinstance(value, str):
         return None
     s = value.strip()
     if not s:
         return None
-    candidates = (
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%dT%H:%M",
-        "%Y-%m-%dT%H:%M:%S",
-    )
-    for fmt in candidates:
+    if s.endswith("Z"):
+        s = s[:-1]
+    for fmt in _TIMESTAMP_FORMATS:
         try:
             return datetime.strptime(s, fmt)
         except ValueError:
@@ -61,11 +66,12 @@ def parse_asos_csv(text: str, station: str) -> list[AsosHourlyObservation]:
     Rows whose ``valid`` timestamp can't be parsed are dropped entirely.
     Rows whose ``tmpf`` is missing or non-numeric are kept with ``temp_f=None``
     so downstream code can still see the timestamp coverage.
+
+    Station filtering is case-insensitive via :func:`normalize_station`.
     """
     if not isinstance(text, str) or not text.strip():
         return []
 
-    # ASOS CSVs sometimes lead with comment lines starting with ``#``.
     cleaned = "\n".join(
         line for line in text.splitlines() if not line.lstrip().startswith("#")
     )
@@ -74,12 +80,11 @@ def parse_asos_csv(text: str, station: str) -> list[AsosHourlyObservation]:
         return []
 
     has_station_col = "station" in reader.fieldnames
+    wanted = normalize_station(station)
     out: list[AsosHourlyObservation] = []
     for row in reader:
-        if has_station_col:
-            row_station = (row.get("station") or "").strip()
-            if row_station != station:
-                continue
+        if has_station_col and normalize_station(row.get("station") or "") != wanted:
+            continue
         valid_time = _parse_valid(row.get("valid", ""))
         if valid_time is None:
             continue
