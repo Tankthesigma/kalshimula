@@ -1,0 +1,60 @@
+﻿import pandas as pd
+import pytest
+
+from src.models.train_eval import split_rows_by_date, train_eval_split, write_train_eval_outputs
+
+
+def _rows() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"city": "denver", "target_date": "2025-01-01", "source": "openmeteo", "point_f": 70, "actual_high_f": 68, "absolute_error_f": 2},
+            {"city": "denver", "target_date": "2025-01-02", "source": "openmeteo", "point_f": 72, "actual_high_f": 71, "absolute_error_f": 1},
+            {"city": "denver", "target_date": "2025-01-03", "source": "openmeteo", "point_f": 73, "actual_high_f": 73, "absolute_error_f": 0},
+        ]
+    )
+
+
+def test_split_rows_by_date_uses_inclusive_test_start() -> None:
+    train, test = split_rows_by_date(_rows(), test_start="2025-01-03")
+
+    assert len(train) == 2
+    assert len(test) == 1
+    assert str(test.iloc[0]["target_date"].date()) == "2025-01-03"
+
+
+def test_train_eval_split_fits_on_train_and_evaluates_test() -> None:
+    result = train_eval_split(_rows(), test_start="2025-01-03")
+
+    assert len(result.train_rows) == 2
+    assert len(result.test_rows) == 1
+    assert len(result.bias_table) == 1
+    assert "corrected_point_f" in result.corrected_test_rows.columns
+    assert "interval_lower_f" in result.corrected_test_rows.columns
+    assert len(result.evaluation) == 1
+
+
+def test_train_eval_split_rejects_empty_train_or_test() -> None:
+    with pytest.raises(ValueError):
+        train_eval_split(_rows(), test_start="2025-01-01")
+    with pytest.raises(ValueError):
+        train_eval_split(_rows(), test_start="2026-01-01")
+
+
+def test_write_train_eval_outputs(tmp_path) -> None:
+    input_path = tmp_path / "rows.csv"
+    output_dir = tmp_path / "eval"
+    _rows().to_csv(input_path, index=False)
+
+    result = write_train_eval_outputs(
+        input_path=input_path,
+        output_dir=output_dir,
+        test_start="2025-01-03",
+    )
+
+    assert len(result.evaluation) == 1
+    assert (output_dir / "train_rows.csv").exists()
+    assert (output_dir / "test_rows.csv").exists()
+    assert (output_dir / "bias_table.csv").exists()
+    assert (output_dir / "interval_table.csv").exists()
+    assert (output_dir / "corrected_test_rows.csv").exists()
+    assert (output_dir / "evaluation.csv").exists()
