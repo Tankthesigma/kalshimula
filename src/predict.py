@@ -8,17 +8,10 @@ in Milestone B.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
-
-# Windows default console is cp1252 and chokes on box-drawing glyphs.
-for _stream in (sys.stdout, sys.stderr):
-    if hasattr(_stream, "reconfigure"):
-        try:
-            _stream.reconfigure(encoding="utf-8")
-        except Exception:  # noqa: BLE001
-            pass
 
 from src.config import Station, get_station, load_stations
 from src.fetchers.openmeteo import (
@@ -28,6 +21,12 @@ from src.fetchers.openmeteo import (
     members_dataframe,
 )
 from src.models.ensemble import NaiveForecast, naive_forecast_from_members
+
+# Windows default console is cp1252 and chokes on box-drawing glyphs.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        with contextlib.suppress(Exception):
+            _stream.reconfigure(encoding="utf-8")
 
 
 def _parse_date(s: str) -> date:
