@@ -1,17 +1,13 @@
 """NCEI Access Data Service — observed daily TMAX parser/fetcher.
 
-NCEI returns a JSON document of the form::
+The Access Data Service usually returns either a top-level list of rows or
+a dict with a ``results`` key. Each row looks like::
 
     {
-      "results": [
-        {
-          "date":     "2025-01-02T00:00:00",
-          "datatype": "TMAX",
-          "station":  "GHCND:USW00094728",
-          "value":    156
-        },
-        ...
-      ]
+      "date":     "2025-01-02T00:00:00",
+      "datatype": "TMAX",
+      "station":  "GHCND:USW00094728",
+      "value":    156
     }
 
 TMAX is in tenths of degrees Celsius (so ``156`` → 15.6 C → 60.08 F).
@@ -42,19 +38,41 @@ class NceiDailyHigh:
     source: str = "ncei"
 
 
+def _coerce_results(payload: object) -> list[dict]:
+    """Normalize all the shapes NCEI may hand us into a list of row-dicts.
+
+    Recognized shapes:
+    - ``{"results": [...]}`` — the documented JSON-format response.
+    - ``[...]`` — a bare top-level list (Access Data Service sometimes does this).
+    - ``{"date": ..., "datatype": ..., "value": ...}`` — a single row.
+    - anything else — empty list.
+    """
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict):
+        results = payload.get("results")
+        if isinstance(results, list):
+            return [row for row in results if isinstance(row, dict)]
+        if "datatype" in payload or "value" in payload:
+            return [payload]
+    return []
+
+
 def parse_daily_high(
-    payload: dict, target: date, station: str
+    payload: dict | list, target: date, station: str
 ) -> NceiDailyHigh:
-    """Extract the daily TMAX (Fahrenheit) for ``target`` from a payload."""
-    results = payload.get("results") if isinstance(payload, dict) else None
-    if not isinstance(results, list):
-        return NceiDailyHigh(station=station, target_date=target, high_f=None)
+    """Extract the daily TMAX (Fahrenheit) for ``target`` from a payload.
+
+    ``datatype`` matching is case-insensitive. The ``station`` field on each
+    row is not required — when present, it is ignored (we trust the caller's
+    station tag since the API was queried for one station already).
+    """
+    rows = _coerce_results(payload)
 
     candidates: list[float] = []
-    for row in results:
-        if not isinstance(row, dict):
-            continue
-        if row.get("datatype") != "TMAX":
+    for row in rows:
+        datatype = row.get("datatype")
+        if not isinstance(datatype, str) or datatype.upper() != "TMAX":
             continue
         if not iso_date_prefix_matches(row.get("date"), target):
             continue
@@ -84,15 +102,6 @@ def fetch_daily_high(station: Station, target: date) -> NceiDailyHigh:
     with httpx.Client(timeout=30.0) as client:
         response = client.get(NCEI_DATA_URL, params=params)
         response.raise_for_status()
-        # The Access Data Service returns a top-level list, not a dict; wrap
-        # it so the parser sees a consistent shape.
         body = response.json()
 
-    if isinstance(body, list):
-        payload: dict = {"results": body}
-    elif isinstance(body, dict):
-        payload = body if "results" in body else {"results": [body]}
-    else:
-        payload = {"results": []}
-
-    return parse_daily_high(payload, target, station.ghcnd_bare)
+    return parse_daily_high(body, target, station.ghcnd_bare)

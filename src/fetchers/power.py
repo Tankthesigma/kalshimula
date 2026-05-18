@@ -14,8 +14,9 @@ POWER returns one row per day keyed by ``YYYYMMDD`` string, e.g.::
       }
     }
 
-Values are in degrees Celsius. POWER uses ``-999`` as a fill value for missing
-data; we treat any value of that magnitude as missing.
+Values are in degrees Celsius. POWER uses ``-999`` (and occasionally
+``-9999``) as a fill value for missing data; we treat anything <= -999 as
+missing.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from datetime import date
 
 import httpx
 
-from src.fetchers.common import c_to_f, safe_float
+from src.fetchers.common import c_to_f, is_missing_value, safe_float
 
 POWER_DAILY_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
 POWER_FILL_VALUE = -999.0
@@ -60,6 +61,8 @@ def parse_daily_high(
         return PowerDailyHigh(station=station, target_date=target, high_f=None)
 
     raw = t2m_max.get(_power_key(target))
+    if is_missing_value(raw):
+        return PowerDailyHigh(station=station, target_date=target, high_f=None)
     value = safe_float(raw)
     if value is None or value <= POWER_FILL_VALUE:
         return PowerDailyHigh(station=station, target_date=target, high_f=None)

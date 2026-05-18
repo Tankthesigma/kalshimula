@@ -1,4 +1,16 @@
-﻿"""National Weather Service official forecast parser/fetcher."""
+"""National Weather Service official forecast parser/fetcher.
+
+Two-hop endpoint flow:
+
+1. ``GET https://api.weather.gov/points/{lat},{lon}`` returns metadata that
+   includes a ``properties.forecast`` URL for the station's gridpoint.
+2. ``GET <forecast-url>`` returns the actual ``periods`` list we parse for
+   the daily high.
+
+If ``station.nws_station`` is already a full ``https://...`` URL we skip the
+points hop and treat the station record as authoritative — this is how the
+test fixtures and any cached gridpoint URLs flow through.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +40,13 @@ class NwsDailyHighForecast:
 def parse_daily_high_forecast(
     payload: dict, target: date, station: str
 ) -> NwsDailyHighForecast:
-    """Pull the daily high (Fahrenheit) for ``target`` from an NWS payload."""
+    """Pull the daily high (Fahrenheit) for ``target`` from an NWS payload.
+
+    Tolerant of malformed payloads at every layer: non-dict payload, missing
+    ``properties``, missing or non-list ``periods``, non-dict period entries,
+    missing/non-numeric temperatures, unknown temperature units — all
+    return ``high_f=None`` rather than raising.
+    """
     properties = payload.get("properties") if isinstance(payload, dict) else None
     periods = properties.get("periods", []) if isinstance(properties, dict) else []
     if not isinstance(periods, list):
@@ -49,7 +67,10 @@ def parse_daily_high_forecast(
         if unit == "C":
             candidates.append(c_to_f(temp))
         elif unit == "F" or unit is None:
+            # Spec says forecast API always returns F; some test/legacy payloads
+            # omit the unit, which we treat as F per backwards compatibility.
             candidates.append(temp)
+        # Unknown unit (e.g. "K") — silently skip rather than guess.
 
     high_f = max(candidates) if candidates else None
     return NwsDailyHighForecast(station=station, target_date=target, high_f=high_f)
@@ -78,7 +99,11 @@ def fetch_daily_high_forecast(
     station: Station, target: date
 ) -> NwsDailyHighForecast:
     """Fetch NWS daily high for a station/date, resolving gridpoint URL if needed."""
-    url = station.nws_station if station.nws_station.startswith("http") else resolve_forecast_url(station)
+    url = (
+        station.nws_station
+        if station.nws_station.startswith("http")
+        else resolve_forecast_url(station)
+    )
     with httpx.Client(timeout=30.0) as client:
         response = client.get(url, headers=_headers())
         response.raise_for_status()

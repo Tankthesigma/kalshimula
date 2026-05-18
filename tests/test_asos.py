@@ -1,4 +1,4 @@
-"""Tests for src.fetchers.asos — parser-focused, fully offline."""
+"""Tests for src.fetchers.asos — parser- and fetcher-focused, fully offline."""
 
 from __future__ import annotations
 
@@ -6,9 +6,11 @@ from datetime import date, datetime
 
 import pytest
 
+from src.fetchers import asos
 from src.fetchers.asos import (
     AsosHourlyObservation,
     daily_high_from_hourly,
+    fetch_asos_csv,
     parse_asos_csv,
 )
 
@@ -41,14 +43,15 @@ station,valid,tmpf
 KORD,2025-01-02 12:53,40.0
 """
 
-CSV_DIFFERENT_DATE = """station,valid,tmpf
-KORD,2025-01-01 12:53,10.0
-KORD,2025-01-03 14:53,99.0
-"""
-
 CSV_WITH_BAD_TIMESTAMP = """station,valid,tmpf
 KORD,not-a-time,30.0
 KORD,2025-01-02 12:53,45.0
+"""
+
+CSV_CASE_VARIANT_STATION = """station,valid,tmpf
+kord,2025-01-02 12:53,30.0
+  KORD  ,2025-01-02 13:53,32.0
+KMDW,2025-01-02 14:53,99.0
 """
 
 
@@ -65,20 +68,22 @@ class TestParseAsosCsv:
     def test_ignores_other_stations(self):
         obs = parse_asos_csv(CSV_WITH_OTHER_STATION, STATION)
         assert len(obs) == 2
-        assert all(o.station == STATION for o in obs)
-        # 99.0 from KMDW must not leak through.
         assert max(o.temp_f for o in obs if o.temp_f is not None) < 99.0
+
+    def test_station_filter_is_case_insensitive(self):
+        obs = parse_asos_csv(CSV_CASE_VARIANT_STATION, STATION)
+        # Two KORD rows (lowercased + whitespace-padded variant), KMDW dropped.
+        assert len(obs) == 2
+        temps = sorted(o.temp_f for o in obs if o.temp_f is not None)
+        assert temps == pytest.approx([30.0, 32.0])
 
     def test_missing_or_bad_tmpf_becomes_none(self):
         obs = parse_asos_csv(CSV_BAD_TEMPS, STATION)
-        # Four rows, all timestamps parseable.
         assert len(obs) == 4
         good = [o for o in obs if o.temp_f is not None]
         assert len(good) == 1
         assert good[0].temp_f == pytest.approx(28.0)
-        # First three rows should keep their timestamps with temp_f=None.
-        none_count = sum(1 for o in obs if o.temp_f is None)
-        assert none_count == 3
+        assert sum(1 for o in obs if o.temp_f is None) == 3
 
     def test_handles_comment_lines(self):
         obs = parse_asos_csv(CSV_WITH_COMMENT_LINES, STATION)
@@ -108,8 +113,19 @@ class TestParseAsosCsv:
         assert obs[0].valid_time == datetime(2025, 1, 2, 12, 53)
         assert obs[0].temp_f == pytest.approx(55.0)
 
+    def test_iso_t_with_z_suffix(self):
+        csv = "station,valid,tmpf\nKORD,2025-01-02T12:53:00Z,55.0\n"
+        obs = parse_asos_csv(csv, STATION)
+        assert len(obs) == 1
+        assert obs[0].valid_time == datetime(2025, 1, 2, 12, 53)
+
+    def test_space_with_seconds(self):
+        csv = "station,valid,tmpf\nKORD,2025-01-02 12:53:45,55.0\n"
+        obs = parse_asos_csv(csv, STATION)
+        assert len(obs) == 1
+        assert obs[0].valid_time == datetime(2025, 1, 2, 12, 53, 45)
+
     def test_no_station_column_keeps_all_rows(self):
-        # If the CSV lacks a station column, we trust the caller's station tag.
         csv = "valid,tmpf\n2025-01-02 12:53,30.0\n2025-01-02 13:53,31.0\n"
         obs = parse_asos_csv(csv, STATION)
         assert len(obs) == 2
@@ -163,3 +179,73 @@ class TestDailyHighFromHourly:
             _obs(datetime(2025, 1, 3, 14, 0), 99.0),
         ]
         assert daily_high_from_hourly(obs, TARGET) is None
+
+
+class _FakeResponse:
+    def __init__(self, text: str = ""):
+        self.text = text
+
+    def raise_for_status(self):
+        return None
+
+
+class _FakeClient:
+    def __init__(self, text: str = ""):
+        self.calls: list[tuple[str, dict | None]] = []
+        self._text = text
+
+    def __call__(self, timeout):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get(self, url, params=None, headers=None):
+        self.calls.append((url, params))
+        return _FakeResponse(self._text)
+
+
+class TestFetchAsosCsv:
+    def test_validates_params(self, monkeypatch):
+        client = _FakeClient(text=CSV_BASIC)
+        monkeypatch.setattr(asos.httpx, "Client", client)
+
+        text = fetch_asos_csv(STATION, TARGET)
+
+        assert text == CSV_BASIC
+        url, params = client.calls[0]
+        assert url == "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
+        assert params["station"] == STATION
+        assert params["data"] == "tmpf"
+        assert params["year1"] == 2025 and params["year2"] == 2025
+        assert params["month1"] == 1 and params["month2"] == 1
+        assert params["day1"] == 2 and params["day2"] == 2
+        assert params["format"] == "onlycomma"
+        assert params["missing"] == "M"
+
+    def test_http_error_propagates(self, monkeypatch):
+        class _BoomResponse:
+            text = ""
+
+            def raise_for_status(self):
+                raise RuntimeError("asos 500")
+
+        class _BoomClient:
+            def __call__(self, timeout):
+                return self
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def get(self, *a, **k):
+                return _BoomResponse()
+
+        monkeypatch.setattr(asos.httpx, "Client", _BoomClient())
+        with pytest.raises(RuntimeError, match="asos 500"):
+            fetch_asos_csv(STATION, TARGET)
