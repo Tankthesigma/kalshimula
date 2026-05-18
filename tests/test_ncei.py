@@ -177,6 +177,88 @@ class TestParseDailyHigh:
         assert result.high_f is None
 
 
+class TestParseDailyHighAccessDataServiceShape:
+    """Tests for the Access Data Service (modern) response shape.
+
+    Real example from a live call to NYC/2025-01-01:
+        [{"DATE": "2025-01-01", "STATION": "USW00094728", "TMAX": "10.6"}]
+    """
+
+    def test_uppercase_tmax_treats_value_as_celsius(self):
+        # 10.6 C = 51.08 F (matches the real NYC 2025-01-01 response)
+        payload = [{"DATE": "2025-01-01", "STATION": STATION, "TMAX": "10.6"}]
+        result = parse_daily_high(payload, date(2025, 1, 1), STATION)
+        assert result.high_f == pytest.approx(51.08)
+
+    def test_uppercase_tmax_with_float_value(self):
+        payload = [{"DATE": "2025-01-02", "STATION": STATION, "TMAX": 20.0}]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f == pytest.approx(68.0)
+
+    def test_uppercase_negative_celsius(self):
+        payload = [{"DATE": "2025-01-02", "STATION": STATION, "TMAX": "-10.0"}]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f == pytest.approx(14.0)
+
+    def test_uppercase_missing_tmax_value_returns_none(self):
+        payload = [{"DATE": "2025-01-02", "STATION": STATION, "TMAX": ""}]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f is None
+
+    def test_uppercase_none_tmax_returns_none(self):
+        payload = [{"DATE": "2025-01-02", "STATION": STATION, "TMAX": None}]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f is None
+
+    def test_uppercase_missing_date_returns_none(self):
+        payload = [{"STATION": STATION, "TMAX": "10.6"}]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f is None
+
+    def test_uppercase_wrong_date_skipped(self):
+        payload = [{"DATE": "2025-01-03", "STATION": STATION, "TMAX": "10.6"}]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f is None
+
+    def test_uppercase_multiple_rows_max(self):
+        payload = [
+            {"DATE": "2025-01-02", "STATION": STATION, "TMAX": "10.0"},  # 50.0 F
+            {"DATE": "2025-01-02", "STATION": STATION, "TMAX": "15.6"},  # 60.08 F
+            {"DATE": "2025-01-02", "STATION": STATION, "TMAX": "12.0"},  # 53.6 F
+        ]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f == pytest.approx(60.08)
+
+    def test_uppercase_empty_list_returns_none(self):
+        # An ADS response for a date with no observations is a literal "[]\n".
+        result = parse_daily_high([], TARGET, STATION)
+        assert result.high_f is None
+
+    def test_uppercase_single_dict_row_payload(self):
+        # A bare dict (not wrapped in a list) should be treated as one row.
+        result = parse_daily_high(
+            {"DATE": "2025-01-02", "STATION": STATION, "TMAX": "20.0"},
+            TARGET,
+            STATION,
+        )
+        assert result.high_f == pytest.approx(68.0)
+
+    def test_uppercase_datetime_style_date(self):
+        # NCEI is consistent about plain dates, but check the prefix logic still works.
+        payload = [{"DATE": "2025-01-02T00:00:00", "STATION": STATION, "TMAX": "20.0"}]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f == pytest.approx(68.0)
+
+    def test_mixed_modern_and_legacy_rows(self):
+        # The two shapes shouldn't interfere when present in the same payload.
+        payload = [
+            {"DATE": "2025-01-02", "STATION": STATION, "TMAX": "20.0"},  # 68.0 F
+            {"date": "2025-01-02", "datatype": "TMAX", "value": 100},  # 50.0 F (legacy)
+        ]
+        result = parse_daily_high(payload, TARGET, STATION)
+        assert result.high_f == pytest.approx(68.0)
+
+
 class _FakeResponse:
     def __init__(self, payload):
         self._payload = payload
@@ -233,6 +315,26 @@ class TestFetchDailyHigh:
         monkeypatch.setattr(ncei.httpx, "Client", client)
         result = fetch_daily_high(_station(), TARGET)
         assert result.high_f == pytest.approx(50.0)
+
+    def test_live_access_data_service_response_shape(self, monkeypatch):
+        # This is the literal shape the live NCEI Access Data Service returns
+        # for a single station/date/datatype query with units=metric. Verified
+        # against the real endpoint on 2026-05-18.
+        client = _FakeClient(
+            [{"DATE": "2025-01-02", "STATION": "USW00094728", "TMAX": "10.6"}]
+        )
+        monkeypatch.setattr(ncei.httpx, "Client", client)
+        result = fetch_daily_high(_station(), TARGET)
+        # 10.6 C -> 51.08 F
+        assert result.high_f == pytest.approx(51.08)
+
+    def test_empty_list_response_returns_no_high(self, monkeypatch):
+        # Common when no observation exists for the date (e.g. future dates).
+        client = _FakeClient([])
+        monkeypatch.setattr(ncei.httpx, "Client", client)
+        result = fetch_daily_high(_station(), TARGET)
+        assert result.high_f is None
+        assert result.station == "USW00094728"
 
     def test_http_error_propagates(self, monkeypatch):
         class _BoomResponse:
