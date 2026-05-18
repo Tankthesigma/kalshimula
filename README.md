@@ -1,7 +1,7 @@
-# weather-predictor
+﻿# weather-predictor
 
 Probabilistic daily-high-temperature predictor for 10 US cities. Built to inform
-manual Kalshi weather trades — **no auto-trading**, no Kalshi API.
+manual Kalshi weather trades â€” **no auto-trading**, no Kalshi API.
 
 > **NOT FINANCIAL ADVICE.** Paper-trade against historical Kalshi markets for at
 > least two months before sizing real positions.
@@ -10,7 +10,7 @@ manual Kalshi weather trades — **no auto-trading**, no Kalshi API.
 
 For any (city, date) where `date` is in `[today-2y, today+15d]`, the system
 outputs a calibrated probability distribution over the NWS settlement station's
-daily high temperature, in 1°F bins. Targets to beat: naive single-model
+daily high temperature, in 1Â°F bins. Targets to beat: naive single-model
 forecast, naive 31-member GFS bin-count, and the official NWS forecast.
 
 ## Settlement semantics (important)
@@ -32,19 +32,39 @@ Copy-Item .env.example .env
 # edit .env: set NWS_USER_AGENT to your real email
 ```
 
-## Usage (Milestone A — naive ensemble)
+## Usage
+
+Naive forecast for a future date:
 
 ```powershell
 python -m src.predict --city denver --date tomorrow
 ```
 
+Collect one city/date range into backtest rows:
+
+```powershell
+python -m src.collect_cli --city denver --start 2025-01-01 --end 2025-01-07 --out data\denver_rows.csv
+```
+
+Summarize collected rows:
+
+```powershell
+python -m src.backtest_cli --input data\denver_rows.csv --out data\denver_summary.csv
+```
+
+Collect and summarize multiple cities:
+
+```powershell
+python -m src.batch_collect_cli --cities denver,chicago --start 2025-01-01 --end 2025-01-07 --rows-out data\rows.csv --summary-out data\summary.csv
+```
+
 ## Milestones
 
-- **A (current)**: pull all 6 Open-Meteo model endpoints, pool ~150 ensemble
-  members, render ASCII histogram + point estimate + 80% CI.
-- **B**: SQLite cache, NWS official forecast row, NCEI bias correction, all 10
-  cities, polished CLI.
-- **C–E**: training data pipeline, XGB/LGBM/MDN/stacker, isotonic + conformal
+- **A (done)**: pull all Open-Meteo model endpoints, pool ensemble members,
+  render ASCII histogram + point estimate + 80% CI.
+- **B (in progress)**: JSON cache, NWS official forecast row, NCEI/POWER
+  actual-high rows, ASOS parser foundation, collection CLI, and backtest CLI.
+- **Câ€“E**: training data pipeline, XGB/LGBM/MDN/stacker, isotonic + conformal
   calibration, backtest CLI, Flask dashboard.
 
 See `C:\Users\vasud\.claude\plans\okay-here-s-the-upgraded-glimmering-mitten.md`
@@ -52,13 +72,14 @@ for the full plan.
 
 ## Data sources (all free)
 
-- Open-Meteo (Forecast, Ensemble, Historical-Forecast, Archive) — no key, 10k/day
-- NWS api.weather.gov — no key, polite User-Agent required
-- NCEI Access Data Service — no key
-- NASA POWER — no key (long-history fallback)
-- Iowa State ASOS archive — no key (hourly METAR for D+0 refinement)
-- Visual Crossing — optional free key
+- Open-Meteo (Forecast, Ensemble, Historical-Forecast, Archive) â€” no key, 10k/day
+- NWS api.weather.gov â€” no key, polite User-Agent required
+- NCEI Access Data Service â€” no key
+- NASA POWER â€” no key (long-history fallback)
+- Iowa State ASOS archive â€” no key (hourly METAR for D+0 refinement)
+- Visual Crossing â€” optional free key
 
 ## Out of scope
 
 Kalshi API, auto-trading, daily lows, precipitation/wind, non-US cities.
+
