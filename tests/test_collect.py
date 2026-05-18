@@ -7,10 +7,11 @@ from src.collect import CollectionResult, collect_backtest_rows, write_collectio
 from src.datasets.backtest import make_backtest_row
 from src.fetchers.ncei import NceiDailyHigh
 from src.fetchers.nws import NwsDailyHighForecast
+from src.fetchers.openmeteo import ModelDailyHigh
 from src.fetchers.power import PowerDailyHigh
 
 
-def test_collect_backtest_rows_uses_ncei_actual(monkeypatch, tmp_path) -> None:
+def test_collect_backtest_rows_uses_ncei_actual_for_future_nws(monkeypatch, tmp_path) -> None:
     calls = {"nws": 0, "ncei": 0, "power": 0}
 
     def fake_nws(station, target):
@@ -31,29 +32,64 @@ def test_collect_backtest_rows_uses_ncei_actual(monkeypatch, tmp_path) -> None:
 
     result = collect_backtest_rows(
         city="denver",
+        start=date(2099, 1, 1),
+        end=date(2099, 1, 1),
+        cache_root=tmp_path,
+    )
+
+    assert len(result.rows) == 1
+    assert result.rows[0].source == "nws"
+    assert result.rows[0].absolute_error_f == 2.0
+    assert calls == {"nws": 1, "ncei": 1, "power": 0}
+
+
+def test_collect_backtest_rows_uses_openmeteo_for_historical_date(monkeypatch, tmp_path) -> None:
+    calls = {"openmeteo": 0, "nws": 0}
+
+    def fake_nws(station, target):
+        calls["nws"] += 1
+        return NwsDailyHighForecast(station=station.nws_station, target_date=target, high_f=70)
+
+    def fake_ncei(station, target):
+        return NceiDailyHigh(station=station.ghcnd_bare, target_date=target, high_f=68)
+
+    def fake_fetch_source(slug, *, lat, lon, target, use_historical):
+        calls["openmeteo"] += 1
+        assert use_historical is True
+        return ModelDailyHigh(source=slug, target_date=target, members_f=[66.0, 70.0])
+
+    monkeypatch.setattr(collect.nws, "fetch_daily_high_forecast", fake_nws)
+    monkeypatch.setattr(collect.ncei, "fetch_daily_high", fake_ncei)
+    monkeypatch.setattr(collect.openmeteo, "fetch_source", fake_fetch_source)
+
+    result = collect_backtest_rows(
+        city="denver",
         start=date(2025, 1, 1),
         end=date(2025, 1, 1),
         cache_root=tmp_path,
     )
 
     assert len(result.rows) == 1
-    assert result.rows[0].absolute_error_f == 2.0
-    assert calls == {"nws": 1, "ncei": 1, "power": 0}
+    assert result.rows[0].source == "openmeteo_naive"
+    assert result.rows[0].point_f == 68.0
+    assert result.rows[0].actual_high_f == 68.0
+    assert calls["openmeteo"] == len(collect.openmeteo.SOURCES)
+    assert calls["nws"] == 0
 
 
 def test_collect_backtest_rows_falls_back_to_power(monkeypatch, tmp_path) -> None:
-    def fake_nws(station, target):
-        return NwsDailyHighForecast(station=station.nws_station, target_date=target, high_f=70)
-
     def fake_ncei(station, target):
         return NceiDailyHigh(station=station.ghcnd_bare, target_date=target, high_f=None)
 
     def fake_power(lat, lon, target, station):
         return PowerDailyHigh(station=station, target_date=target, high_f=66)
 
-    monkeypatch.setattr(collect.nws, "fetch_daily_high_forecast", fake_nws)
+    def fake_fetch_source(slug, *, lat, lon, target, use_historical):
+        return ModelDailyHigh(source=slug, target_date=target, members_f=[70.0])
+
     monkeypatch.setattr(collect.ncei, "fetch_daily_high", fake_ncei)
     monkeypatch.setattr(collect.power, "fetch_daily_high", fake_power)
+    monkeypatch.setattr(collect.openmeteo, "fetch_source", fake_fetch_source)
 
     result = collect_backtest_rows(
         city="denver",
@@ -69,16 +105,16 @@ def test_collect_backtest_rows_falls_back_to_power(monkeypatch, tmp_path) -> Non
 def test_collect_backtest_rows_uses_cache_on_second_call(monkeypatch, tmp_path) -> None:
     calls = 0
 
-    def fake_nws(station, target):
-        nonlocal calls
-        calls += 1
-        return NwsDailyHighForecast(station=station.nws_station, target_date=target, high_f=70)
-
     def fake_ncei(station, target):
         return NceiDailyHigh(station=station.ghcnd_bare, target_date=target, high_f=68)
 
-    monkeypatch.setattr(collect.nws, "fetch_daily_high_forecast", fake_nws)
+    def fake_fetch_source(slug, *, lat, lon, target, use_historical):
+        nonlocal calls
+        calls += 1
+        return ModelDailyHigh(source=slug, target_date=target, members_f=[70.0])
+
     monkeypatch.setattr(collect.ncei, "fetch_daily_high", fake_ncei)
+    monkeypatch.setattr(collect.openmeteo, "fetch_source", fake_fetch_source)
 
     for _ in range(2):
         collect_backtest_rows(
@@ -88,7 +124,7 @@ def test_collect_backtest_rows_uses_cache_on_second_call(monkeypatch, tmp_path) 
             cache_root=tmp_path,
         )
 
-    assert calls == 1
+    assert calls == len(collect.openmeteo.SOURCES)
 
 
 def test_write_collection_csv(tmp_path) -> None:
