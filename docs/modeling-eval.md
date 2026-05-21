@@ -361,6 +361,29 @@ and replaces `model_policy/interval_table.csv` with per-city alpha choices.
 On the completed run, per-city alpha reduced held-out interval width from
 3.70°F to 3.57°F while keeping coverage above target at 82.70%.
 
+Finally, evaluate threshold event probabilities with `src.threshold_calibration_cli`.
+This is the offline probability diagnostic for threshold-style markets; it does
+not call Kalshi or trade:
+
+```bash
+python -m src.threshold_calibration_cli \
+  --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+  --recommended-sources data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_selection/recommended_sources.csv \
+  --bias-table data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy/bias_table.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/probability_calibration \
+  --validation-start 2025-11-01 \
+  --test-start 2026-02-01 \
+  --offsets=-6,-4,-2,0,2,4,6 \
+  --buckets 10
+```
+
+The CLI estimates `P(actual_high_f >= threshold_f)` from empirical corrected
+residuals and writes event rows plus bucketed reliability tables. On the
+completed run, the held-out threshold diagnostic produced 6,230 events with
+Brier score 0.0609 and expected calibration error 0.0241. The extreme
+probability buckets are well calibrated; the middle buckets are noisier and are
+the next probability-calibration target.
+
 ## Known limitations and next steps
 
 - **Recommended source is global, not city-specific.** The best completed
@@ -375,6 +398,9 @@ On the completed run, per-city alpha reduced held-out interval width from
   artifacts. The simpler global policy currently beats per-city bias-method
   selection on the held-out test window, so it is the recommended live bias
   policy until a stronger per-city selector is validated.
+- **Probability calibration.** Threshold probabilities now have offline
+  reliability artifacts. The next probability slice is calibrating the
+  mid-probability buckets; do not treat these diagnostics as trade signals.
 - **Test sample size.** 89 days/city is enough for an MAE estimate; tight
   for coverage estimation. NYC's 51.7% reading at n=89 has a ~5%-point
   standard error — the real coverage is probably 47–57%, still well below

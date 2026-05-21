@@ -218,6 +218,20 @@ python -m src.interval_policy_cli \
   --target-coverage 0.8
 ```
 
+Then refresh the offline threshold probability calibration:
+
+```bash
+python -m src.threshold_calibration_cli \
+  --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+  --recommended-sources data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_selection/recommended_sources.csv \
+  --bias-table data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy/bias_table.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/probability_calibration \
+  --validation-start 2025-11-01 \
+  --test-start 2026-02-01 \
+  --offsets=-6,-4,-2,0,2,4,6 \
+  --buckets 10
+```
+
 Live prediction should then point at the completed model run. The predictor
 uses `source_selection/recommended_sources.csv` when it exists, and prefers
 `model_policy/` bias/interval tables over older `train_eval/` tables:
