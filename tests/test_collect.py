@@ -78,6 +78,58 @@ def test_collect_backtest_rows_uses_openmeteo_for_historical_date(monkeypatch, t
     assert calls["nws"] == 0
 
 
+def test_collect_backtest_rows_can_emit_openmeteo_source_rows(
+    monkeypatch, tmp_path
+) -> None:
+    def fake_ncei(station, target):
+        return NceiDailyHigh(station=station.ghcnd_bare, target_date=target, high_f=68)
+
+    def fake_fetch_source_range(slug, *, lat, lon, start, end, use_historical):
+        members = [66.0, 70.0] if slug == "gfs_ens" else [70.0]
+        return [ModelDailyHigh(source=slug, target_date=start, members_f=members)]
+
+    monkeypatch.setattr(collect.ncei, "fetch_daily_high", fake_ncei)
+    monkeypatch.setattr(collect.openmeteo, "fetch_source_range", fake_fetch_source_range)
+
+    result = collect_backtest_rows(
+        city="denver",
+        start=date(2025, 1, 1),
+        end=date(2025, 1, 1),
+        cache_root=tmp_path,
+        openmeteo_mode="both",
+    )
+
+    rows_by_source = {row.source: row for row in result.rows}
+    source_slugs = {slug for slug, *_ in collect.openmeteo.SOURCES}
+    assert set(rows_by_source) == {collect.OPENMETEO_NAIVE_SOURCE, *source_slugs}
+    assert rows_by_source["gfs_ens"].point_f == 68.0
+    assert rows_by_source[collect.OPENMETEO_NAIVE_SOURCE].point_f == 69.5
+    assert all(row.actual_high_f == 68.0 for row in result.rows)
+
+
+def test_collect_backtest_rows_sources_mode_excludes_naive(monkeypatch, tmp_path) -> None:
+    def fake_ncei(station, target):
+        return NceiDailyHigh(station=station.ghcnd_bare, target_date=target, high_f=68)
+
+    def fake_fetch_source_range(slug, *, lat, lon, start, end, use_historical):
+        return [ModelDailyHigh(source=slug, target_date=start, members_f=[70.0])]
+
+    monkeypatch.setattr(collect.ncei, "fetch_daily_high", fake_ncei)
+    monkeypatch.setattr(collect.openmeteo, "fetch_source_range", fake_fetch_source_range)
+
+    result = collect_backtest_rows(
+        city="denver",
+        start=date(2025, 1, 1),
+        end=date(2025, 1, 1),
+        cache_root=tmp_path,
+        openmeteo_mode="sources",
+    )
+
+    assert {row.source for row in result.rows} == {
+        slug for slug, *_ in collect.openmeteo.SOURCES
+    }
+
+
 def test_collect_backtest_rows_falls_back_to_power(monkeypatch, tmp_path) -> None:
     def fake_ncei(station, target):
         return NceiDailyHigh(station=station.ghcnd_bare, target_date=target, high_f=None)

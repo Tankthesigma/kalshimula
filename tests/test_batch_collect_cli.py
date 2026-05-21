@@ -22,7 +22,8 @@ def test_parse_cities_rejects_empty() -> None:
 
 
 def test_collect_many_cities_combines_rows(monkeypatch, tmp_path) -> None:
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
+        assert openmeteo_mode == "sources"
         return type(
             "Result",
             (),
@@ -48,6 +49,7 @@ def test_collect_many_cities_combines_rows(monkeypatch, tmp_path) -> None:
         start=date(2025, 1, 1),
         end=date(2025, 1, 1),
         cache_root=tmp_path,
+        openmeteo_mode="sources",
     )
 
     assert list(df["city"]) == ["denver", "chicago"]
@@ -81,11 +83,12 @@ def test_batch_collect_cli_main(monkeypatch, tmp_path, capsys) -> None:
     rows_path = tmp_path / "rows.csv"
     summary_path = tmp_path / "summary.csv"
 
-    def fake_collect_many_cities(*, cities, start, end, cache_root):
+    def fake_collect_many_cities(*, cities, start, end, cache_root, openmeteo_mode):
         assert cities == ["denver", "chicago"]
         assert start == date(2025, 1, 1)
         assert end == date(2025, 1, 1)
         assert cache_root == tmp_path / "cache"
+        assert openmeteo_mode == "both"
         return pd.DataFrame(
             [
                 {
@@ -115,6 +118,8 @@ def test_batch_collect_cli_main(monkeypatch, tmp_path, capsys) -> None:
             str(summary_path),
             "--cache",
             str(tmp_path / "cache"),
+            "--openmeteo-mode",
+            "both",
         ]
     )
 
@@ -122,4 +127,3 @@ def test_batch_collect_cli_main(monkeypatch, tmp_path, capsys) -> None:
     assert rows_path.exists()
     assert summary_path.exists()
     assert "Wrote 1 rows" in capsys.readouterr().out
-

@@ -7,11 +7,12 @@ from src.collect import CollectionResult
 def test_collect_cli_writes_output(monkeypatch, tmp_path, capsys) -> None:
     out = tmp_path / "rows.csv"
 
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         assert city == "denver"
         assert start == date(2025, 1, 1)
         assert end == date(2025, 1, 1)
         assert cache_root == tmp_path / "cache"
+        assert openmeteo_mode == "both"
         return CollectionResult(city=city, start=start, end=end, rows=[])
 
     def fake_write_collection_csv(result, path):
@@ -33,6 +34,8 @@ def test_collect_cli_writes_output(monkeypatch, tmp_path, capsys) -> None:
             str(out),
             "--cache",
             str(tmp_path / "cache"),
+            "--openmeteo-mode",
+            "both",
         ]
     )
 

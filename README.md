@@ -46,6 +46,10 @@ Collect one city/date range into backtest rows:
 python -m src.collect_cli --city denver --start 2025-01-01 --end 2025-01-07 --out data\denver_rows.csv
 ```
 
+Use `--openmeteo-mode both` on historical runs when you want individual
+Open-Meteo source rows (`gfs_ens`, `ecmwf_ens`, `icon_ens`, `gem_ens`,
+`aifs`, `graphcast`, `hrrr`) alongside the pooled `openmeteo_naive` baseline.
+
 Summarize collected rows:
 
 ```powershell
@@ -82,4 +86,3 @@ for the full plan.
 ## Out of scope
 
 Kalshi API, auto-trading, daily lows, precipitation/wind, non-US cities.
-

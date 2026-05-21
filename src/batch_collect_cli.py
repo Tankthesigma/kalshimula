@@ -25,7 +25,12 @@ def _parse_cities(value: str) -> list[str]:
 
 
 def collect_many_cities(
-    *, cities: list[str], start, end, cache_root: Path
+    *,
+    cities: list[str],
+    start,
+    end,
+    cache_root: Path,
+    openmeteo_mode: str = "naive",
 ) -> pd.DataFrame:
     """Collect backtest rows for multiple cities into one dataframe."""
     rows = []
@@ -35,6 +40,7 @@ def collect_many_cities(
             start=start,
             end=end,
             cache_root=cache_root,
+            openmeteo_mode=openmeteo_mode,
         )
         rows.extend(result.rows)
     return backtest_rows_to_dataframe(rows)
@@ -61,6 +67,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rows-out", required=True, type=Path)
     parser.add_argument("--summary-out", required=True, type=Path)
     parser.add_argument("--cache", default=Path(".cache/weather"), type=Path)
+    parser.add_argument(
+        "--openmeteo-mode",
+        choices=["naive", "sources", "both"],
+        default="naive",
+        help=(
+            "Historical Open-Meteo rows to collect: pooled naive baseline, "
+            "individual model sources, or both."
+        ),
+    )
     args = parser.parse_args(argv)
 
     rows = collect_many_cities(
@@ -68,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         start=args.start,
         end=args.end,
         cache_root=args.cache,
+        openmeteo_mode=args.openmeteo_mode,
     )
     summary = write_batch_outputs(rows, args.rows_out, args.summary_out)
     print(

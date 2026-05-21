@@ -11,9 +11,10 @@ from pathlib import Path
 import pandas as pd
 
 from src.batch_collect_cli import write_batch_outputs
-from src.collect import collect_backtest_rows
+from src.collect import OPENMETEO_NAIVE_SOURCE, collect_backtest_rows
 from src.datasets.backtest import backtest_rows_to_dataframe
 from src.datasets.collection import date_range
+from src.fetchers import openmeteo
 from src.models.report import write_model_report
 from src.models.train_eval import write_train_eval_outputs
 
@@ -60,6 +61,7 @@ def run_historical_pipeline(
     alpha: float = 0.2,
     bias_strategy: str = "seasonal",
     bias_recent_days: int | None = None,
+    openmeteo_mode: str = "naive",
     progress: ProgressLogger | None = None,
     workers: int = 1,
     chunk_days: int = 1,
@@ -78,7 +80,7 @@ def run_historical_pipeline(
     train_eval_dir = out_dir / "train_eval"
 
     rows = _read_existing_rows(rows_path)
-    completed = _completed_city_dates(rows)
+    completed = _completed_city_dates(rows, openmeteo_mode=openmeteo_mode)
     errors = _read_existing_errors(errors_path)
     n_skipped = 0
 
@@ -103,6 +105,7 @@ def run_historical_pipeline(
                     city=city,
                     target=target,
                     cache_root=cache_root,
+                    openmeteo_mode=openmeteo_mode,
                     rows=rows,
                     completed=completed,
                     errors=errors,
@@ -117,6 +120,7 @@ def run_historical_pipeline(
                     start=range_start,
                     end=range_end,
                     cache_root=cache_root,
+                    openmeteo_mode=openmeteo_mode,
                     rows=rows,
                     completed=completed,
                     errors=errors,
@@ -130,7 +134,9 @@ def run_historical_pipeline(
     if workers > 1:
         executor = ThreadPoolExecutor(max_workers=workers)
         futures = {
-            executor.submit(_collect_chunk, city, target, cache_root): (city, target)
+            executor.submit(
+                _collect_chunk, city, target, cache_root, openmeteo_mode
+            ): (city, target)
             for city, target in pending
         }
         try:
@@ -219,6 +225,7 @@ def _collect_and_write_chunk(
     city: str,
     target: date,
     cache_root: Path,
+    openmeteo_mode: str,
     rows: pd.DataFrame,
     completed: set[tuple[str, str]],
     errors: pd.DataFrame,
@@ -228,7 +235,7 @@ def _collect_and_write_chunk(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     _log(progress, f"collect {city} {target.isoformat()}")
     try:
-        chunk = _collect_chunk(city, target, cache_root)
+        chunk = _collect_chunk(city, target, cache_root, openmeteo_mode)
     except Exception as error:
         errors = _append_error(errors, city, target, error)
         _write_errors(errors, errors_path)
@@ -252,12 +259,15 @@ def _collect_and_write_chunk(
     return rows, errors
 
 
-def _collect_chunk(city: str, target: date, cache_root: Path) -> pd.DataFrame:
+def _collect_chunk(
+    city: str, target: date, cache_root: Path, openmeteo_mode: str
+) -> pd.DataFrame:
     result = collect_backtest_rows(
         city=city,
         start=target,
         end=target,
         cache_root=cache_root,
+        openmeteo_mode=openmeteo_mode,
     )
     return backtest_rows_to_dataframe(result.rows)
 
@@ -296,6 +306,7 @@ def _collect_and_write_range(
     start: date,
     end: date,
     cache_root: Path,
+    openmeteo_mode: str,
     rows: pd.DataFrame,
     completed: set[tuple[str, str]],
     errors: pd.DataFrame,
@@ -310,6 +321,7 @@ def _collect_and_write_range(
             start=start,
             end=end,
             cache_root=cache_root,
+            openmeteo_mode=openmeteo_mode,
         )
         chunk = backtest_rows_to_dataframe(result.rows)
     except Exception as error:
@@ -355,15 +367,39 @@ def _normalize_rows(rows: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
-def _completed_city_dates(rows: pd.DataFrame) -> set[tuple[str, str]]:
+def _completed_city_dates(
+    rows: pd.DataFrame, *, openmeteo_mode: str = "naive"
+) -> set[tuple[str, str]]:
     if rows.empty:
         return set()
     df = rows.copy()
     df["target_date"] = pd.to_datetime(df["target_date"]).dt.date
-    return {
-        (str(row.city), row.target_date.isoformat())
-        for row in df[["city", "target_date"]].itertuples(index=False)
-    }
+    source_slugs = {slug for slug, *_ in openmeteo.SOURCES}
+    completed: set[tuple[str, str]] = set()
+    for (city, target), group in df.groupby(["city", "target_date"], sort=False):
+        sources = set(group["source"].astype(str))
+        if _has_expected_source(sources, target, source_slugs, openmeteo_mode):
+            completed.add((str(city), target.isoformat()))
+    return completed
+
+
+def _has_expected_source(
+    sources: set[str],
+    target: date,
+    source_slugs: set[str],
+    openmeteo_mode: str,
+) -> bool:
+    if target >= date.today():
+        return "nws" in sources
+    has_naive = OPENMETEO_NAIVE_SOURCE in sources
+    has_source = bool(sources & source_slugs)
+    if openmeteo_mode == "naive":
+        return has_naive
+    if openmeteo_mode == "sources":
+        return has_source
+    if openmeteo_mode == "both":
+        return has_naive and has_source
+    raise ValueError(f"unknown openmeteo_mode {openmeteo_mode!r}")
 
 
 def _read_existing_errors(path: Path) -> pd.DataFrame:
