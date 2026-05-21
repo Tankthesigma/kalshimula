@@ -456,7 +456,10 @@ manifest sets
 `require_selected_source_applied`, the checker also fails any prediction where
 the selected source could not be applied.
 Use `--json` on the checker when a CI job or dashboard needs the verification
-result as structured data.
+result as structured data. The payload includes `summary.total_checks`,
+`summary.passed_checks`, `summary.failed_checks`, and
+`summary.failed_check_names` so downstream consumers can render packet status
+without scanning the full check list.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

@@ -521,6 +521,17 @@ def render_packet_check_report(manifest_path: Path, payload: dict, checks: list[
     return "\n".join(lines)
 
 
+def summarize_packet_checks(checks: list[dict]) -> dict:
+    """Return compact check counts for dashboard/status consumers."""
+    failed = [check for check in checks if not check["passed"]]
+    return {
+        "total_checks": len(checks),
+        "passed_checks": len(checks) - len(failed),
+        "failed_checks": len(failed),
+        "failed_check_names": [str(check["name"]) for check in failed],
+    }
+
+
 def build_packet_check_payload(manifest_path: Path, payload: dict, checks: list[dict]) -> dict:
     """Build a machine-readable packet-check result."""
     return {
@@ -535,6 +546,7 @@ def build_packet_check_payload(manifest_path: Path, payload: dict, checks: list[
         ),
         "max_packet_age_hours": payload.get("max_packet_age_hours"),
         "passed": all(check["passed"] for check in checks),
+        "summary": summarize_packet_checks(checks),
         "checks": checks,
     }
 
