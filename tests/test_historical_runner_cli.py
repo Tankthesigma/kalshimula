@@ -11,6 +11,7 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
         start,
         end,
         test_start,
+        validation_start,
         out_dir,
         cache_root,
         alpha,
@@ -25,6 +26,7 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
         assert start == date(2025, 1, 1)
         assert end == date(2025, 1, 3)
         assert test_start == date(2025, 1, 3)
+        assert validation_start is None
         assert out_dir == tmp_path / "run"
         assert cache_root == tmp_path / "cache"
         assert alpha == 0.13

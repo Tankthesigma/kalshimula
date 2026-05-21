@@ -90,3 +90,61 @@ def test_train_eval_split_cli_supports_recent_bias_strategy(tmp_path, capsys) ->
     assert code == 0
     assert (output_dir / "evaluation.csv").exists()
     assert "3 train rows, 1 test rows" in capsys.readouterr().out
+
+
+def test_train_eval_split_cli_supports_global_bias_strategy(tmp_path) -> None:
+    input_path = tmp_path / "rows.csv"
+    output_dir = tmp_path / "eval"
+    pd.DataFrame(
+        [
+            {"city": "denver", "target_date": "2025-01-01", "source": "openmeteo", "point_f": 70, "actual_high_f": 68},
+            {"city": "denver", "target_date": "2025-01-02", "source": "openmeteo", "point_f": 72, "actual_high_f": 71},
+            {"city": "denver", "target_date": "2025-01-03", "source": "openmeteo", "point_f": 73, "actual_high_f": 73},
+        ]
+    ).to_csv(input_path, index=False)
+
+    code = main(
+        [
+            "--input",
+            str(input_path),
+            "--test-start",
+            "2025-01-03",
+            "--out-dir",
+            str(output_dir),
+            "--bias-strategy",
+            "global",
+        ]
+    )
+
+    bias_table = pd.read_csv(output_dir / "bias_table.csv")
+    assert code == 0
+    assert "month" not in bias_table.columns
+
+
+def test_train_eval_split_cli_supports_validation_start(tmp_path) -> None:
+    input_path = tmp_path / "rows.csv"
+    output_dir = tmp_path / "eval"
+    pd.DataFrame(
+        [
+            {"city": "denver", "target_date": "2025-01-01", "source": "openmeteo", "point_f": 70, "actual_high_f": 68},
+            {"city": "denver", "target_date": "2025-01-02", "source": "openmeteo", "point_f": 72, "actual_high_f": 71},
+            {"city": "denver", "target_date": "2025-01-03", "source": "openmeteo", "point_f": 73, "actual_high_f": 73},
+        ]
+    ).to_csv(input_path, index=False)
+
+    code = main(
+        [
+            "--input",
+            str(input_path),
+            "--test-start",
+            "2025-01-03",
+            "--validation-start",
+            "2025-01-02",
+            "--out-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert code == 0
+    assert (output_dir / "validation_scores.csv").exists()
+    assert (output_dir / "selected_methods.csv").exists()

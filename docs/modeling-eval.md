@@ -201,6 +201,11 @@ blindly applying prior-year same-month bias is not a safe default:
 | Recent 180-day city/source, alpha 0.13 | **1.252°F** | **80.0%** | Best overall production-safe baseline tested so far. |
 | Month-stratified diagnostic | 1.153°F | 79.1% | Diagnostic ceiling only; not production-safe. |
 
+Interval coverage stayed flat across the alpha 0.2 bias strategies because
+bias correction shifts the point but does not change the empirical residual
+distribution that fits the bounds. Improving coverage is a separate calibration
+slice.
+
 The current best production-safe baseline can now be regenerated directly
 through the historical runner with `--bias-strategy recent --bias-recent-days
 180 --alpha 0.13`. For already-collected rows, the equivalent train/eval-only
@@ -239,6 +244,9 @@ below target, so a later per-city interval calibration pass is still warranted.
   Tuesday in July or Sunday in January. A smaller global alpha reaches the
   overall 80% target, but NYC/Boston/Philadelphia still under-cover. A
   per-city or seasonal interval calibration pass is the next interval slice.
+- **Recent-window tuning.** The 180-day window is the best tested setting so
+  far. A small validation-grid check over 90/180/365 days should confirm or
+  refine that window before treating it as a durable default.
 - **Test sample size.** 89 days/city is enough for an MAE estimate; tight
   for coverage estimation. NYC's 51.7% reading at n=89 has a ~5%-point
   standard error — the real coverage is probably 47–57%, still well below
