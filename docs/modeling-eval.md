@@ -32,6 +32,18 @@ No leakage: training rows are never reused for evaluation. Bias table and
 interval table are fit on train only; the test rows pass through
 `apply_bias_correction` + `apply_empirical_intervals` for evaluation.
 
+### Month-stratified diagnostic split
+
+For model diagnostics, `src.train_eval_split_cli` also accepts
+`--split-strategy month-stratified --test-fraction 0.2`. This holds out the
+latest fraction of rows within each `(city, source, calendar month)` group.
+It intentionally gives train and test matching months so seasonal calibration
+can be measured on a short one-year window.
+
+This split is useful for answering "does the month-aware model have signal?"
+It is **not** the default leakage-safe production split because train rows can
+come from the same calendar month as test rows.
+
 ## Bias correction
 
 `src/models/bias.py::fit_bias_table` accepts a `group_month=True` flag (the
