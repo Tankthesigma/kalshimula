@@ -323,6 +323,26 @@ writes prediction-ready `model_policy/bias_table.csv` and
 `model_policy/interval_table.csv`; `predict --model-run-dir` prefers those
 tables when they exist.
 
+To compare that global policy against the current per-city bias-method
+selection, use `src.bias_policy_cli`:
+
+```bash
+python -m src.bias_policy_cli \
+  --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+  --train-eval-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/train_eval \
+  --recommended-sources data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_selection/recommended_sources.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy \
+  --validation-start 2025-11-01 \
+  --test-start 2026-02-01 \
+  --recent-days 90,180,365 \
+  --alphas 0.2,0.13 \
+  --target-coverage 0.8
+```
+
+On the completed run, that comparison recommends `global_recent_90d` with
+`alpha=0.13`. It improves held-out corrected MAE from 1.044°F
+(`per_city_bias_selection`) to 0.992°F while preserving 84.72% coverage.
+
 ## Known limitations and next steps
 
 - **Recommended source is global, not city-specific.** The best completed
@@ -335,9 +355,9 @@ tables when they exist.
   per-city or seasonal interval calibration pass is the next interval slice.
 - **Bias policy regularization.** The validation grid now points to global
   `recent_90d` for `gfs_ens`, and `model_policy/` can carry those prediction
-  artifacts. The remaining modeling question is whether to keep the simpler
-  global bias policy or formalize a validation-gated per-city bias-policy
-  selector.
+  artifacts. The simpler global policy currently beats per-city bias-method
+  selection on the held-out test window, so it is the recommended live bias
+  policy until a stronger per-city selector is validated.
 - **Test sample size.** 89 days/city is enough for an MAE estimate; tight
   for coverage estimation. NYC's 51.7% reading at n=89 has a ~5%-point
   standard error — the real coverage is probably 47–57%, still well below

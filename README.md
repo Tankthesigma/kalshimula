@@ -68,10 +68,11 @@ Open-Meteo source rows (`gfs_ens`, `ecmwf_ens`, `icon_ens`, `gem_ens`,
 Some models do not return every historical date; unavailable source/date pairs
 are cached as missing and omitted from the backtest rows.
 
-Compare recent bias windows and interval alpha settings on an existing run:
+Compare bias policies, recent windows, and interval alpha settings on an
+existing run:
 
 ```powershell
-python -m src.validation_grid_cli --input data\runs\<run>\rows.csv --out-dir data\runs\<run>\validation_grid_gfs_ens --policy-out-dir data\runs\<run>\model_policy --validation-start 2025-11-01 --test-start 2026-02-01 --recent-days 90,180,365 --alphas 0.2,0.13 --source gfs_ens
+python -m src.bias_policy_cli --input data\runs\<run>\rows.csv --train-eval-dir data\runs\<run>\train_eval --recommended-sources data\runs\<run>\source_selection\recommended_sources.csv --out-dir data\runs\<run>\model_policy --validation-start 2025-11-01 --test-start 2026-02-01 --recent-days 90,180,365 --alphas 0.2,0.13
 ```
 
 Summarize collected rows:
