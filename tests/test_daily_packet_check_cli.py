@@ -23,6 +23,8 @@ def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
     )
     return {
         "schema_version": "1.0",
+        "generated_at": "2026-05-21T12:00:00+00:00",
+        "target_date": "2026-05-22",
         "model_gate": {"required": True, "passed": gate_passed},
         "n_predictions": n_predictions,
         "n_errors": n_errors,
@@ -54,7 +56,7 @@ def _write_packet(
                 "schema_version": "1.0",
                 "generated_at": "2026-05-21T12:00:00+00:00",
                 "model_run_dir": str(tmp_path),
-                "cities": "denver,boston",
+                "cities": "denver",
                 "target_date": "tomorrow",
                 "threshold_offsets": "-2,0,2",
                 "require_gate": True,
@@ -120,6 +122,7 @@ def test_daily_packet_check_cli_emits_json(tmp_path, capsys) -> None:
     assert payload["passed"] is True
     assert payload["require_selected_source_applied"] is False
     assert any(check["name"] == "prediction_json:prediction_fields" for check in payload["checks"])
+    assert any(check["name"] == "prediction_json:cities" for check in payload["checks"])
 
 
 def test_daily_packet_check_cli_writes_json_report(tmp_path, capsys) -> None:
@@ -219,6 +222,50 @@ def test_daily_packet_check_cli_requires_dashboard_contract_fields(
     assert "selected_source" in output
     assert "selected_source_applied" in output
     assert "station" in output
+
+
+def test_daily_packet_check_cli_fails_city_mismatch(tmp_path, capsys) -> None:
+    manifest = _write_packet(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["cities"] = "denver,boston"
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:cities" in output
+    assert "missing=['boston']" in output
+
+
+def test_daily_packet_check_cli_fails_absolute_target_date_mismatch(
+    tmp_path, capsys
+) -> None:
+    manifest = _write_packet(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["target_date"] = "2026-05-23"
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:target_date" in output
+    assert "manifest_target=2026-05-23" in output
+
+
+def test_daily_packet_check_cli_fails_invalid_prediction_timestamp(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["generated_at"] = "not-a-date"
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:generated_at" in output
 
 
 def test_daily_packet_check_cli_requires_selected_source_applied_from_manifest(

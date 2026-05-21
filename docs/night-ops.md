@@ -291,11 +291,13 @@ python -m src.daily_packet_check_cli \
 The checker exits nonzero if the manifest records a failed step or if any
 referenced artifact is missing or empty. It also parses the prediction JSON and
 fails if the required gate did not pass, `n_errors` is nonzero, prediction counts
-do not match the rows, required prediction fields are absent, or the manifest
-requires selected-source application and a prediction fell back. Required
-prediction fields include city, selected source, whether that source was
-applied, station metadata, forecast, calibration, threshold probabilities, and
-artifact paths.
+do not match the rows, required prediction fields are absent, the prediction
+timestamp is invalid, the manifest city list differs from the prediction rows,
+an absolute manifest target date differs from the prediction target date, or the
+manifest requires selected-source application and a prediction fell back.
+Required prediction fields include city, selected source, whether that source
+was applied, station metadata, forecast, calibration, threshold probabilities,
+and artifact paths.
 For automation, add `--json --out latest_predictions_check.json` so scripts can
 read the check result without scraping the text report.
 
