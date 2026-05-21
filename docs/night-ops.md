@@ -97,13 +97,15 @@ python -m src.run_status_cli \
   --cities nyc,chicago,miami,austin,la,denver,boston,philadelphia,houston,phoenix \
   --start 2024-05-01 \
   --end 2026-04-30 \
-  --sources-per-day 8
+  --sources-per-day 8 \
+  --openmeteo-mode both
 ```
 
 Use `--sources-per-day 8` for `--openmeteo-mode both`: seven individual
-Open-Meteo sources plus the pooled `openmeteo_naive` row. The percentage is a
-theoretical upper bound because some models do not publish every historical
-date.
+Open-Meteo sources plus the pooled `openmeteo_naive` row. The row percentage is
+a theoretical upper bound because some models do not publish every historical
+date. The city/date chunk percentage uses the same completion rules as the
+resumable runner.
 
 If codex's 365-day collection stops (rate limit / network / process kill):
 
