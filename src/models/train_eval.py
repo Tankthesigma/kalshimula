@@ -1,4 +1,4 @@
-﻿"""Leakage-safe train/test evaluation helpers."""
+"""Leakage-safe train/test evaluation helpers."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def train_eval_split(
     if test.empty:
         raise ValueError("test split is empty")
 
-    bias_table = fit_bias_table(train)
+    bias_table = fit_bias_table(train, group_month=True)
     interval_table = fit_empirical_intervals(train, alpha=alpha)
     corrected = apply_bias_correction(test, bias_table)
     corrected = apply_empirical_intervals(corrected, interval_table)
