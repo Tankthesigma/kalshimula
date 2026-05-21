@@ -54,6 +54,14 @@ kord,2025-01-02 12:53,30.0
 KMDW,2025-01-02 14:53,99.0
 """
 
+# IEM strips the leading K from US ICAO codes in CSV output — request goes
+# in as KORD, rows come back as ORD. The parser has to match both forms.
+CSV_IEM_STRIPPED_K = """station,valid,tmpf
+ORD,2025-01-02 12:53,30.0
+ORD,2025-01-02 13:53,32.5
+ORD,2025-01-02 14:53,31.0
+"""
+
 
 class TestParseAsosCsv:
     def test_returns_observations_for_requested_station(self):
@@ -76,6 +84,26 @@ class TestParseAsosCsv:
         assert len(obs) == 2
         temps = sorted(o.temp_f for o in obs if o.temp_f is not None)
         assert temps == pytest.approx([30.0, 32.0])
+
+    def test_iem_strips_leading_k_in_csv_rows(self):
+        # Live IEM behaviour: request station=KORD, CSV rows say station=ORD.
+        # Parser must treat KORD and ORD as the same station.
+        obs = parse_asos_csv(CSV_IEM_STRIPPED_K, "KORD")
+        assert len(obs) == 3
+        assert all(o.station == "KORD" for o in obs)  # caller's tag preserved
+        temps = sorted(o.temp_f for o in obs if o.temp_f is not None)
+        assert temps == pytest.approx([30.0, 31.0, 32.5])
+
+    def test_caller_can_use_bare_3char_code_too(self):
+        # Symmetric: caller passes "ORD", CSV says "KORD" → still matches.
+        csv = (
+            "station,valid,tmpf\n"
+            "KORD,2025-01-02 12:53,30.0\n"
+            "KLGA,2025-01-02 13:53,99.0\n"
+        )
+        obs = parse_asos_csv(csv, "ORD")
+        assert len(obs) == 1
+        assert obs[0].temp_f == pytest.approx(30.0)
 
     def test_missing_or_bad_tmpf_becomes_none(self):
         obs = parse_asos_csv(CSV_BAD_TEMPS, STATION)
