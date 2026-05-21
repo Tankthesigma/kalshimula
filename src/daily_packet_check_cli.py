@@ -180,6 +180,55 @@ def _threshold_contract_check(manifest: dict, prediction_json: dict) -> dict:
     }
 
 
+def _normalize_path_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value).replace("\\", "/").rstrip("/")
+
+
+def _artifact_traceability_check(manifest: dict, prediction_json: dict) -> dict:
+    top_paths = prediction_json.get("artifact_paths") or {}
+    manifest_run_dir = _normalize_path_value(manifest.get("model_run_dir"))
+    top_run_dir = _normalize_path_value(top_paths.get("model_run_dir"))
+    problems = []
+    if manifest_run_dir and top_run_dir != manifest_run_dir:
+        problems.append(
+            f"top model_run_dir {top_paths.get('model_run_dir')} != manifest {manifest.get('model_run_dir')}"
+        )
+
+    required_paths = {
+        "bias_table",
+        "interval_table",
+        "model_run_dir",
+        "selected_sources",
+        "threshold_recalibration_table",
+        "threshold_residuals",
+    }
+    missing_top = sorted(path for path in required_paths if not top_paths.get(path))
+    if missing_top:
+        problems.append(f"top artifact_paths missing: {missing_top}")
+
+    for index, prediction in enumerate(prediction_json.get("predictions") or []):
+        city = str(prediction.get("city", index))
+        row_paths = prediction.get("artifact_paths") or {}
+        for name in sorted(required_paths):
+            top_value = _normalize_path_value(top_paths.get(name))
+            row_value = _normalize_path_value(row_paths.get(name))
+            if not row_value:
+                problems.append(f"{city}: artifact_paths missing {name}")
+            elif top_value and row_value != top_value:
+                problems.append(
+                    f"{city}: artifact_paths {name}={row_paths.get(name)} "
+                    f"!= top {top_paths.get(name)}"
+                )
+
+    return {
+        "name": "prediction_json:artifact_paths",
+        "passed": not problems,
+        "detail": "ok" if not problems else "; ".join(problems),
+    }
+
+
 def _prediction_consistency_checks(manifest: dict, prediction_json: dict) -> list[dict]:
     predictions = prediction_json.get("predictions") or []
     generated_at = prediction_json.get("generated_at")
@@ -329,6 +378,7 @@ def _prediction_json_checks(
             "detail": "ok" if not missing_field_rows else "; ".join(missing_field_rows),
         },
     ]
+    checks.append(_artifact_traceability_check(payload, prediction_json))
     checks.append(_threshold_contract_check(payload, prediction_json))
     checks.extend(_prediction_consistency_checks(payload, prediction_json))
     if max_age_hours is not None:

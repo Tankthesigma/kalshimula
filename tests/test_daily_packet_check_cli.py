@@ -4,12 +4,25 @@ from datetime import UTC, datetime, timedelta
 from src import daily_packet_check_cli
 
 
+def _artifact_paths() -> dict:
+    return {
+        "bias_table": "run/model_policy/bias_table.csv",
+        "interval_table": "run/model_policy/interval_table.csv",
+        "model_run_dir": "run",
+        "selected_sources": "run/source_selection/recommended_sources.csv",
+        "threshold_recalibration_table": (
+            "run/probability_calibration/threshold_recalibration_table.csv"
+        ),
+        "threshold_residuals": "run/probability_calibration/threshold_residuals.csv",
+    }
+
+
 def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
     errors = [{"city": "boston", "error": "failed"}] if n_errors else []
     predictions = (
         [
             {
-                "artifact_paths": {"model_run_dir": "run"},
+                "artifact_paths": _artifact_paths(),
                 "city": "denver",
                 "forecast": {"point_f": 70.0},
                 "calibration": {"corrected_point_f": 71.0},
@@ -31,6 +44,7 @@ def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
         "generated_at": "2026-05-21T12:00:00+00:00",
         "target_date": "2026-05-22",
         "model_gate": {"required": True, "passed": gate_passed},
+        "artifact_paths": _artifact_paths(),
         "n_predictions": n_predictions,
         "n_errors": n_errors,
         "predictions": predictions,
@@ -59,7 +73,7 @@ def _write_packet(
     payload = {
         "schema_version": "1.0",
         "generated_at": "2026-05-21T12:00:00+00:00",
-        "model_run_dir": str(tmp_path),
+        "model_run_dir": "run",
         "cities": "denver",
         "target_date": "tomorrow",
         "threshold_offsets": "-2,0,2",
@@ -127,6 +141,7 @@ def test_daily_packet_check_cli_emits_json(tmp_path, capsys) -> None:
     assert payload["require_selected_source_applied"] is False
     assert payload["max_packet_age_hours"] is None
     assert any(check["name"] == "prediction_json:prediction_fields" for check in payload["checks"])
+    assert any(check["name"] == "prediction_json:artifact_paths" for check in payload["checks"])
     assert any(check["name"] == "prediction_json:cities" for check in payload["checks"])
     assert any(
         check["name"] == "prediction_json:threshold_probabilities"
@@ -275,6 +290,34 @@ def test_daily_packet_check_cli_fails_invalid_prediction_timestamp(
     output = capsys.readouterr().out
     assert code == 1
     assert "FAIL prediction_json:generated_at" in output
+
+
+def test_daily_packet_check_cli_fails_artifact_path_mismatch(tmp_path, capsys) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["artifact_paths"]["bias_table"] = "other/bias_table.csv"
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:artifact_paths" in output
+    assert "bias_table" in output
+
+
+def test_daily_packet_check_cli_fails_top_artifact_run_dir_mismatch(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["artifact_paths"]["model_run_dir"] = "other-run"
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:artifact_paths" in output
+    assert "model_run_dir" in output
 
 
 def test_daily_packet_check_cli_fails_missing_threshold_offset(
