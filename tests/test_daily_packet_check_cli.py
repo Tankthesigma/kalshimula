@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime, timedelta
 
 from src import daily_packet_check_cli
 
@@ -40,6 +41,7 @@ def _write_packet(
     missing_artifact=False,
     prediction_payload=None,
     require_selected_source_applied=False,
+    max_packet_age_hours=None,
 ):
     review_artifact = tmp_path / "latest_predictions.txt"
     prediction_artifact = tmp_path / "latest_predictions.json"
@@ -50,33 +52,31 @@ def _write_packet(
             encoding="utf-8",
         )
     manifest = tmp_path / "latest_predictions_manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "schema_version": "1.0",
-                "generated_at": "2026-05-21T12:00:00+00:00",
-                "model_run_dir": str(tmp_path),
-                "cities": "denver",
-                "target_date": "tomorrow",
-                "threshold_offsets": "-2,0,2",
-                "require_gate": True,
-                "require_selected_source_applied": require_selected_source_applied,
-                "exit_code": exit_code,
-                "steps": {
-                    "batch_predictions": {"exit_code": exit_code},
-                    "prediction_review": {"exit_code": 0},
-                    "model_gate_report": {"exit_code": 0},
-                    "model_policy_report": {"exit_code": 0},
-                },
-                "artifacts": {
-                    "prediction_json": str(prediction_artifact),
-                    "prediction_review": str(review_artifact),
-                    "manifest": str(manifest),
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+    payload = {
+        "schema_version": "1.0",
+        "generated_at": "2026-05-21T12:00:00+00:00",
+        "model_run_dir": str(tmp_path),
+        "cities": "denver",
+        "target_date": "tomorrow",
+        "threshold_offsets": "-2,0,2",
+        "require_gate": True,
+        "require_selected_source_applied": require_selected_source_applied,
+        "exit_code": exit_code,
+        "steps": {
+            "batch_predictions": {"exit_code": exit_code},
+            "prediction_review": {"exit_code": 0},
+            "model_gate_report": {"exit_code": 0},
+            "model_policy_report": {"exit_code": 0},
+        },
+        "artifacts": {
+            "prediction_json": str(prediction_artifact),
+            "prediction_review": str(review_artifact),
+            "manifest": str(manifest),
+        },
+    }
+    if max_packet_age_hours is not None:
+        payload["max_packet_age_hours"] = max_packet_age_hours
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
     return manifest
 
 
@@ -121,6 +121,7 @@ def test_daily_packet_check_cli_emits_json(tmp_path, capsys) -> None:
     assert payload["manifest"] == str(manifest)
     assert payload["passed"] is True
     assert payload["require_selected_source_applied"] is False
+    assert payload["max_packet_age_hours"] is None
     assert any(check["name"] == "prediction_json:prediction_fields" for check in payload["checks"])
     assert any(check["name"] == "prediction_json:cities" for check in payload["checks"])
 
@@ -266,6 +267,66 @@ def test_daily_packet_check_cli_fails_invalid_prediction_timestamp(
     output = capsys.readouterr().out
     assert code == 1
     assert "FAIL prediction_json:generated_at" in output
+
+
+def test_build_packet_checks_enforces_manifest_freshness(tmp_path) -> None:
+    generated_at = datetime(2026, 5, 21, 12, tzinfo=UTC)
+    payload = _prediction_payload()
+    payload["generated_at"] = generated_at.isoformat()
+    manifest = _write_packet(
+        tmp_path,
+        prediction_payload=payload,
+        max_packet_age_hours=2,
+    )
+
+    _, checks = daily_packet_check_cli.build_packet_checks(
+        manifest,
+        now=generated_at + timedelta(hours=3),
+    )
+
+    freshness = [check for check in checks if check["name"] == "prediction_json:freshness"]
+    assert freshness == [
+        {
+            "name": "prediction_json:freshness",
+            "passed": False,
+            "detail": "age_hours=3.000 max_age_hours=2",
+        }
+    ]
+
+
+def test_build_packet_checks_accepts_fresh_packet(tmp_path) -> None:
+    generated_at = datetime(2026, 5, 21, 12, tzinfo=UTC)
+    payload = _prediction_payload()
+    payload["generated_at"] = generated_at.isoformat()
+    manifest = _write_packet(
+        tmp_path,
+        prediction_payload=payload,
+        max_packet_age_hours=2,
+    )
+
+    _, checks = daily_packet_check_cli.build_packet_checks(
+        manifest,
+        now=generated_at + timedelta(minutes=30),
+    )
+
+    assert any(
+        check["name"] == "prediction_json:freshness" and check["passed"] is True
+        for check in checks
+    )
+
+
+def test_daily_packet_check_cli_max_age_flag_overrides_manifest(tmp_path, capsys) -> None:
+    payload = _prediction_payload()
+    payload["generated_at"] = "2000-01-01T00:00:00+00:00"
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(
+        ["--manifest", str(manifest), "--max-age-hours", "24"]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:freshness" in output
 
 
 def test_daily_packet_check_cli_requires_selected_source_applied_from_manifest(

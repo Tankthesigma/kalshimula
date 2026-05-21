@@ -18,6 +18,8 @@ from src import (
 )
 from src.config import load_stations
 
+DEFAULT_MAX_PACKET_AGE_HOURS = 24.0
+
 
 @dataclass(frozen=True)
 class RefreshPaths:
@@ -108,6 +110,7 @@ def _write_manifest(
     threshold_offsets: str,
     require_gate: bool,
     require_selected_source_applied: bool,
+    max_packet_age_hours: float | None,
     paths: RefreshPaths,
     batch_code: int,
     review_code: int,
@@ -126,6 +129,7 @@ def _write_manifest(
         "threshold_offsets": threshold_offsets,
         "require_gate": require_gate,
         "require_selected_source_applied": require_selected_source_applied,
+        "max_packet_age_hours": max_packet_age_hours,
         "exit_code": exit_code,
         "steps": {
             "batch_predictions": {"exit_code": batch_code},
@@ -161,6 +165,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--threshold-offsets", default="-2,0,2")
     parser.add_argument("--out-dir", type=Path)
     parser.add_argument("--prefix", default="latest_predictions")
+    parser.add_argument(
+        "--max-packet-age-hours",
+        default=DEFAULT_MAX_PACKET_AGE_HOURS,
+        type=float,
+        help="Maximum age accepted by daily_packet_check when this packet is verified.",
+    )
+    parser.add_argument(
+        "--no-max-packet-age",
+        action="store_true",
+        help="Diagnostic mode: omit packet freshness expiry from the manifest.",
+    )
     parser.add_argument(
         "--no-require-gate",
         action="store_true",
@@ -213,6 +228,9 @@ def main(argv: list[str] | None = None) -> int:
         threshold_offsets=args.threshold_offsets,
         require_gate=not args.no_require_gate,
         require_selected_source_applied=not args.allow_source_fallback,
+        max_packet_age_hours=(
+            None if args.no_max_packet_age else args.max_packet_age_hours
+        ),
         paths=paths,
         batch_code=batch_code,
         review_code=review_code,
