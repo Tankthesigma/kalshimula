@@ -42,6 +42,7 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
             errors_path=out_dir / "errors.csv",
             report_dir=out_dir / "model_report",
             train_eval_dir=out_dir / "train_eval",
+            source_selection_dir=out_dir / "source_selection",
             n_rows=3,
             n_summary_rows=2,
             n_errors=1,

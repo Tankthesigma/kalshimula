@@ -16,6 +16,7 @@ from src.datasets.backtest import backtest_rows_to_dataframe
 from src.datasets.collection import date_range
 from src.fetchers import openmeteo
 from src.models.report import write_model_report
+from src.models.source_selection import write_source_selection_outputs
 from src.models.train_eval import write_train_eval_outputs
 
 ROW_COLUMNS = [
@@ -44,6 +45,7 @@ class HistoricalRunResult:
     errors_path: Path | None
     report_dir: Path
     train_eval_dir: Path
+    source_selection_dir: Path
     n_rows: int
     n_summary_rows: int
     n_errors: int = 0
@@ -79,6 +81,7 @@ def run_historical_pipeline(
     errors_path = out_dir / "errors.csv"
     report_dir = out_dir / "model_report"
     train_eval_dir = out_dir / "train_eval"
+    source_selection_dir = out_dir / "source_selection"
 
     rows = _read_existing_rows(rows_path)
     completed = _completed_city_dates(rows, openmeteo_mode=openmeteo_mode)
@@ -189,6 +192,12 @@ def run_historical_pipeline(
                 validation_start.isoformat() if validation_start is not None else None
             ),
         )
+        if validation_start is not None:
+            write_source_selection_outputs(
+                validation_scores_path=train_eval_dir / "validation_scores.csv",
+                evaluation_path=train_eval_dir / "evaluation.csv",
+                output_dir=source_selection_dir,
+            )
 
     return HistoricalRunResult(
         rows_path=rows_path,
@@ -196,6 +205,7 @@ def run_historical_pipeline(
         errors_path=errors_path,
         report_dir=report_dir,
         train_eval_dir=train_eval_dir,
+        source_selection_dir=source_selection_dir,
         n_rows=len(rows),
         n_summary_rows=len(summary),
         n_errors=len(errors),
