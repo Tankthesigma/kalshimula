@@ -20,7 +20,8 @@ from datetime import date
 import pandas as pd
 
 from src.config import Station, get_station
-from src.fetchers import ncei, nws, power
+from src.fetchers import asos, ncei, nws, power
+from src.fetchers.asos import daily_high_from_hourly, parse_asos_csv
 from src.fetchers.common import compact_error
 
 SMOKE_COLUMNS: tuple[str, ...] = (
@@ -72,12 +73,15 @@ def _safe_call(
 
 
 def smoke_city(city: str, target: date) -> list[SmokeResult]:
-    """Probe NWS, NCEI, and POWER for one city/date and return one result each.
+    """Probe NWS, NCEI, POWER, and ASOS for one city/date and return one result each.
 
     An invalid city slug surfaces as a single ``source="config"`` row with
-    ``ok=False`` so the caller still sees what went wrong. ASOS is not probed
-    live — its parser is tested separately and its fetcher requires careful
-    timezone handling that is not in scope for this diagnostic.
+    ``ok=False`` so the caller still sees what went wrong. ASOS is probed via
+    its IEM CSV endpoint and resolved to a daily high through the existing
+    parse/aggregate helpers — daily-high boundaries follow whatever timezone
+    the CSV's ``valid`` column reports (the IEM call requests UTC), so for
+    multi-timezone diagnostic purposes the value should be read as a
+    "did we get any obs?" signal, not as a precise LST daily high.
     """
     try:
         station = get_station(city)
@@ -93,6 +97,18 @@ def smoke_city(city: str, target: date) -> list[SmokeResult]:
             )
         ]
     return _smoke_station(city=city, station=station, target=target)
+
+
+def _asos_daily_high(station: Station, target: date) -> float | None:
+    """Fetch+parse ASOS for ``target`` and return the max ``tmpf`` for that day.
+
+    Wrapped as its own helper so :func:`_smoke_station` can pass a single
+    callable to :func:`_safe_call` and have any HTTP / CSV-parse error
+    captured uniformly.
+    """
+    text = asos.fetch_asos_csv(station.nws_station, target)
+    observations = parse_asos_csv(text, station.nws_station)
+    return daily_high_from_hourly(observations, target)
 
 
 def _smoke_station(
@@ -119,7 +135,33 @@ def _smoke_station(
                 station.lat, station.lon, target, station.nws_station
             ),
         ),
+        _asos_smoke(city=city, station=station, target=target),
     ]
+
+
+def _asos_smoke(
+    *, city: str, station: Station, target: date
+) -> SmokeResult:
+    """ASOS path returns a bare float (or None), not a dataclass with ``.high_f``."""
+    try:
+        high = _asos_daily_high(station, target)
+    except Exception as exc:  # noqa: BLE001
+        return SmokeResult(
+            city=city,
+            target_date=target,
+            source="asos",
+            ok=False,
+            high_f=None,
+            error=compact_error(exc),
+        )
+    return SmokeResult(
+        city=city,
+        target_date=target,
+        source="asos",
+        ok=True,
+        high_f=high,
+        error=None,
+    )
 
 
 def smoke_cities(cities: list[str], target: date) -> list[SmokeResult]:

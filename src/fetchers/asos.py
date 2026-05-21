@@ -60,6 +60,21 @@ def _parse_valid(value: str) -> datetime | None:
     return None
 
 
+def _asos_station_key(value: object) -> str:
+    """Comparison key for ASOS station-code matching.
+
+    IEM normalises ICAO codes by dropping the leading ``K`` for US stations
+    in the CSV output (``KORD`` -> ``ORD``) even though the request parameter
+    still uses the full ICAO. We strip both sides for the comparison so the
+    canonical config code (``KORD``) matches what comes back in the rows
+    (``ORD``).
+    """
+    base = normalize_station(value)  # type: ignore[arg-type]
+    if base.startswith("K") and len(base) == 4:
+        return base[1:]
+    return base
+
+
 def parse_asos_csv(text: str, station: str) -> list[AsosHourlyObservation]:
     """Parse an ASOS CSV blob into a list of observations for ``station``.
 
@@ -67,7 +82,8 @@ def parse_asos_csv(text: str, station: str) -> list[AsosHourlyObservation]:
     Rows whose ``tmpf`` is missing or non-numeric are kept with ``temp_f=None``
     so downstream code can still see the timestamp coverage.
 
-    Station filtering is case-insensitive via :func:`normalize_station`.
+    Station filtering is case-insensitive and tolerant of the leading-``K``
+    stripping that IEM applies to US ICAO codes in CSV output.
     """
     if not isinstance(text, str) or not text.strip():
         return []
@@ -80,10 +96,10 @@ def parse_asos_csv(text: str, station: str) -> list[AsosHourlyObservation]:
         return []
 
     has_station_col = "station" in reader.fieldnames
-    wanted = normalize_station(station)
+    wanted = _asos_station_key(station)
     out: list[AsosHourlyObservation] = []
     for row in reader:
-        if has_station_col and normalize_station(row.get("station") or "") != wanted:
+        if has_station_col and _asos_station_key(row.get("station") or "") != wanted:
             continue
         valid_time = _parse_valid(row.get("valid", ""))
         if valid_time is None:
