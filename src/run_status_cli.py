@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.config import load_stations
+from src.historical_runner import _completed_city_dates
 
 
 def _parse_date(value: str):
@@ -31,6 +32,24 @@ def _read_csv_if_exists(path: Path) -> pd.DataFrame:
 def _expected_rows(*, cities: list[str], start, end, sources_per_day: int) -> int:
     days = (end - start).days + 1
     return len(cities) * days * sources_per_day
+
+
+def _expected_chunks(*, cities: list[str], start, end) -> int:
+    return len(cities) * ((end - start).days + 1)
+
+
+def _chunk_progress(
+    rows: pd.DataFrame, *, cities: list[str], start, end, openmeteo_mode: str
+) -> tuple[int, int, float]:
+    expected = _expected_chunks(cities=cities, start=start, end=end)
+    completed = _completed_city_dates(rows, openmeteo_mode=openmeteo_mode)
+    relevant = {
+        (city, target)
+        for city, target in completed
+        if city in cities and start.isoformat() <= target <= end.isoformat()
+    }
+    percent = (len(relevant) / expected * 100) if expected else 0.0
+    return len(relevant), expected, percent
 
 
 def _source_counts(rows: pd.DataFrame) -> pd.DataFrame:
@@ -74,6 +93,7 @@ def build_status(
     start,
     end,
     sources_per_day: int,
+    openmeteo_mode: str = "naive",
 ) -> str:
     rows = _read_csv_if_exists(run_dir / "rows.csv")
     errors = _read_csv_if_exists(run_dir / "errors.csv")
@@ -82,11 +102,22 @@ def build_status(
     )
     n_rows = len(rows)
     percent = (n_rows / expected * 100) if expected else 0.0
+    completed_chunks, expected_chunks, chunk_percent = _chunk_progress(
+        rows,
+        cities=cities,
+        start=start,
+        end=end,
+        openmeteo_mode=openmeteo_mode,
+    )
     latest = _latest_row(rows)
 
     lines = [
         f"Run: {run_dir}",
         f"Rows: {n_rows:,} / {expected:,} theoretical ({percent:.1f}%)",
+        (
+            f"City/date chunks: {completed_chunks:,} / {expected_chunks:,} "
+            f"({chunk_percent:.1f}%)"
+        ),
         f"Errors: {len(errors):,}",
     ]
     if latest is not None:
@@ -121,6 +152,12 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         help="Theoretical rows per city/date. Use 8 for --openmeteo-mode both.",
     )
+    parser.add_argument(
+        "--openmeteo-mode",
+        choices=["naive", "sources", "both"],
+        default="naive",
+        help="Completion semantics for city/date chunks.",
+    )
     args = parser.parse_args(argv)
 
     print(
@@ -130,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
             start=args.start,
             end=args.end,
             sources_per_day=args.sources_per_day,
+            openmeteo_mode=args.openmeteo_mode,
         )
     )
     return 0
