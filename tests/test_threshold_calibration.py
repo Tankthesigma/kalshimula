@@ -63,6 +63,7 @@ def test_evaluate_threshold_calibration_writes_events_and_summary() -> None:
 
     assert len(result.validation_events) == 4
     assert len(result.test_events) == 4
+    assert len(result.threshold_residuals) == 6
     assert set(result.validation_events["threshold_f"]) == {70, 72}
     assert result.test_events["predicted_probability"].between(0, 1).all()
     assert result.summary["split"].tolist() == ["validation", "test"]
@@ -93,6 +94,7 @@ def test_write_threshold_calibration_outputs(tmp_path) -> None:
     assert len(result.test_events) == 4
     assert (output_dir / "threshold_validation_events.csv").exists()
     assert (output_dir / "threshold_test_events.csv").exists()
+    assert (output_dir / "threshold_residuals.csv").exists()
     assert (output_dir / "threshold_validation_calibration.csv").exists()
     assert (output_dir / "threshold_test_calibration.csv").exists()
     assert (output_dir / "threshold_calibration_summary.csv").exists()

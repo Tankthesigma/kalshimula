@@ -240,7 +240,8 @@ uses `source_selection/recommended_sources.csv` when it exists, and prefers
 python -m src.predict \
   --city denver \
   --date tomorrow \
-  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
+  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr \
+  --threshold-offsets=-2,0,2
 ```
 
 ## Bridge health
