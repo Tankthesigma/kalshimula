@@ -440,11 +440,12 @@ partial fallback packet useful.
 Use `src.daily_packet_check_cli` to verify the manifest and referenced packet
 artifacts before feeding them into an external dashboard or review script. It
 also validates the prediction JSON gate status, error count, prediction count,
-and required per-city prediction fields needed by a dashboard: selected source,
-whether that source was applied, station metadata, forecast, calibration,
-threshold probabilities, and artifact paths. When the manifest sets
-`require_selected_source_applied`, the checker also fails any prediction where
-the selected source could not be applied.
+manifest city list, target date, generated timestamp, and required per-city
+prediction fields needed by a dashboard: selected source, whether that source
+was applied, station metadata, forecast, calibration, threshold probabilities,
+and artifact paths. When the manifest sets `require_selected_source_applied`,
+the checker also fails any prediction where the selected source could not be
+applied.
 Use `--json` on the checker when a CI job or dashboard needs the verification
 result as structured data.
 

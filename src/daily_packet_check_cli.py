@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +48,88 @@ def _load_json_artifact(artifacts: dict[str, Any], name: str) -> tuple[dict | No
         return json.loads(path.read_text(encoding="utf-8")), str(path)
     except (OSError, json.JSONDecodeError) as error:
         return None, f"{path}: {error}"
+
+
+def _parse_manifest_cities(value: Any) -> list[str]:
+    if value is None:
+        return []
+    return [city.strip() for city in str(value).split(",") if city.strip()]
+
+
+def _parse_iso_date(value: Any) -> date | None:
+    try:
+        return date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _prediction_consistency_checks(manifest: dict, prediction_json: dict) -> list[dict]:
+    predictions = prediction_json.get("predictions") or []
+    generated_at = prediction_json.get("generated_at")
+    prediction_target = _parse_iso_date(prediction_json.get("target_date"))
+    manifest_target_raw = manifest.get("target_date")
+    manifest_target = _parse_iso_date(manifest_target_raw)
+    expected_cities = _parse_manifest_cities(manifest.get("cities"))
+    actual_cities = [str(prediction.get("city", "")).strip() for prediction in predictions]
+
+    if manifest_target is None:
+        target_passed = prediction_target is not None
+        target_detail = (
+            f"prediction_target={prediction_json.get('target_date', 'missing')} "
+            f"manifest_target={manifest_target_raw} (relative request)"
+        )
+    else:
+        target_passed = prediction_target == manifest_target
+        target_detail = (
+            f"prediction_target={prediction_json.get('target_date', 'missing')} "
+            f"manifest_target={manifest_target_raw}"
+        )
+
+    missing_cities = sorted(set(expected_cities) - set(actual_cities))
+    extra_cities = sorted(set(actual_cities) - set(expected_cities))
+    duplicate_cities = sorted(
+        city for city in set(actual_cities) if actual_cities.count(city) > 1
+    )
+    city_passed = (
+        bool(expected_cities)
+        and not missing_cities
+        and not extra_cities
+        and not duplicate_cities
+        and len(actual_cities) == len(expected_cities)
+    )
+    city_detail = (
+        f"expected={expected_cities} actual={actual_cities}"
+        if city_passed
+        else (
+            f"expected={expected_cities} actual={actual_cities} "
+            f"missing={missing_cities} extra={extra_cities} duplicates={duplicate_cities}"
+        )
+    )
+
+    return [
+        {
+            "name": "prediction_json:generated_at",
+            "passed": _parse_iso_datetime(generated_at) is not None,
+            "detail": f"generated_at={generated_at if generated_at is not None else 'missing'}",
+        },
+        {
+            "name": "prediction_json:target_date",
+            "passed": target_passed,
+            "detail": target_detail,
+        },
+        {
+            "name": "prediction_json:cities",
+            "passed": city_passed,
+            "detail": city_detail,
+        },
+    ]
 
 
 def _selected_source_application_check(predictions: list[dict]) -> dict:
@@ -132,6 +215,7 @@ def _prediction_json_checks(
             "detail": "ok" if not missing_field_rows else "; ".join(missing_field_rows),
         },
     ]
+    checks.extend(_prediction_consistency_checks(payload, prediction_json))
     if require_selected_source_applied:
         checks.append(_selected_source_application_check(predictions))
     return checks
