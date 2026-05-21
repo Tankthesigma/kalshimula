@@ -448,10 +448,11 @@ was applied, station metadata, forecast, calibration, threshold probabilities,
 and artifact paths. Station metadata must include a nonempty name, valid
 four-character `nws_station`, and numeric `lst_offset_hours`. It also verifies
 that top-level and per-city artifact paths match the manifest run directory and
-each other. Every prediction must have exactly the requested threshold offsets,
-valid probabilities, and threshold values centered on the rounded corrected
-point. It fails stale packets when the manifest has `max_packet_age_hours`. When
-the manifest sets
+each other, and that the referenced model artifact files exist and are nonempty.
+Every prediction must have exactly the requested threshold offsets, valid
+probabilities, and threshold values centered on the rounded corrected point. It
+fails stale packets when the manifest has `max_packet_age_hours`. When the
+manifest sets
 `require_selected_source_applied`, the checker also fails any prediction where
 the selected source could not be applied.
 Use `--json` on the checker when a CI job or dashboard needs the verification
