@@ -1,7 +1,12 @@
 import pandas as pd
 import pytest
 
-from src.models.train_eval import split_rows_by_date, train_eval_split, write_train_eval_outputs
+from src.models.train_eval import (
+    split_rows_by_date,
+    split_rows_by_month_stratified,
+    train_eval_split,
+    write_train_eval_outputs,
+)
 
 
 def _rows() -> pd.DataFrame:
@@ -22,6 +27,24 @@ def test_split_rows_by_date_uses_inclusive_test_start() -> None:
     assert str(test.iloc[0]["target_date"].date()) == "2025-01-03"
 
 
+def test_split_rows_by_month_stratified_holds_out_each_month() -> None:
+    rows = pd.DataFrame(
+        [
+            {"city": "denver", "target_date": "2025-01-01", "source": "openmeteo", "point_f": 70, "actual_high_f": 68},
+            {"city": "denver", "target_date": "2025-01-02", "source": "openmeteo", "point_f": 71, "actual_high_f": 69},
+            {"city": "denver", "target_date": "2025-02-01", "source": "openmeteo", "point_f": 40, "actual_high_f": 41},
+            {"city": "denver", "target_date": "2025-02-02", "source": "openmeteo", "point_f": 42, "actual_high_f": 43},
+        ]
+    )
+
+    train, test = split_rows_by_month_stratified(rows, test_fraction=0.5)
+
+    assert len(train) == 2
+    assert len(test) == 2
+    assert {d.month for d in test["target_date"]} == {1, 2}
+    assert list(test["target_date"].dt.day) == [2, 2]
+
+
 def test_train_eval_split_fits_on_train_and_evaluates_test() -> None:
     result = train_eval_split(_rows(), test_start="2025-01-03")
 
@@ -39,11 +62,46 @@ def test_train_eval_split_fits_on_train_and_evaluates_test() -> None:
     assert len(result.evaluation) == 1
 
 
+def test_train_eval_split_supports_month_stratified_strategy() -> None:
+    rows = pd.DataFrame(
+        [
+            {"city": "denver", "target_date": "2025-01-01", "source": "openmeteo", "point_f": 70, "actual_high_f": 68},
+            {"city": "denver", "target_date": "2025-01-02", "source": "openmeteo", "point_f": 72, "actual_high_f": 70},
+            {"city": "denver", "target_date": "2025-02-01", "source": "openmeteo", "point_f": 40, "actual_high_f": 43},
+            {"city": "denver", "target_date": "2025-02-02", "source": "openmeteo", "point_f": 42, "actual_high_f": 45},
+        ]
+    )
+
+    result = train_eval_split(
+        rows,
+        split_strategy="month-stratified",
+        test_fraction=0.5,
+    )
+
+    assert len(result.train_rows) == 2
+    assert len(result.test_rows) == 2
+    assert set(result.bias_table["month"].dropna().astype(int)) == {1, 2}
+
+
+def test_train_eval_split_rejects_month_stratified_without_test_rows() -> None:
+    rows = pd.DataFrame(
+        [
+            {"city": "denver", "target_date": "2025-01-01", "source": "openmeteo", "point_f": 70, "actual_high_f": 68},
+            {"city": "denver", "target_date": "2025-02-01", "source": "openmeteo", "point_f": 40, "actual_high_f": 43},
+        ]
+    )
+
+    with pytest.raises(ValueError, match="test split is empty"):
+        train_eval_split(rows, split_strategy="month-stratified")
+
+
 def test_train_eval_split_rejects_empty_train_or_test() -> None:
     with pytest.raises(ValueError):
         train_eval_split(_rows(), test_start="2025-01-01")
     with pytest.raises(ValueError):
         train_eval_split(_rows(), test_start="2026-01-01")
+    with pytest.raises(ValueError, match="test_start is required"):
+        train_eval_split(_rows())
 
 
 def test_write_train_eval_outputs(tmp_path) -> None:
