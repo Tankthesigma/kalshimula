@@ -265,6 +265,9 @@ python -m src.predict \
   --threshold-offsets=-2,0,2
 ```
 
+Use `--json` on the same command when a downstream script or dashboard needs
+structured fields instead of the text report.
+
 ## Bridge health
 
 The Discord bridge runs in a WSL tmux session (`bridge`) and forwards

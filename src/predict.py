@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import csv
+import json
 import math
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -366,6 +367,79 @@ def _render_threshold_probabilities(thresholds: pd.DataFrame | None) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _json_float(value) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
+
+
+def _json_calibration(row: pd.Series | None) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "city": row.get("city"),
+        "source": row.get("source"),
+        "target_date": row.get("target_date"),
+        "point_f": _json_float(row.get("point_f")),
+        "corrected_point_f": _json_float(row.get("corrected_point_f")),
+        "bias_correction_f": _json_float(row.get("bias_correction_f")),
+        "interval_lower_f": _json_float(row.get("interval_lower_f")),
+        "interval_upper_f": _json_float(row.get("interval_upper_f")),
+    }
+
+
+def _json_thresholds(thresholds: pd.DataFrame | None) -> list[dict]:
+    if thresholds is None or thresholds.empty:
+        return []
+    rows = []
+    for row in thresholds.itertuples(index=False):
+        item = {
+            "threshold_f": int(row.threshold_f),
+            "offset_f": int(row.offset_f),
+            "predicted_probability": float(row.predicted_probability),
+        }
+        if hasattr(row, "raw_predicted_probability"):
+            item["raw_predicted_probability"] = float(row.raw_predicted_probability)
+        if hasattr(row, "recalibration_used"):
+            item["recalibration_used"] = bool(row.recalibration_used)
+        rows.append(item)
+    return rows
+
+
+def _json_payload(
+    station: Station,
+    target: date,
+    fc: NaiveForecast,
+    *,
+    selected_source: str | None,
+    selected_applied: bool,
+    calibration: pd.Series | None,
+    threshold_probabilities: pd.DataFrame | None,
+) -> dict:
+    return {
+        "city": station.slug,
+        "station": {
+            "name": station.name,
+            "nws_station": station.nws_station,
+            "lst_offset_hours": station.lst_offset_hours,
+        },
+        "target_date": target.isoformat(),
+        "selected_source": selected_source,
+        "selected_source_applied": selected_applied,
+        "forecast": {
+            "n_members": fc.n_members,
+            "point_f": fc.point_f,
+            "p10_f": fc.p10_f,
+            "p50_f": fc.p50_f,
+            "p90_f": fc.p90_f,
+            "bin_probabilities": {str(key): value for key, value in fc.bin_probs.items()},
+            "per_source_counts": fc.per_source_counts,
+        },
+        "calibration": _json_calibration(calibration),
+        "threshold_probabilities": _json_thresholds(threshold_probabilities),
+    }
+
+
 def _render(
     station: Station,
     target: date,
@@ -453,6 +527,11 @@ def main(argv: list[str] | None = None) -> int:
             "Optional comma-separated integer offsets around rounded corrected "
             "point for threshold probabilities, e.g. -4,-2,0,2,4."
         ),
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print machine-readable JSON to stdout instead of the text report.",
     )
     args = parser.parse_args(argv)
     (
@@ -577,15 +656,32 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"ERROR: could not apply threshold residuals: {error}", file=sys.stderr)
                 return 1
 
-    print(
-        _render(
-            station,
-            target,
-            fc,
-            calibration=calibration,
-            threshold_probabilities=threshold_probabilities,
+    if args.json:
+        print(
+            json.dumps(
+                _json_payload(
+                    station,
+                    target,
+                    fc,
+                    selected_source=selected_source,
+                    selected_applied=selected_applied,
+                    calibration=calibration,
+                    threshold_probabilities=threshold_probabilities,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
         )
-    )
+    else:
+        print(
+            _render(
+                station,
+                target,
+                fc,
+                calibration=calibration,
+                threshold_probabilities=threshold_probabilities,
+            )
+        )
     return 0
 
 

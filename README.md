@@ -45,6 +45,7 @@ Use recommended Open-Meteo sources and trained model artifacts in live predictio
 ```powershell
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run>
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2
+python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --json
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -60,7 +61,9 @@ When `probability_calibration/threshold_residuals.csv` exists, `--threshold-offs
 prints offline threshold probabilities around the rounded corrected point. When
 `probability_calibration/threshold_recalibration_table.csv` also exists, those
 probabilities are adjusted by the validation-fitted bucket recalibration table
-and the raw probability is shown in parentheses.
+and the raw probability is shown in parentheses. Use `--json` when a script,
+dashboard, or review tool needs machine-readable forecast, calibration, and
+threshold-probability fields.
 
 Collect one city/date range into backtest rows:
 
