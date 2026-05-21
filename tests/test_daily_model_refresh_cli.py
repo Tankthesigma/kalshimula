@@ -132,6 +132,7 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
     assert manifest["target_date"] == "2026-04-30"
     assert manifest["threshold_offsets"] == "-2,0,2"
     assert manifest["require_gate"] is True
+    assert manifest["require_selected_source_applied"] is True
     assert manifest["steps"]["batch_predictions"]["exit_code"] == 0
     assert manifest["artifacts"]["model_policy_report"] == str(
         tmp_path / "out" / "morning_model_policy.txt"
@@ -215,6 +216,34 @@ def test_daily_model_refresh_cli_can_skip_required_gate(monkeypatch, tmp_path) -
     assert manifest["require_gate"] is False
 
 
+def test_daily_model_refresh_cli_can_allow_source_fallback(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--allow-source-fallback",
+        ]
+    )
+
+    assert code == 0
+    manifest = json.loads(
+        (tmp_path / "run" / "latest_predictions_manifest.json").read_text()
+    )
+    assert manifest["require_selected_source_applied"] is False
+
+
 def test_daily_model_refresh_cli_returns_check_failure(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
     monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
@@ -279,6 +308,7 @@ def test_write_manifest_uses_first_nonzero_exit_code(tmp_path) -> None:
         target_date="tomorrow",
         threshold_offsets="-2,0,2",
         require_gate=True,
+        require_selected_source_applied=True,
         paths=paths,
         batch_code=0,
         review_code=1,

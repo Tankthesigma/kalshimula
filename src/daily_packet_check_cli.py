@@ -49,7 +49,22 @@ def _load_json_artifact(artifacts: dict[str, Any], name: str) -> tuple[dict | No
         return None, f"{path}: {error}"
 
 
-def _prediction_json_checks(payload: dict) -> list[dict]:
+def _selected_source_application_check(predictions: list[dict]) -> dict:
+    fallback_rows = [
+        str(prediction.get("city", index))
+        for index, prediction in enumerate(predictions)
+        if prediction.get("selected_source_applied") is not True
+    ]
+    return {
+        "name": "prediction_json:selected_source_applied",
+        "passed": not fallback_rows,
+        "detail": "ok" if not fallback_rows else f"fallback rows: {', '.join(fallback_rows)}",
+    }
+
+
+def _prediction_json_checks(
+    payload: dict, *, require_selected_source_applied: bool = False
+) -> list[dict]:
     artifacts = payload.get("artifacts") or {}
     prediction_json, detail = _load_json_artifact(artifacts, "prediction_json")
     if prediction_json is None:
@@ -80,7 +95,7 @@ def _prediction_json_checks(payload: dict) -> list[dict]:
         if missing:
             missing_field_rows.append(f"row {index}: {missing}")
 
-    return [
+    checks = [
         {
             "name": "prediction_json:schema_version",
             "passed": prediction_json.get("schema_version") == "1.0",
@@ -117,11 +132,22 @@ def _prediction_json_checks(payload: dict) -> list[dict]:
             "detail": "ok" if not missing_field_rows else "; ".join(missing_field_rows),
         },
     ]
+    if require_selected_source_applied:
+        checks.append(_selected_source_application_check(predictions))
+    return checks
 
 
-def build_packet_checks(manifest_path: Path) -> tuple[dict, list[dict]]:
+def build_packet_checks(
+    manifest_path: Path, *, require_selected_source_applied: bool | None = None
+) -> tuple[dict, list[dict]]:
     """Return manifest payload and packet verification checks."""
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if require_selected_source_applied is None:
+        require_selected_source_applied = bool(
+            payload.get("require_selected_source_applied", False)
+        )
+    else:
+        payload["require_selected_source_applied"] = require_selected_source_applied
     checks = [
         {
             "name": "manifest:schema_version",
@@ -136,7 +162,12 @@ def build_packet_checks(manifest_path: Path) -> tuple[dict, list[dict]]:
     ]
     checks.extend(_step_checks(payload.get("steps") or {}))
     checks.extend(_artifact_checks(payload.get("artifacts") or {}))
-    checks.extend(_prediction_json_checks(payload))
+    checks.extend(
+        _prediction_json_checks(
+            payload,
+            require_selected_source_applied=require_selected_source_applied,
+        )
+    )
     return payload, checks
 
 
@@ -148,6 +179,8 @@ def render_packet_check_report(manifest_path: Path, payload: dict, checks: list[
         f"  target_date: {payload.get('target_date', 'n/a')}",
         f"  cities: {payload.get('cities', 'n/a')}",
         f"  require_gate: {str(bool(payload.get('require_gate'))).lower()}",
+        "  require_selected_source_applied: "
+        f"{str(bool(payload.get('require_selected_source_applied'))).lower()}",
     ]
     for check in checks:
         status = "PASS" if check["passed"] else "FAIL"
@@ -166,6 +199,9 @@ def build_packet_check_payload(manifest_path: Path, payload: dict, checks: list[
         "target_date": payload.get("target_date"),
         "cities": payload.get("cities"),
         "require_gate": bool(payload.get("require_gate")),
+        "require_selected_source_applied": bool(
+            payload.get("require_selected_source_applied")
+        ),
         "passed": all(check["passed"] for check in checks),
         "checks": checks,
     }
@@ -179,9 +215,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--require-selected-source-applied",
+        action="store_true",
+        help=(
+            "Fail if any prediction fell back instead of applying the selected "
+            "source policy. If omitted, the manifest setting is used."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    payload, checks = build_packet_checks(args.manifest)
+    payload, checks = build_packet_checks(
+        args.manifest,
+        require_selected_source_applied=(
+            True if args.require_selected_source_applied else None
+        ),
+    )
     if args.json:
         output = json.dumps(
             build_packet_check_payload(args.manifest, payload, checks),

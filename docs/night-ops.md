@@ -272,10 +272,14 @@ directory:
 - `latest_predictions_manifest.json`
 - `latest_predictions_check.json`
 
-The command requires the model gate by default and exits nonzero when the gate
-or any city prediction fails. The manifest is the machine-readable packet index:
-it records output paths, input date/cities/threshold offsets, per-step exit
-codes, and the final command exit code.
+The command requires the model gate and selected-source application by default.
+It exits nonzero when the gate fails, any city prediction fails, or a city falls
+back instead of using the source policy from
+`source_selection/recommended_sources.csv`. Use `--allow-source-fallback` only
+for diagnostics when a partial packet is better than no packet. The manifest is
+the machine-readable packet index: it records output paths, input
+date/cities/threshold offsets, policy requirements, per-step exit codes, and the
+final command exit code.
 Verify the packet before using it in a dashboard or downstream script:
 
 ```bash
@@ -286,7 +290,8 @@ python -m src.daily_packet_check_cli \
 The checker exits nonzero if the manifest records a failed step or if any
 referenced artifact is missing or empty. It also parses the prediction JSON and
 fails if the required gate did not pass, `n_errors` is nonzero, prediction counts
-do not match the rows, or required prediction fields are absent. Required
+do not match the rows, required prediction fields are absent, or the manifest
+requires selected-source application and a prediction fell back. Required
 prediction fields include city, selected source, whether that source was
 applied, station metadata, forecast, calibration, threshold probabilities, and
 artifact paths.

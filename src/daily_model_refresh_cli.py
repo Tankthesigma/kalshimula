@@ -103,6 +103,7 @@ def _write_manifest(
     target_date: str,
     threshold_offsets: str,
     require_gate: bool,
+    require_selected_source_applied: bool,
     paths: RefreshPaths,
     batch_code: int,
     review_code: int,
@@ -120,6 +121,7 @@ def _write_manifest(
         "target_date": target_date,
         "threshold_offsets": threshold_offsets,
         "require_gate": require_gate,
+        "require_selected_source_applied": require_selected_source_applied,
         "exit_code": exit_code,
         "steps": {
             "batch_predictions": {"exit_code": batch_code},
@@ -160,6 +162,14 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Diagnostic mode: do not require model readiness gate before predictions.",
     )
+    parser.add_argument(
+        "--allow-source-fallback",
+        action="store_true",
+        help=(
+            "Diagnostic mode: allow a prediction packet even if the selected "
+            "source policy could not be applied for one or more cities."
+        ),
+    )
     args = parser.parse_args(_normalize_threshold_offsets(list(argv or sys.argv[1:])))
 
     paths = build_refresh_paths(
@@ -198,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         target_date=args.date,
         threshold_offsets=args.threshold_offsets,
         require_gate=not args.no_require_gate,
+        require_selected_source_applied=not args.allow_source_fallback,
         paths=paths,
         batch_code=batch_code,
         review_code=review_code,
