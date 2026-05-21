@@ -89,6 +89,22 @@ real regression or just a publication delay.
 
 ## Resuming the clean historical run
 
+### Progress check
+
+```bash
+python -m src.run_status_cli \
+  --run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr \
+  --cities nyc,chicago,miami,austin,la,denver,boston,philadelphia,houston,phoenix \
+  --start 2024-05-01 \
+  --end 2026-04-30 \
+  --sources-per-day 8
+```
+
+Use `--sources-per-day 8` for `--openmeteo-mode both`: seven individual
+Open-Meteo sources plus the pooled `openmeteo_naive` row. The percentage is a
+theoretical upper bound because some models do not publish every historical
+date.
+
 If codex's 365-day collection stops (rate limit / network / process kill):
 
 ```bash
