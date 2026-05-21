@@ -83,6 +83,57 @@ def test_train_eval_split_supports_month_stratified_strategy() -> None:
     assert set(result.bias_table["month"].dropna().astype(int)) == {1, 2}
 
 
+def test_train_eval_split_supports_recent_bias_strategy() -> None:
+    rows = pd.DataFrame(
+        [
+            {
+                "city": "denver",
+                "target_date": "2025-01-01",
+                "source": "openmeteo",
+                "point_f": 100,
+                "actual_high_f": 50,
+            },
+            {
+                "city": "denver",
+                "target_date": "2025-01-02",
+                "source": "openmeteo",
+                "point_f": 70,
+                "actual_high_f": 72,
+            },
+            {
+                "city": "denver",
+                "target_date": "2025-01-03",
+                "source": "openmeteo",
+                "point_f": 71,
+                "actual_high_f": 73,
+            },
+            {
+                "city": "denver",
+                "target_date": "2025-01-04",
+                "source": "openmeteo",
+                "point_f": 70,
+                "actual_high_f": 72,
+            },
+        ]
+    )
+
+    result = train_eval_split(
+        rows,
+        test_start="2025-01-04",
+        bias_strategy="recent",
+        bias_recent_days=2,
+    )
+
+    assert "month" not in result.bias_table.columns
+    assert result.bias_table.iloc[0]["bias_correction_f"] == pytest.approx(2.0)
+    assert result.corrected_test_rows.iloc[0]["corrected_point_f"] == pytest.approx(72.0)
+
+
+def test_train_eval_split_rejects_recent_bias_without_window() -> None:
+    with pytest.raises(ValueError, match="bias_recent_days is required"):
+        train_eval_split(_rows(), test_start="2025-01-03", bias_strategy="recent")
+
+
 def test_train_eval_split_rejects_month_stratified_without_test_rows() -> None:
     rows = pd.DataFrame(
         [

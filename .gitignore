@@ -10,6 +10,7 @@ __pycache__/
 data/*.csv
 data/*.db
 data/*.parquet
+data/runs/
 data/models/
 artifacts/
 .ipynb_checkpoints/

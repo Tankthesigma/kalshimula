@@ -90,6 +90,8 @@ def train_eval_split(
     alpha: float = 0.2,
     split_strategy: str = "date",
     test_fraction: float = 0.2,
+    bias_strategy: str = "seasonal",
+    bias_recent_days: int | None = None,
 ) -> TrainEvalResult:
     """Fit bias/intervals on train rows and evaluate corrected forecasts on test rows."""
     normalized_strategy = split_strategy.replace("-", "_")
@@ -106,7 +108,11 @@ def train_eval_split(
     if test.empty:
         raise ValueError("test split is empty")
 
-    bias_table = fit_bias_table(train, group_month=True)
+    bias_table = _fit_bias_for_strategy(
+        train,
+        bias_strategy=bias_strategy,
+        bias_recent_days=bias_recent_days,
+    )
     interval_table = fit_empirical_intervals(train, alpha=alpha)
     corrected = apply_bias_correction(test, bias_table)
     corrected = apply_empirical_intervals(corrected, interval_table)
@@ -132,6 +138,8 @@ def write_train_eval_outputs(
     alpha: float = 0.2,
     split_strategy: str = "date",
     test_fraction: float = 0.2,
+    bias_strategy: str = "seasonal",
+    bias_recent_days: int | None = None,
 ) -> TrainEvalResult:
     """Run leakage-safe train/test evaluation and write CSV artifacts."""
     rows = pd.read_csv(input_path, parse_dates=["target_date"])
@@ -141,6 +149,8 @@ def write_train_eval_outputs(
         alpha=alpha,
         split_strategy=split_strategy,
         test_fraction=test_fraction,
+        bias_strategy=bias_strategy,
+        bias_recent_days=bias_recent_days,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     result.train_rows.to_csv(output_dir / "train_rows.csv", index=False)
@@ -152,3 +162,37 @@ def write_train_eval_outputs(
     result.source_residuals.to_csv(output_dir / "source_residuals.csv", index=False)
     result.monthly_residuals.to_csv(output_dir / "monthly_residuals.csv", index=False)
     return result
+
+
+def _fit_bias_for_strategy(
+    train: pd.DataFrame,
+    *,
+    bias_strategy: str,
+    bias_recent_days: int | None,
+) -> pd.DataFrame:
+    normalized_strategy = bias_strategy.replace("-", "_")
+    if normalized_strategy == "seasonal":
+        return fit_bias_table(train, group_month=True)
+    if normalized_strategy == "global":
+        return fit_bias_table(train)
+    if normalized_strategy == "recent":
+        recent = _recent_train_rows(train, bias_recent_days=bias_recent_days)
+        return fit_bias_table(recent)
+    raise ValueError(f"unknown bias_strategy: {bias_strategy}")
+
+
+def _recent_train_rows(train: pd.DataFrame, *, bias_recent_days: int | None) -> pd.DataFrame:
+    if bias_recent_days is None:
+        raise ValueError("bias_recent_days is required when bias_strategy='recent'")
+    if bias_recent_days < 1:
+        raise ValueError("bias_recent_days must be at least 1")
+    if "target_date" not in train.columns:
+        raise ValueError("train rows must include target_date for recent bias correction")
+
+    df = train.copy()
+    df["target_date"] = pd.to_datetime(df["target_date"])
+    cutoff = df["target_date"].max() - pd.Timedelta(days=bias_recent_days - 1)
+    recent = df[df["target_date"] >= cutoff].copy()
+    if recent.empty:
+        raise ValueError("recent bias training split is empty")
+    return recent
