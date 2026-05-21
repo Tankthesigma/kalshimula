@@ -298,6 +298,7 @@ alpha values without recollecting data:
 python -m src.validation_grid_cli \
   --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
   --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/validation_grid_gfs_ens \
+  --policy-out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy \
   --validation-start 2025-11-01 \
   --test-start 2026-02-01 \
   --recent-days 90,180,365 \
@@ -317,8 +318,10 @@ On the completed two-year run, the validation grid selected `recent_90d` with
 
 This is a bias/interval config diagnostic, separate from source selection. It
 suggests the next production artifact should regularize toward global
-`gfs_ens` plus a shorter recent-bias window, then rerun source/bias policy
-comparison before changing the live default.
+`gfs_ens` plus a shorter recent-bias window. With `--policy-out-dir`, the CLI
+writes prediction-ready `model_policy/bias_table.csv` and
+`model_policy/interval_table.csv`; `predict --model-run-dir` prefers those
+tables when they exist.
 
 ## Known limitations and next steps
 
@@ -331,11 +334,10 @@ comparison before changing the live default.
   overall 80% target, but NYC/Boston/Philadelphia still under-cover. A
   per-city or seasonal interval calibration pass is the next interval slice.
 - **Bias policy regularization.** The validation grid now points to global
-  `recent_90d` for `gfs_ens`, while the current `train_eval` artifact still
-  performs per-city bias-method selection. The next modeling slice is a formal
-  comparison of global-vs-per-city bias policy so `predict --model-run-dir`
-  can consume the recommended bias policy as directly as it consumes
-  `recommended_sources.csv`.
+  `recent_90d` for `gfs_ens`, and `model_policy/` can carry those prediction
+  artifacts. The remaining modeling question is whether to keep the simpler
+  global bias policy or formalize a validation-gated per-city bias-policy
+  selector.
 - **Test sample size.** 89 days/city is enough for an MAE estimate; tight
   for coverage estimation. NYC's 51.7% reading at n=89 has a ~5%-point
   standard error — the real coverage is probably 47–57%, still well below

@@ -31,6 +31,8 @@ def test_validation_grid_cli_writes_outputs(tmp_path, capsys) -> None:
             "2,3",
             "--alphas",
             "0.2",
+            "--policy-out-dir",
+            str(output_dir / "model_policy"),
         ]
     )
 
@@ -39,6 +41,7 @@ def test_validation_grid_cli_writes_outputs(tmp_path, capsys) -> None:
     assert (output_dir / "validation_grid.csv").exists()
     assert (output_dir / "test_grid.csv").exists()
     assert (output_dir / "selected_config.csv").exists()
+    assert (output_dir / "model_policy" / "bias_table.csv").exists()
 
 
 def _row(target_date: str, point_f: float, actual_high_f: float) -> dict:

@@ -71,7 +71,7 @@ are cached as missing and omitted from the backtest rows.
 Compare recent bias windows and interval alpha settings on an existing run:
 
 ```powershell
-python -m src.validation_grid_cli --input data\runs\<run>\rows.csv --out-dir data\runs\<run>\validation_grid_gfs_ens --validation-start 2025-11-01 --test-start 2026-02-01 --recent-days 90,180,365 --alphas 0.2,0.13 --source gfs_ens
+python -m src.validation_grid_cli --input data\runs\<run>\rows.csv --out-dir data\runs\<run>\validation_grid_gfs_ens --policy-out-dir data\runs\<run>\model_policy --validation-start 2025-11-01 --test-start 2026-02-01 --recent-days 90,180,365 --alphas 0.2,0.13 --source gfs_ens
 ```
 
 Summarize collected rows:

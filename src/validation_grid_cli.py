@@ -37,6 +37,14 @@ def main(argv: list[str] | None = None) -> int:
         "--source",
         help="Optional forecast source filter, for example gfs_ens.",
     )
+    parser.add_argument(
+        "--policy-out-dir",
+        type=Path,
+        help=(
+            "Optional directory for prediction-ready model_policy.csv, "
+            "bias_table.csv, and interval_table.csv fit from the selected config."
+        ),
+    )
     args = parser.parse_args(argv)
 
     result = write_recency_alpha_grid_outputs(
@@ -48,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         alphas=_parse_float_list(args.alphas, name="alphas"),
         target_coverage=args.target_coverage,
         source=args.source,
+        policy_out_dir=args.policy_out_dir,
     )
     selected = result.selected_config.iloc[0]
     print(

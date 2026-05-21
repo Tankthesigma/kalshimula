@@ -195,6 +195,7 @@ recommended source:
 python -m src.validation_grid_cli \
   --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
   --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/validation_grid_gfs_ens \
+  --policy-out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy \
   --validation-start 2025-11-01 \
   --test-start 2026-02-01 \
   --recent-days 90,180,365 \
@@ -204,7 +205,8 @@ python -m src.validation_grid_cli \
 ```
 
 Live prediction should then point at the completed model run. The predictor
-uses `source_selection/recommended_sources.csv` when it exists:
+uses `source_selection/recommended_sources.csv` when it exists, and prefers
+`model_policy/` bias/interval tables over older `train_eval/` tables:
 
 ```bash
 python -m src.predict \

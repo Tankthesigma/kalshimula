@@ -191,8 +191,11 @@ def _resolve_model_artifacts(
             model_run_dir / "source_selection" / "recommended_sources.csv"
         )
         or _existing_artifact(model_run_dir / "source_selection" / "selected_sources.csv"),
-        bias_table or _existing_artifact(model_run_dir / "train_eval" / "bias_table.csv"),
+        bias_table
+        or _existing_artifact(model_run_dir / "model_policy" / "bias_table.csv")
+        or _existing_artifact(model_run_dir / "train_eval" / "bias_table.csv"),
         interval_table
+        or _existing_artifact(model_run_dir / "model_policy" / "interval_table.csv")
         or _existing_artifact(model_run_dir / "train_eval" / "interval_table.csv"),
     )
 
@@ -274,7 +277,8 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Optional historical run directory. Defaults artifact paths to "
             "<run>/source_selection/recommended_sources.csv when present "
-            "(falling back to selected_sources.csv) and train_eval model tables."
+            "(falling back to selected_sources.csv) and model_policy tables "
+            "when present (falling back to train_eval tables)."
         ),
     )
     parser.add_argument(

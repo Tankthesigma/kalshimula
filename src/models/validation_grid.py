@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.models.bias import fit_bias_table
+from src.models.intervals import fit_empirical_intervals
 from src.models.train_eval import train_eval_split
 
 GRID_COLUMNS = [
@@ -35,6 +37,15 @@ SELECTED_CONFIG_COLUMNS = [
     "validation_interval_coverage_raw",
     "validation_interval_width_raw",
     "target_coverage",
+]
+MODEL_POLICY_COLUMNS = [
+    "source",
+    "bias_strategy",
+    "bias_recent_days",
+    "alpha",
+    "fit_start",
+    "fit_end",
+    "n_train_rows",
 ]
 
 
@@ -139,6 +150,7 @@ def write_recency_alpha_grid_outputs(
     alphas: tuple[float, ...] = (0.2, 0.13),
     target_coverage: float = 0.8,
     source: str | None = None,
+    policy_out_dir: Path | None = None,
 ) -> ValidationGridResult:
     """Run the recency/alpha grid from CSV and write output artifacts."""
     rows = pd.read_csv(input_path, parse_dates=["target_date"])
@@ -159,7 +171,80 @@ def write_recency_alpha_grid_outputs(
     result.validation_grid.to_csv(output_dir / "validation_grid.csv", index=False)
     result.test_grid.to_csv(output_dir / "test_grid.csv", index=False)
     result.selected_config.to_csv(output_dir / "selected_config.csv", index=False)
+    if policy_out_dir is not None:
+        write_selected_policy_outputs(
+            rows=rows,
+            selected_config=result.selected_config,
+            output_dir=policy_out_dir,
+            test_start=test_start,
+            source=source,
+        )
     return result
+
+
+def write_selected_policy_outputs(
+    *,
+    rows: pd.DataFrame,
+    selected_config: pd.DataFrame,
+    output_dir: Path,
+    test_start: str | pd.Timestamp,
+    source: str | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Fit live prediction artifacts from the validation-selected config."""
+    if selected_config.empty:
+        raise ValueError("selected_config is empty")
+    config = selected_config.iloc[0]
+    strategy = str(config["bias_strategy"])
+    if strategy != "recent":
+        raise ValueError(f"unsupported model policy bias_strategy: {strategy}")
+
+    days = int(config["bias_recent_days"])
+    alpha = float(config["alpha"])
+    train = _pre_test_rows(rows, test_start=test_start)
+    if train.empty:
+        raise ValueError("model policy train split is empty")
+
+    recent = _recent_rows(train, days=days)
+    bias_table = fit_bias_table(recent)
+    interval_table = fit_empirical_intervals(train, alpha=alpha)
+    policy = pd.DataFrame(
+        [
+            {
+                "source": source or "",
+                "bias_strategy": strategy,
+                "bias_recent_days": days,
+                "alpha": alpha,
+                "fit_start": train["target_date"].min(),
+                "fit_end": train["target_date"].max(),
+                "n_train_rows": len(train),
+            }
+        ],
+        columns=MODEL_POLICY_COLUMNS,
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    policy.to_csv(output_dir / "model_policy.csv", index=False)
+    bias_table.to_csv(output_dir / "bias_table.csv", index=False)
+    interval_table.to_csv(output_dir / "interval_table.csv", index=False)
+    return policy, bias_table, interval_table
+
+
+def _pre_test_rows(rows: pd.DataFrame, *, test_start: str | pd.Timestamp) -> pd.DataFrame:
+    if "target_date" not in rows.columns:
+        raise ValueError("rows must include target_date")
+    df = rows.copy()
+    df["target_date"] = pd.to_datetime(df["target_date"])
+    return df[df["target_date"] < pd.Timestamp(test_start)].copy()
+
+
+def _recent_rows(train: pd.DataFrame, *, days: int) -> pd.DataFrame:
+    if days < 1:
+        raise ValueError("bias_recent_days must be at least 1")
+    cutoff = pd.to_datetime(train["target_date"]).max() - pd.Timedelta(days=days - 1)
+    recent = train[pd.to_datetime(train["target_date"]) >= cutoff].copy()
+    if recent.empty:
+        raise ValueError("recent model policy train split is empty")
+    return recent
 
 
 def _evaluation_for_rows(evaluation: pd.DataFrame, rows: pd.DataFrame) -> pd.DataFrame:
