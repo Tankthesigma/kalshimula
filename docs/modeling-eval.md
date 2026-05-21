@@ -343,16 +343,33 @@ On the completed run, that comparison recommends `global_recent_90d` with
 `alpha=0.13`. It improves held-out corrected MAE from 1.044°F
 (`per_city_bias_selection`) to 0.992°F while preserving 84.72% coverage.
 
+Then calibrate interval width per city/source with `src.interval_policy_cli`:
+
+```bash
+python -m src.interval_policy_cli \
+  --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+  --recommended-sources data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_selection/recommended_sources.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy \
+  --validation-start 2025-11-01 \
+  --test-start 2026-02-01 \
+  --alphas 0.2,0.13,0.1,0.05 \
+  --target-coverage 0.8
+```
+
+Run this after `bias_policy_cli`: it preserves `model_policy/bias_table.csv`
+and replaces `model_policy/interval_table.csv` with per-city alpha choices.
+On the completed run, per-city alpha reduced held-out interval width from
+3.70°F to 3.57°F while keeping coverage above target at 82.70%.
+
 ## Known limitations and next steps
 
 - **Recommended source is global, not city-specific.** The best completed
   policy is the single global `gfs_ens` source. The per-city validation policy
   remains useful as a diagnostic, but it underperformed the global policy on
   held-out test.
-- **Pooled-by-city-source intervals.** Same alpha quantile width whether
-  Tuesday in July or Sunday in January. A smaller global alpha reaches the
-  overall 80% target, but NYC/Boston/Philadelphia still under-cover. A
-  per-city or seasonal interval calibration pass is the next interval slice.
+- **Interval calibration.** Per-city alpha now beats the global alpha policy on
+  width while staying above the 80% coverage target. The next interval slice is
+  seasonal or weather-regime conditioning, not another global alpha sweep.
 - **Bias policy regularization.** The validation grid now points to global
   `recent_90d` for `gfs_ens`, and `model_policy/` can carry those prediction
   artifacts. The simpler global policy currently beats per-city bias-method

@@ -201,8 +201,21 @@ python -m src.bias_policy_cli \
   --test-start 2026-02-01 \
   --recent-days 90,180,365 \
   --alphas 0.2,0.13 \
-  --target-coverage 0.8 \
-  --source gfs_ens
+  --target-coverage 0.8
+```
+
+Then calibrate per-city interval alpha. Run this after `bias_policy_cli` so
+the final `model_policy/interval_table.csv` uses the per-city interval policy:
+
+```bash
+python -m src.interval_policy_cli \
+  --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+  --recommended-sources data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_selection/recommended_sources.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy \
+  --validation-start 2025-11-01 \
+  --test-start 2026-02-01 \
+  --alphas 0.2,0.13,0.1,0.05 \
+  --target-coverage 0.8
 ```
 
 Live prediction should then point at the completed model run. The predictor
