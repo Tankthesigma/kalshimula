@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -65,9 +65,32 @@ def _parse_iso_date(value: Any) -> date | None:
 
 def _parse_iso_datetime(value: Any) -> datetime | None:
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _packet_freshness_check(
+    prediction_json: dict, *, max_age_hours: float, now: datetime
+) -> dict:
+    generated_at = _parse_iso_datetime(prediction_json.get("generated_at"))
+    if generated_at is None:
+        return {
+            "name": "prediction_json:freshness",
+            "passed": False,
+            "detail": "generated_at is missing or invalid",
+        }
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    age_hours = (now - generated_at).total_seconds() / 3600
+    return {
+        "name": "prediction_json:freshness",
+        "passed": 0 <= age_hours <= max_age_hours,
+        "detail": f"age_hours={age_hours:.3f} max_age_hours={max_age_hours:g}",
+    }
 
 
 def _prediction_consistency_checks(manifest: dict, prediction_json: dict) -> list[dict]:
@@ -146,7 +169,11 @@ def _selected_source_application_check(predictions: list[dict]) -> dict:
 
 
 def _prediction_json_checks(
-    payload: dict, *, require_selected_source_applied: bool = False
+    payload: dict,
+    *,
+    require_selected_source_applied: bool = False,
+    max_age_hours: float | None = None,
+    now: datetime | None = None,
 ) -> list[dict]:
     artifacts = payload.get("artifacts") or {}
     prediction_json, detail = _load_json_artifact(artifacts, "prediction_json")
@@ -216,13 +243,25 @@ def _prediction_json_checks(
         },
     ]
     checks.extend(_prediction_consistency_checks(payload, prediction_json))
+    if max_age_hours is not None:
+        checks.append(
+            _packet_freshness_check(
+                prediction_json,
+                max_age_hours=max_age_hours,
+                now=now or datetime.now(UTC),
+            )
+        )
     if require_selected_source_applied:
         checks.append(_selected_source_application_check(predictions))
     return checks
 
 
 def build_packet_checks(
-    manifest_path: Path, *, require_selected_source_applied: bool | None = None
+    manifest_path: Path,
+    *,
+    require_selected_source_applied: bool | None = None,
+    max_age_hours: float | None = None,
+    now: datetime | None = None,
 ) -> tuple[dict, list[dict]]:
     """Return manifest payload and packet verification checks."""
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -232,6 +271,10 @@ def build_packet_checks(
         )
     else:
         payload["require_selected_source_applied"] = require_selected_source_applied
+    if max_age_hours is None and payload.get("max_packet_age_hours") is not None:
+        max_age_hours = float(payload["max_packet_age_hours"])
+    elif max_age_hours is not None:
+        payload["max_packet_age_hours"] = max_age_hours
     checks = [
         {
             "name": "manifest:schema_version",
@@ -250,6 +293,8 @@ def build_packet_checks(
         _prediction_json_checks(
             payload,
             require_selected_source_applied=require_selected_source_applied,
+            max_age_hours=max_age_hours,
+            now=now,
         )
     )
     return payload, checks
@@ -265,6 +310,7 @@ def render_packet_check_report(manifest_path: Path, payload: dict, checks: list[
         f"  require_gate: {str(bool(payload.get('require_gate'))).lower()}",
         "  require_selected_source_applied: "
         f"{str(bool(payload.get('require_selected_source_applied'))).lower()}",
+        f"  max_packet_age_hours: {payload.get('max_packet_age_hours', 'n/a')}",
     ]
     for check in checks:
         status = "PASS" if check["passed"] else "FAIL"
@@ -286,6 +332,7 @@ def build_packet_check_payload(manifest_path: Path, payload: dict, checks: list[
         "require_selected_source_applied": bool(
             payload.get("require_selected_source_applied")
         ),
+        "max_packet_age_hours": payload.get("max_packet_age_hours"),
         "passed": all(check["passed"] for check in checks),
         "checks": checks,
     }
@@ -299,6 +346,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--max-age-hours",
+        type=float,
+        help=(
+            "Fail if prediction generated_at is older than this many hours. "
+            "If omitted, the manifest max_packet_age_hours value is used."
+        ),
+    )
     parser.add_argument(
         "--require-selected-source-applied",
         action="store_true",
@@ -314,6 +369,7 @@ def main(argv: list[str] | None = None) -> int:
         require_selected_source_applied=(
             True if args.require_selected_source_applied else None
         ),
+        max_age_hours=args.max_age_hours,
     )
     if args.json:
         output = json.dumps(

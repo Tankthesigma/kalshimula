@@ -277,10 +277,12 @@ The command requires the model gate and selected-source application by default.
 It exits nonzero when the gate fails, any city prediction fails, or a city falls
 back instead of using the source policy from
 `source_selection/recommended_sources.csv`. Use `--allow-source-fallback` only
-for diagnostics when a partial packet is better than no packet. The manifest is
-the machine-readable packet index: it records output paths, input
-date/cities/threshold offsets, policy requirements, per-step exit codes, and the
-final command exit code.
+for diagnostics when a partial packet is better than no packet. The manifest
+also sets `max_packet_age_hours` to 24 by default, so rerunning the packet
+checker later rejects stale packets. Use `--no-max-packet-age` only for
+historical debugging. The manifest is the machine-readable packet index: it
+records output paths, input date/cities/threshold offsets, policy requirements,
+per-step exit codes, and the final command exit code.
 Verify the packet before using it in a dashboard or downstream script:
 
 ```bash
@@ -294,10 +296,11 @@ fails if the required gate did not pass, `n_errors` is nonzero, prediction count
 do not match the rows, required prediction fields are absent, the prediction
 timestamp is invalid, the manifest city list differs from the prediction rows,
 an absolute manifest target date differs from the prediction target date, or the
-manifest requires selected-source application and a prediction fell back.
-Required prediction fields include city, selected source, whether that source
-was applied, station metadata, forecast, calibration, threshold probabilities,
-and artifact paths.
+packet is older than `max_packet_age_hours`. It also fails when the manifest
+requires selected-source application and a prediction fell back. Required
+prediction fields include city, selected source, whether that source was
+applied, station metadata, forecast, calibration, threshold probabilities, and
+artifact paths.
 For automation, add `--json --out latest_predictions_check.json` so scripts can
 read the check result without scraping the text report.
 
