@@ -58,6 +58,10 @@ def apply_empirical_intervals(rows: pd.DataFrame, intervals: pd.DataFrame) -> pd
     Existing ``interval_lower_f`` / ``interval_upper_f`` columns are preserved
     as raw point aliases for compatibility. Explicit ``*_raw_f`` and
     ``*_corrected_f`` columns make the centering contract visible to consumers.
+
+    When intervals are fit on raw residuals, corrected bounds are algebraic
+    aliases of raw bounds. They become distinct if interval fitting later moves
+    to corrected residuals. Call after bias correction to emit corrected bounds.
     """
     required = {"city", "source", "point_f"}
     missing = required - set(rows.columns)
