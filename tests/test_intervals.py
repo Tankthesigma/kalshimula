@@ -1,4 +1,4 @@
-﻿import pandas as pd
+import pandas as pd
 import pytest
 
 from src.models.intervals import (
@@ -34,6 +34,30 @@ def test_apply_empirical_intervals_adds_bounds() -> None:
 
     assert applied.iloc[0]["interval_lower_f"] == pytest.approx(68.4)
     assert applied.iloc[0]["interval_upper_f"] == pytest.approx(71.6)
+    assert applied.iloc[0]["interval_lower_raw_f"] == pytest.approx(68.4)
+    assert applied.iloc[0]["interval_upper_raw_f"] == pytest.approx(71.6)
+
+
+def test_apply_empirical_intervals_adds_corrected_bounds() -> None:
+    intervals = fit_empirical_intervals(_rows(), alpha=0.2)
+    rows = _rows().copy()
+    rows["bias_correction_f"] = 2.0
+    rows["corrected_point_f"] = rows["point_f"] + rows["bias_correction_f"]
+
+    applied = apply_empirical_intervals(rows, intervals)
+
+    assert applied.iloc[0]["interval_lower_corrected_f"] == pytest.approx(
+        applied.iloc[0]["corrected_point_f"]
+        + applied.iloc[0]["lower_error_f"]
+        - applied.iloc[0]["bias_correction_f"]
+    )
+    assert applied.iloc[0]["interval_upper_corrected_f"] == pytest.approx(
+        applied.iloc[0]["corrected_point_f"]
+        + applied.iloc[0]["upper_error_f"]
+        - applied.iloc[0]["bias_correction_f"]
+    )
+    assert applied.iloc[0]["interval_lower_corrected_f"] == pytest.approx(68.4)
+    assert applied.iloc[0]["interval_upper_corrected_f"] == pytest.approx(71.6)
 
 
 def test_apply_empirical_intervals_defaults_missing_group_to_point() -> None:
@@ -44,6 +68,8 @@ def test_apply_empirical_intervals_defaults_missing_group_to_point() -> None:
 
     assert applied.iloc[0]["interval_lower_f"] == 50
     assert applied.iloc[0]["interval_upper_f"] == 50
+    assert applied.iloc[0]["interval_lower_raw_f"] == 50
+    assert applied.iloc[0]["interval_upper_raw_f"] == 50
 
 
 def test_fit_empirical_intervals_rejects_bad_alpha() -> None:
