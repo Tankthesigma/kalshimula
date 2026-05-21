@@ -36,7 +36,11 @@ def summarize_residuals(rows: pd.DataFrame, *, group_month: bool = False) -> pd.
     """Summarize point forecast residuals by city/source and optionally month.
 
     Residuals use the same public sign as evaluation bias: predicted minus actual,
-    so positive values mean the forecast is too high.
+    so positive values mean the forecast is too high. The ``n`` column counts rows
+    used for raw metrics; corrected metrics filter the same group to rows where
+    ``corrected_point_f`` is present, which is the same set in current pipelines.
+    Residual standard deviation uses ``ddof=0`` to describe the spread of the
+    evaluated sample.
     """
     required = {"city", "source", "actual_high_f", "point_f"}
     if group_month:
