@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from src.models.source_selection import (
+    compare_source_policies,
     evaluate_selected_sources,
     select_sources_by_validation,
     summarize_selected_sources,
@@ -164,6 +165,48 @@ def test_summarize_selected_sources_averages_metrics() -> None:
     assert summary.iloc[0]["interval_coverage_raw"] == pytest.approx(0.75)
 
 
+def test_compare_source_policies_adds_best_global_source() -> None:
+    validation_scores = pd.DataFrame(
+        [
+            {"city": "denver", "source": "gfs_ens", "method": "recent_180d", "validation_mae": 0.7},
+            {"city": "nyc", "source": "gfs_ens", "method": "recent_180d", "validation_mae": 0.9},
+            {"city": "denver", "source": "openmeteo_naive", "method": "recent_180d", "validation_mae": 1.0},
+            {"city": "nyc", "source": "openmeteo_naive", "method": "recent_180d", "validation_mae": 1.1},
+        ]
+    )
+    evaluation = pd.DataFrame(
+        [
+            {"city": "denver", "source": "gfs_ens", "mae_raw": 1.0, "mae_corrected": 0.6, "interval_coverage_raw": 0.8, "interval_width_raw": 3.0},
+            {"city": "nyc", "source": "gfs_ens", "mae_raw": 1.2, "mae_corrected": 0.8, "interval_coverage_raw": 0.9, "interval_width_raw": 4.0},
+            {"city": "denver", "source": "openmeteo_naive", "mae_raw": 1.5, "mae_corrected": 1.1, "interval_coverage_raw": 0.7, "interval_width_raw": 5.0},
+            {"city": "nyc", "source": "openmeteo_naive", "mae_raw": 1.7, "mae_corrected": 1.3, "interval_coverage_raw": 0.8, "interval_width_raw": 6.0},
+        ]
+    )
+    selected_sources = pd.DataFrame(
+        [
+            {"city": "denver", "selected_source": "gfs_ens", "source_selection_bias_method": "recent_180d", "source_validation_mae": 0.7, "source_selection_fallback": False},
+            {"city": "nyc", "selected_source": "openmeteo_naive", "source_selection_bias_method": "recent_180d", "source_validation_mae": 0.6, "source_selection_fallback": False},
+        ]
+    )
+    selected_summary = pd.DataFrame(
+        [{"n_cities": 2, "mae_raw": 1.3, "mae_corrected": 0.9, "interval_coverage_raw": 0.75, "interval_width_raw": 4.5}]
+    )
+
+    comparison = compare_source_policies(
+        validation_scores=validation_scores,
+        evaluation=evaluation,
+        selected_sources=selected_sources,
+        selected_summary=selected_summary,
+    )
+
+    global_policy = comparison[
+        comparison["policy"] == "best_global_validation_source"
+    ].iloc[0]
+    assert global_policy["selected_source"] == "gfs_ens"
+    assert global_policy["validation_mae"] == pytest.approx(0.8)
+    assert global_policy["mae_corrected"] == pytest.approx(0.7)
+
+
 def test_write_source_selection_outputs(tmp_path) -> None:
     validation_scores_path = tmp_path / "validation_scores.csv"
     evaluation_path = tmp_path / "evaluation.csv"
@@ -201,3 +244,5 @@ def test_write_source_selection_outputs(tmp_path) -> None:
     assert (output_dir / "selected_sources.csv").exists()
     assert (output_dir / "selected_source_evaluation.csv").exists()
     assert (output_dir / "selected_source_summary.csv").exists()
+    assert (output_dir / "source_policy_comparison.csv").exists()
+    assert not result.policy_comparison.empty
