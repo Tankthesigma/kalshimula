@@ -434,7 +434,9 @@ gated batch prediction and review rendering together, then writes
 `latest_predictions_model_policy.txt`, and `latest_predictions_manifest.json`
 under the run directory.
 Use `src.daily_packet_check_cli` to verify the manifest and referenced packet
-artifacts before feeding them into an external dashboard or review script.
+artifacts before feeding them into an external dashboard or review script. It
+also validates the prediction JSON gate status, error count, prediction count,
+and required per-city prediction fields.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

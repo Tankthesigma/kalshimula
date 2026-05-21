@@ -3,10 +3,45 @@ import json
 from src import daily_packet_check_cli
 
 
-def _write_packet(tmp_path, *, exit_code=0, missing_artifact=False):
-    artifact = tmp_path / "latest_predictions.txt"
+def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
+    errors = [{"city": "boston", "error": "failed"}] if n_errors else []
+    predictions = (
+        [
+            {
+                "city": "denver",
+                "forecast": {"point_f": 70.0},
+                "calibration": {"corrected_point_f": 71.0},
+                "threshold_probabilities": [],
+            }
+        ]
+        if n_predictions
+        else []
+    )
+    return {
+        "schema_version": "1.0",
+        "model_gate": {"required": True, "passed": gate_passed},
+        "n_predictions": n_predictions,
+        "n_errors": n_errors,
+        "predictions": predictions,
+        "errors": errors,
+    }
+
+
+def _write_packet(
+    tmp_path,
+    *,
+    exit_code=0,
+    missing_artifact=False,
+    prediction_payload=None,
+):
+    review_artifact = tmp_path / "latest_predictions.txt"
+    prediction_artifact = tmp_path / "latest_predictions.json"
     if not missing_artifact:
-        artifact.write_text("Prediction review\n", encoding="utf-8")
+        review_artifact.write_text("Prediction review\n", encoding="utf-8")
+        prediction_artifact.write_text(
+            json.dumps(prediction_payload or _prediction_payload()),
+            encoding="utf-8",
+        )
     manifest = tmp_path / "latest_predictions_manifest.json"
     manifest.write_text(
         json.dumps(
@@ -26,7 +61,8 @@ def _write_packet(tmp_path, *, exit_code=0, missing_artifact=False):
                     "model_policy_report": {"exit_code": 0},
                 },
                 "artifacts": {
-                    "prediction_review": str(artifact),
+                    "prediction_json": str(prediction_artifact),
+                    "prediction_review": str(review_artifact),
                     "manifest": str(manifest),
                 },
             }
@@ -47,6 +83,8 @@ def test_build_packet_checks_passes_complete_packet(tmp_path) -> None:
         "manifest:schema_version",
         "manifest:exit_code",
         "step:batch_predictions",
+        "prediction_json:schema_version",
+        "prediction_json:prediction_fields",
         "artifact:prediction_review",
     }
 
@@ -85,3 +123,45 @@ def test_daily_packet_check_cli_fails_missing_artifact(tmp_path, capsys) -> None
     assert code == 1
     assert "FAIL artifact:prediction_review" in output
     assert "missing" in output
+
+
+def test_daily_packet_check_cli_fails_prediction_json_gate(tmp_path, capsys) -> None:
+    manifest = _write_packet(
+        tmp_path,
+        prediction_payload=_prediction_payload(gate_passed=False),
+    )
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:gate" in output
+    assert "required=True passed=False" in output
+
+
+def test_daily_packet_check_cli_fails_prediction_json_errors(tmp_path, capsys) -> None:
+    manifest = _write_packet(
+        tmp_path,
+        prediction_payload=_prediction_payload(n_errors=1),
+    )
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:error_count" in output
+
+
+def test_daily_packet_check_cli_fails_prediction_json_missing_fields(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0].pop("calibration")
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:prediction_fields" in output
+    assert "calibration" in output
