@@ -1,0 +1,50 @@
+{
+  "captured_for_slug": "denver",
+  "captured_for_station": "KDEN",
+  "captured_target_date": "2026-05-11",
+  "expected_high_f": 87.08000000000001,
+  "payload": {
+    "geometry": {
+      "coordinates": [
+        -104.657,
+        39.833,
+        1511.21
+      ],
+      "type": "Point"
+    },
+    "header": {
+      "api": {
+        "name": "POWER Daily API",
+        "version": "v2.9.2"
+      },
+      "end": "20260511",
+      "fill_value": -999.0,
+      "sources": [
+        "GEOSIT",
+        "POWER"
+      ],
+      "start": "20260511",
+      "time_standard": "LST",
+      "title": "NASA/POWER Source Native Resolution Daily Data"
+    },
+    "messages": [],
+    "parameters": {
+      "T2M_MAX": {
+        "longname": "Temperature at 2 Meters Maximum",
+        "units": "C"
+      }
+    },
+    "properties": {
+      "parameter": {
+        "T2M_MAX": {
+          "20260511": 30.6
+        }
+      }
+    },
+    "times": {
+      "data": 0.076,
+      "process": 0.01
+    },
+    "type": "Feature"
+  }
+}
