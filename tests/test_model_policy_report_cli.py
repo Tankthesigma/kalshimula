@@ -117,6 +117,35 @@ def _write_artifacts(run_dir):
         run_dir / "probability_calibration" / "threshold_test_group_summary.csv",
         index=False,
     )
+    pd.DataFrame(
+        [
+            {
+                "split": "test",
+                "city": "denver",
+                "source": "gfs_ens",
+                "bucket_start": 0.4,
+                "bucket_end": 0.5,
+                "n": 80,
+                "mean_predicted_probability": 0.45,
+                "observed_frequency": 0.50,
+                "calibration_gap": -0.05,
+            },
+            {
+                "split": "test",
+                "city": "boston",
+                "source": "gfs_ens",
+                "bucket_start": 0.5,
+                "bucket_end": 0.6,
+                "n": 75,
+                "mean_predicted_probability": 0.55,
+                "observed_frequency": 0.70,
+                "calibration_gap": -0.15,
+            },
+        ]
+    ).to_csv(
+        run_dir / "probability_calibration" / "threshold_test_group_calibration.csv",
+        index=False,
+    )
 
 
 def test_build_model_policy_report_summarizes_artifacts(tmp_path) -> None:
@@ -133,6 +162,7 @@ def test_build_model_policy_report_summarizes_artifacts(tmp_path) -> None:
     assert "Interval policy metrics: per_city_alpha alpha=selected" in report
     assert "test: events=6,230, brier=0.061, ece=0.024" in report
     assert "worst test group: boston/gfs_ens brier=0.080, ece=0.050" in report
+    assert "worst test bucket: boston/gfs_ens 50.0%-60.0% gap=-0.150" in report
 
 
 def test_build_model_policy_report_handles_missing_artifacts(tmp_path) -> None:
