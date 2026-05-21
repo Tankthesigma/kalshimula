@@ -1,4 +1,4 @@
-﻿import pandas as pd
+import pandas as pd
 import pytest
 
 from src.models.train_eval import split_rows_by_date, train_eval_split, write_train_eval_outputs
@@ -27,9 +27,13 @@ def test_train_eval_split_fits_on_train_and_evaluates_test() -> None:
 
     assert len(result.train_rows) == 2
     assert len(result.test_rows) == 1
-    assert len(result.bias_table) == 1
+    assert len(result.bias_table) == 2
+    assert "month" in result.bias_table.columns
     assert "corrected_point_f" in result.corrected_test_rows.columns
     assert "interval_lower_f" in result.corrected_test_rows.columns
+    assert "interval_lower_raw_f" in result.corrected_test_rows.columns
+    assert "interval_lower_corrected_f" in result.corrected_test_rows.columns
+    assert "interval_coverage_corrected" in result.evaluation.columns
     assert len(result.evaluation) == 1
 
 
