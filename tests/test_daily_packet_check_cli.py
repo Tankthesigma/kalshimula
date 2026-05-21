@@ -37,6 +37,7 @@ def _write_packet(
     exit_code=0,
     missing_artifact=False,
     prediction_payload=None,
+    require_selected_source_applied=False,
 ):
     review_artifact = tmp_path / "latest_predictions.txt"
     prediction_artifact = tmp_path / "latest_predictions.json"
@@ -57,6 +58,7 @@ def _write_packet(
                 "target_date": "tomorrow",
                 "threshold_offsets": "-2,0,2",
                 "require_gate": True,
+                "require_selected_source_applied": require_selected_source_applied,
                 "exit_code": exit_code,
                 "steps": {
                     "batch_predictions": {"exit_code": exit_code},
@@ -116,6 +118,7 @@ def test_daily_packet_check_cli_emits_json(tmp_path, capsys) -> None:
     assert payload["schema_version"] == "1.0"
     assert payload["manifest"] == str(manifest)
     assert payload["passed"] is True
+    assert payload["require_selected_source_applied"] is False
     assert any(check["name"] == "prediction_json:prediction_fields" for check in payload["checks"])
 
 
@@ -216,3 +219,44 @@ def test_daily_packet_check_cli_requires_dashboard_contract_fields(
     assert "selected_source" in output
     assert "selected_source_applied" in output
     assert "station" in output
+
+
+def test_daily_packet_check_cli_requires_selected_source_applied_from_manifest(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["selected_source_applied"] = False
+    manifest = _write_packet(
+        tmp_path,
+        prediction_payload=payload,
+        require_selected_source_applied=True,
+    )
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "require_selected_source_applied: true" in output
+    assert "FAIL prediction_json:selected_source_applied" in output
+    assert "denver" in output
+
+
+def test_daily_packet_check_cli_can_require_selected_source_applied_by_flag(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["selected_source_applied"] = False
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(
+        ["--manifest", str(manifest), "--json", "--require-selected-source-applied"]
+    )
+
+    result = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert result["require_selected_source_applied"] is True
+    assert any(
+        check["name"] == "prediction_json:selected_source_applied"
+        and check["passed"] is False
+        for check in result["checks"]
+    )
