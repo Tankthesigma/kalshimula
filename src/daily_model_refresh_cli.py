@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from src import (
+    daily_packet_check_cli,
     model_gate_cli,
     model_policy_report_cli,
     predict_batch_cli,
@@ -25,6 +26,7 @@ class RefreshPaths:
     gate_out: Path
     policy_out: Path
     manifest_out: Path
+    check_out: Path
 
 
 def build_refresh_paths(
@@ -41,6 +43,7 @@ def build_refresh_paths(
         gate_out=directory / f"{prefix}_gate.txt",
         policy_out=directory / f"{prefix}_model_policy.txt",
         manifest_out=directory / f"{prefix}_manifest.json",
+        check_out=directory / f"{prefix}_check.json",
     )
 
 
@@ -201,7 +204,17 @@ def main(argv: list[str] | None = None) -> int:
         gate_code=gate_code,
     )
     print(f"Wrote packet manifest: {paths.manifest_out}")
-    return exit_code
+    check_code = daily_packet_check_cli.main(
+        [
+            "--manifest",
+            str(paths.manifest_out),
+            "--json",
+            "--out",
+            str(paths.check_out),
+        ]
+    )
+    print(f"Wrote packet check: {paths.check_out}")
+    return exit_code if exit_code != 0 else check_code
 
 
 if __name__ == "__main__":

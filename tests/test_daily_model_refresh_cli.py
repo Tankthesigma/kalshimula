@@ -16,6 +16,7 @@ def test_build_refresh_paths_defaults_to_model_run_dir() -> None:
     assert paths.gate_out == Path("run/latest_gate.txt")
     assert paths.policy_out == Path("run/latest_model_policy.txt")
     assert paths.manifest_out == Path("run/latest_manifest.json")
+    assert paths.check_out == Path("run/latest_check.json")
 
 
 def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, capsys) -> None:
@@ -36,8 +37,13 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
     def fake_write_policy_report(*, run_dir, out_path):
         calls.append(("policy", [str(run_dir), str(out_path)]))
 
+    def fake_check_main(argv):
+        calls.append(("check", argv))
+        return 0
+
     monkeypatch.setattr("src.predict_batch_cli.main", fake_batch_main)
     monkeypatch.setattr("src.prediction_review_cli.main", fake_review_main)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", fake_check_main)
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_gate_report", fake_write_gate_report
     )
@@ -102,6 +108,16 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
                 str(tmp_path / "out" / "morning_model_policy.txt"),
             ],
         ),
+        (
+            "check",
+            [
+                "--manifest",
+                str(tmp_path / "out" / "morning_manifest.json"),
+                "--json",
+                "--out",
+                str(tmp_path / "out" / "morning_check.json"),
+            ],
+        ),
     ]
     output = capsys.readouterr().out
     assert "Wrote prediction JSON" in output
@@ -109,6 +125,7 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
     assert "Wrote model gate report" in output
     assert "Wrote model policy report" in output
     assert "Wrote packet manifest" in output
+    assert "Wrote packet check" in output
     manifest = json.loads((tmp_path / "out" / "morning_manifest.json").read_text())
     assert manifest["exit_code"] == 0
     assert manifest["cities"] == "denver,boston"
@@ -141,8 +158,13 @@ def test_daily_model_refresh_cli_returns_batch_failure_but_still_reviews(
     def fake_write_policy_report(*, run_dir, out_path):
         calls.append("policy")
 
+    def fake_check_main(argv):
+        calls.append("check")
+        return 1
+
     monkeypatch.setattr("src.predict_batch_cli.main", fake_batch_main)
     monkeypatch.setattr("src.prediction_review_cli.main", fake_review_main)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", fake_check_main)
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_gate_report", fake_write_gate_report
     )
@@ -155,7 +177,7 @@ def test_daily_model_refresh_cli_returns_batch_failure_but_still_reviews(
     )
 
     assert code == 1
-    assert calls == ["batch", "review", "gate", "policy"]
+    assert calls == ["batch", "review", "gate", "policy", "check"]
     manifest = json.loads((tmp_path / "run" / "bad_manifest.json").read_text())
     assert manifest["exit_code"] == 1
     assert manifest["steps"]["batch_predictions"]["exit_code"] == 1
@@ -171,6 +193,7 @@ def test_daily_model_refresh_cli_can_skip_required_gate(monkeypatch, tmp_path) -
 
     monkeypatch.setattr("src.predict_batch_cli.main", fake_batch_main)
     monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_gate_report",
         lambda *, run_dir, out_path: 0,
@@ -190,6 +213,26 @@ def test_daily_model_refresh_cli_can_skip_required_gate(monkeypatch, tmp_path) -
         (tmp_path / "run" / "latest_predictions_manifest.json").read_text()
     )
     assert manifest["require_gate"] is False
+
+
+def test_daily_model_refresh_cli_returns_check_failure(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 1)
+
+    code = daily_model_refresh_cli.main(
+        ["--model-run-dir", str(tmp_path / "run"), "--prefix", "bad-check"]
+    )
+
+    assert code == 1
 
 
 def test_write_gate_report_writes_failure_for_missing_artifacts(tmp_path) -> None:

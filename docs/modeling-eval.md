@@ -432,7 +432,8 @@ For the normal all-city refresh, use `src.daily_model_refresh_cli`; it runs the
 gated batch prediction and review rendering together, then writes
 `latest_predictions.json`, `latest_predictions.txt`, `latest_predictions_gate.txt`,
 `latest_predictions_model_policy.txt`, and `latest_predictions_manifest.json`
-under the run directory.
+under the run directory. It also writes `latest_predictions_check.json`, the
+machine-readable verification result for that packet.
 Use `src.daily_packet_check_cli` to verify the manifest and referenced packet
 artifacts before feeding them into an external dashboard or review script. It
 also validates the prediction JSON gate status, error count, prediction count,

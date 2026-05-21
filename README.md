@@ -81,7 +81,7 @@ probabilities.
 Use `src.daily_model_refresh_cli` for the normal morning refresh: it writes the
 gated all-city batch JSON, text prediction review, model gate report, and model
 policy summary in one command, plus a manifest JSON that indexes the packet
-paths and exit codes.
+paths and exit codes and a packet-check JSON that verifies the packet.
 Use `src.daily_packet_check_cli` to verify the manifest exit codes and artifact
 existence before a dashboard or downstream script consumes the packet. The
 checker also validates the prediction JSON gate status, prediction/error counts,
