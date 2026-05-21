@@ -439,6 +439,8 @@ also validates the prediction JSON gate status, error count, prediction count,
 and required per-city prediction fields needed by a dashboard: selected source,
 whether that source was applied, station metadata, forecast, calibration,
 threshold probabilities, and artifact paths.
+Use `--json` on the checker when a CI job or dashboard needs the verification
+result as structured data.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:
