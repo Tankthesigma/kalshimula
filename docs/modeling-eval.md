@@ -412,6 +412,9 @@ corrected point is 47°F, `--threshold-offsets=-2,0,2` prints
 `P(high >= 45°F)`, `P(high >= 47°F)`, and `P(high >= 49°F)`.
 When a recalibration table is present, each line shows the recalibrated
 probability first and the raw empirical-residual probability in parentheses.
+Add `--json` to emit the same calibrated forecast and threshold probabilities
+as machine-readable JSON for dashboards or review scripts; progress/status
+messages stay on stderr.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 import pandas as pd
@@ -405,6 +406,67 @@ def test_predict_cli_prints_threshold_probabilities(monkeypatch, tmp_path, capsy
     assert "Threshold probabilities:" in output.out
     assert "P(high >= 73°F):  60.0% (raw 75.0%)" in output.out
     assert "P(high >= 75°F):  40.0% (raw 50.0%)" in output.out
+
+
+def test_predict_cli_prints_json(monkeypatch, tmp_path, capsys) -> None:
+    selected_sources = tmp_path / "selected_sources.csv"
+    selected_sources.write_text("city,selected_source\ndenver,gfs_ens\n", encoding="utf-8")
+    bias_table = tmp_path / "bias_table.csv"
+    bias_table.write_text(
+        "city,source,n,mean_error_f,bias_correction_f\n"
+        "denver,gfs_ens,10,-2.0,2.0\n",
+        encoding="utf-8",
+    )
+    threshold_residuals = tmp_path / "threshold_residuals.csv"
+    threshold_residuals.write_text(
+        "city,source,residual_f\n"
+        "denver,gfs_ens,-2\n"
+        "denver,gfs_ens,0\n"
+        "denver,gfs_ens,2\n"
+        "denver,gfs_ens,4\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        predict,
+        "_fetch_all_parallel",
+        lambda station, target, *, use_historical: [
+            ModelDailyHigh(
+                source="gfs_ens",
+                target_date=target,
+                members_f=[70.0, 72.0],
+            )
+        ],
+    )
+
+    exit_code = predict.main(
+        [
+            "--city",
+            "denver",
+            "--date",
+            "2025-01-01",
+            "--selected-sources",
+            str(selected_sources),
+            "--bias-table",
+            str(bias_table),
+            "--threshold-residuals",
+            str(threshold_residuals),
+            "--threshold-offsets",
+            "0",
+            "--json",
+        ]
+    )
+    output = capsys.readouterr()
+    payload = json.loads(output.out)
+
+    assert exit_code == 0
+    assert payload["city"] == "denver"
+    assert payload["selected_source"] == "gfs_ens"
+    assert payload["forecast"]["point_f"] == 71.0
+    assert payload["calibration"]["corrected_point_f"] == 73.0
+    assert payload["threshold_probabilities"] == [
+        {"offset_f": 0, "predicted_probability": 0.75, "threshold_f": 73}
+    ]
 
 
 def test_predict_cli_uses_model_run_dir(monkeypatch, tmp_path, capsys) -> None:
