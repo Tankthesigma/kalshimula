@@ -230,6 +230,24 @@ the empirical 80% intervals under-covered on the chronological test. Alpha 0.13
 raises average coverage to 80.0%, but NYC, Boston, and Philadelphia remain
 below target, so a later per-city interval calibration pass is still warranted.
 
+## Source selection
+
+When a run includes individual Open-Meteo rows (`--openmeteo-mode both`) and a
+validation split (`--validation-start`), select one source per city using only
+validation MAE:
+
+```bash
+python -m src.source_selection_cli \
+  --validation-scores data/runs/<run-dir>/train_eval/validation_scores.csv \
+  --evaluation data/runs/<run-dir>/train_eval/evaluation.csv \
+  --out-dir data/runs/<run-dir>/source_selection
+```
+
+This writes `selected_sources.csv`, `selected_source_evaluation.csv`, and
+`selected_source_summary.csv`. The selection is validation-driven; the test
+metrics are joined afterward so the output can be compared against
+`openmeteo_naive` without choosing winners from the test set.
+
 ## Known limitations and next steps
 
 - **Single forecast source in the existing headline run.** The 365-day and
