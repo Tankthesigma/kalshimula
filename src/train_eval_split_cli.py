@@ -24,9 +24,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Use chronological date split or diagnostic month-stratified split.",
     )
     parser.add_argument("--test-fraction", default=0.2, type=float)
+    parser.add_argument(
+        "--bias-strategy",
+        choices=["seasonal", "global", "recent"],
+        default="seasonal",
+        help="Bias correction strategy fit on the train split.",
+    )
+    parser.add_argument(
+        "--bias-recent-days",
+        type=int,
+        help="Number of trailing train days to use when --bias-strategy=recent.",
+    )
     args = parser.parse_args(argv)
     if args.split_strategy == "date" and not args.test_start:
         parser.error("--test-start is required when --split-strategy=date")
+    if args.bias_strategy == "recent" and args.bias_recent_days is None:
+        parser.error("--bias-recent-days is required when --bias-strategy=recent")
 
     result = write_train_eval_outputs(
         input_path=args.input,
@@ -35,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
         alpha=args.alpha,
         split_strategy=args.split_strategy,
         test_fraction=args.test_fraction,
+        bias_strategy=args.bias_strategy,
+        bias_recent_days=args.bias_recent_days,
     )
     print(
         f"Wrote train/test evaluation to {args.out_dir}: "

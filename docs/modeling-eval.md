@@ -185,6 +185,43 @@ Month-stratified diagnostic on the same data improved average corrected MAE
 from 1.335°F to 1.115°F and interval coverage from 75.5% to 79.7%. Treat that
 as the regime-shift gap to close, not as production performance.
 
+## Two-year bias strategy check
+
+Run: `data/runs/may2024_apr2026_10city_730day_ncei_clean/`
+
+The two-year collection added May 2024 – Apr 2025 to the original 365-day
+run, producing 7300 rows across 10 cities with zero collection errors. The
+extra year proved that month-aware signal exists, but it also showed that
+blindly applying prior-year same-month bias is not a safe default:
+
+| Bias strategy | Avg corrected MAE | Avg interval coverage | Notes |
+|---|---:|---:|---|
+| Seasonal/monthly | 1.453°F | 73.3% | Helps NYC, hurts several other cities. |
+| Recent 180-day city/source, alpha 0.2 | **1.252°F** | 73.3% | Best production-safe MAE strategy tested so far. |
+| Recent 180-day city/source, alpha 0.13 | **1.252°F** | **80.0%** | Best overall production-safe baseline tested so far. |
+| Month-stratified diagnostic | 1.153°F | 79.1% | Diagnostic ceiling only; not production-safe. |
+
+The current best production-safe baseline is:
+
+```bash
+python -m src.train_eval_split_cli \
+  --input data/runs/may2024_apr2026_10city_730day_ncei_clean/rows.csv \
+  --test-start 2026-02-01 \
+  --out-dir data/runs/may2024_apr2026_10city_730day_ncei_clean/train_eval_recent_180_alpha_013 \
+  --alpha 0.13 \
+  --bias-strategy recent \
+  --bias-recent-days 180
+```
+
+The result is not a reason to delete seasonal features. It means seasonal bias
+needs a validation gate or city-specific selector before it can become the
+default. A simple fixed 180-day recency window currently beats both all-history
+global bias and blind monthly bias on the chronological Feb-Apr 2026 test.
+The interval alpha is intentionally tighter than the nominal 0.2 target because
+the empirical 80% intervals under-covered on the chronological test. Alpha 0.13
+raises average coverage to 80.0%, but NYC, Boston, and Philadelphia remain
+below target, so a later per-city interval calibration pass is still warranted.
+
 ## Known limitations and next steps
 
 - **Single forecast source.** The whole stack rides on `openmeteo_naive` (the
@@ -193,9 +230,9 @@ as the regime-shift gap to close, not as production performance.
   individual ensemble members and treat each as a source so bias correction
   can run per-member.
 - **Pooled-by-city-source intervals.** Same alpha quantile width whether
-  Tuesday in July or Sunday in January. A seasonal interval fit (analogous
-  to the seasonal bias) would tighten intervals in low-variance seasons and
-  widen them in high-variance ones.
+  Tuesday in July or Sunday in January. A smaller global alpha reaches the
+  overall 80% target, but NYC/Boston/Philadelphia still under-cover. A
+  per-city or seasonal interval calibration pass is the next interval slice.
 - **Test sample size.** 89 days/city is enough for an MAE estimate; tight
   for coverage estimation. NYC's 51.7% reading at n=89 has a ~5%-point
   standard error — the real coverage is probably 47–57%, still well below
