@@ -43,6 +43,15 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         help="Number of trailing train days to use when --bias-strategy=recent.",
     )
+    parser.add_argument(
+        "--openmeteo-mode",
+        choices=["naive", "sources", "both"],
+        default="naive",
+        help=(
+            "Historical Open-Meteo rows to collect: pooled naive baseline, "
+            "individual model sources, or both."
+        ),
+    )
     parser.add_argument("--workers", default=1, type=int)
     parser.add_argument("--chunk-days", default=1, type=int)
     args = parser.parse_args(argv)
@@ -59,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         alpha=args.alpha,
         bias_strategy=args.bias_strategy,
         bias_recent_days=args.bias_recent_days,
+        openmeteo_mode=args.openmeteo_mode,
         progress=print,
         workers=args.workers,
         chunk_days=args.chunk_days,

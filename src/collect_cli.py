@@ -23,6 +23,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--end", required=True, type=_parse_date)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--cache", default=Path(".cache/weather"), type=Path)
+    parser.add_argument(
+        "--openmeteo-mode",
+        choices=["naive", "sources", "both"],
+        default="naive",
+        help=(
+            "Historical Open-Meteo rows to collect: pooled naive baseline, "
+            "individual model sources, or both."
+        ),
+    )
     args = parser.parse_args(argv)
 
     result = collect_backtest_rows(
@@ -30,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
         start=args.start,
         end=args.end,
         cache_root=args.cache,
+        openmeteo_mode=args.openmeteo_mode,
     )
     write_collection_csv(result, args.out)
     print(f"Wrote {len(result.rows)} rows to {args.out}")

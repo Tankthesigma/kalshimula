@@ -201,7 +201,10 @@ blindly applying prior-year same-month bias is not a safe default:
 | Recent 180-day city/source, alpha 0.13 | **1.252°F** | **80.0%** | Best overall production-safe baseline tested so far. |
 | Month-stratified diagnostic | 1.153°F | 79.1% | Diagnostic ceiling only; not production-safe. |
 
-The current best production-safe baseline is:
+The current best production-safe baseline can now be regenerated directly
+through the historical runner with `--bias-strategy recent --bias-recent-days
+180 --alpha 0.13`. For already-collected rows, the equivalent train/eval-only
+command is:
 
 ```bash
 python -m src.train_eval_split_cli \
@@ -224,11 +227,14 @@ below target, so a later per-city interval calibration pass is still warranted.
 
 ## Known limitations and next steps
 
-- **Single forecast source.** The whole stack rides on `openmeteo_naive` (the
-  Open-Meteo ensemble averaged into a single point). NWS forecasts can't be
-  back-tested (only current/future). Next-next move: break Open-Meteo into
-  individual ensemble members and treat each as a source so bias correction
-  can run per-member.
+- **Single forecast source in the existing headline run.** The 365-day and
+  two-year numbers above ride on `openmeteo_naive` (the Open-Meteo ensemble
+  averaged into a single point). New historical runs can use
+  `--openmeteo-mode both` to include individual Open-Meteo source rows
+  (`gfs_ens`, `ecmwf_ens`, `icon_ens`, `gem_ens`, `aifs`, `graphcast`,
+  `hrrr`) alongside the pooled baseline. The next modeling step is to rerun
+  the two-year evaluation with that mode and compare source-specific residuals
+  by city/month.
 - **Pooled-by-city-source intervals.** Same alpha quantile width whether
   Tuesday in July or Sunday in January. A smaller global alpha reaches the
   overall 80% target, but NYC/Boston/Philadelphia still under-cover. A

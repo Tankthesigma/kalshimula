@@ -47,9 +47,10 @@ def test_run_historical_pipeline_writes_artifacts_incrementally(
     calls = []
     snapshots = []
 
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         assert start == end
         assert cache_root == tmp_path / "cache"
+        assert openmeteo_mode == "naive"
         calls.append((city, start))
         return _collection(city, start, point_f=70 + len(calls))
 
@@ -92,7 +93,7 @@ def test_run_historical_pipeline_passes_bias_options_to_train_eval(
 ) -> None:
     captured = {}
 
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         return _collection(city, start)
 
     def fake_write_train_eval_outputs(**kwargs):
@@ -122,6 +123,67 @@ def test_run_historical_pipeline_passes_bias_options_to_train_eval(
     assert captured["bias_recent_days"] == 180
 
 
+def test_run_historical_pipeline_passes_openmeteo_mode_to_collect(
+    monkeypatch, tmp_path
+) -> None:
+    modes = []
+
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
+        modes.append(openmeteo_mode)
+        return _collection(city, start)
+
+    monkeypatch.setattr(
+        historical_runner, "collect_backtest_rows", fake_collect_backtest_rows
+    )
+
+    run_historical_pipeline(
+        cities=["denver"],
+        start=date(2025, 1, 1),
+        end=date(2025, 1, 2),
+        test_start=date(2025, 1, 2),
+        out_dir=tmp_path / "run",
+        cache_root=tmp_path / "cache",
+        openmeteo_mode="both",
+    )
+
+    assert modes == ["both", "both"]
+
+
+def test_completed_city_dates_respects_openmeteo_mode() -> None:
+    rows = pd.DataFrame(
+        [
+            {
+                "city": "denver",
+                "target_date": date(2025, 1, 1),
+                "source": "openmeteo_naive",
+            },
+            {"city": "denver", "target_date": date(2025, 1, 2), "source": "gfs_ens"},
+            {
+                "city": "denver",
+                "target_date": date(2025, 1, 3),
+                "source": "openmeteo_naive",
+            },
+            {"city": "denver", "target_date": date(2025, 1, 3), "source": "gfs_ens"},
+        ]
+    )
+
+    assert historical_runner._completed_city_dates(
+        rows, openmeteo_mode="naive"
+    ) == {
+        ("denver", "2025-01-01"),
+        ("denver", "2025-01-03"),
+    }
+    assert historical_runner._completed_city_dates(
+        rows, openmeteo_mode="sources"
+    ) == {
+        ("denver", "2025-01-02"),
+        ("denver", "2025-01-03"),
+    }
+    assert historical_runner._completed_city_dates(rows, openmeteo_mode="both") == {
+        ("denver", "2025-01-03")
+    }
+
+
 def test_run_historical_pipeline_skips_existing_rows_on_rerun(
     monkeypatch, tmp_path
 ) -> None:
@@ -137,7 +199,7 @@ def test_run_historical_pipeline_skips_existing_rows_on_rerun(
     calls = []
     progress = []
 
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         calls.append((city, start))
         return _collection(city, start, point_f=73)
 
@@ -179,7 +241,7 @@ def test_run_historical_pipeline_clears_stale_error_after_success(
         ]
     ).to_csv(out_dir / "errors.csv", index=False)
 
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         return _collection(city, start, point_f=73)
 
     monkeypatch.setattr(
@@ -204,7 +266,7 @@ def test_run_historical_pipeline_continues_after_source_failure(
 ) -> None:
     calls = []
 
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         calls.append((city, start))
         if start == date(2025, 1, 2):
             raise RuntimeError("source timed out")
@@ -242,7 +304,7 @@ def test_run_historical_pipeline_can_collect_chunks_in_parallel(
 ) -> None:
     calls = []
 
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         calls.append((city, start))
         return _collection(city, start)
 
@@ -290,7 +352,7 @@ def test_run_historical_pipeline_collects_sequential_ranges_when_chunk_days_set(
 ) -> None:
     calls = []
 
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         calls.append((city, start, end))
         return CollectionResult(
             city=city,
@@ -344,7 +406,7 @@ def test_run_historical_pipeline_rejects_invalid_chunk_days(tmp_path) -> None:
 
 
 def test_run_historical_pipeline_handles_empty_rows(monkeypatch, tmp_path) -> None:
-    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
         return CollectionResult(city=city, start=start, end=end, rows=[])
 
     monkeypatch.setattr(

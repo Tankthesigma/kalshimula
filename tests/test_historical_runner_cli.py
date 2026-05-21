@@ -16,6 +16,7 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
         alpha,
         bias_strategy,
         bias_recent_days,
+        openmeteo_mode,
         progress,
         workers,
         chunk_days,
@@ -29,6 +30,7 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
         assert alpha == 0.13
         assert bias_strategy == "recent"
         assert bias_recent_days == 180
+        assert openmeteo_mode == "both"
         assert progress is print
         assert workers == 3
         assert chunk_days == 5
@@ -68,6 +70,8 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
             "recent",
             "--bias-recent-days",
             "180",
+            "--openmeteo-mode",
+            "both",
             "--workers",
             "3",
             "--chunk-days",

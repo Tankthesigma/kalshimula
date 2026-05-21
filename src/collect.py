@@ -23,6 +23,9 @@ from src.pipeline.weather import (
     forecast_record_from_nws,
 )
 
+OPENMETEO_NAIVE_SOURCE = "openmeteo_naive"
+OPENMETEO_MODES = {"naive", "sources", "both"}
+
 
 @dataclass(frozen=True)
 class CollectionResult:
@@ -35,13 +38,22 @@ class CollectionResult:
 
 
 def collect_backtest_rows(
-    *, city: str, start: date, end: date, cache_root: Path
+    *,
+    city: str,
+    start: date,
+    end: date,
+    cache_root: Path,
+    openmeteo_mode: str = "naive",
 ) -> CollectionResult:
     """Collect cache-backed forecast-vs-actual rows for a city/date range."""
+    if openmeteo_mode not in OPENMETEO_MODES:
+        raise ValueError(f"openmeteo_mode must be one of {sorted(OPENMETEO_MODES)}")
     station = get_station(city)
     cache = JsonCache(cache_root)
     rows: list[BacktestRow] = []
-    _prefetch_historical_openmeteo_points(cache, city, station, start, end)
+    _prefetch_historical_openmeteo_points(
+        cache, city, station, start, end, openmeteo_mode
+    )
 
     for target in date_range(start, end):
         actual = _cached_ncei_actual(cache, city, station, target)
@@ -54,15 +66,18 @@ def collect_backtest_rows(
         )
 
         if target < date.today():
-            row = _historical_openmeteo_row(cache, city, station, target, actual_record)
+            rows.extend(
+                _historical_openmeteo_rows(
+                    cache, city, station, target, actual_record, openmeteo_mode
+                )
+            )
         else:
             forecast = _cached_nws_forecast(cache, city, station, target)
             row = backtest_row_from_records(
                 forecast_record_from_nws(city, forecast), actual_record
             )
-
-        if row is not None:
-            rows.append(row)
+            if row is not None:
+                rows.append(row)
 
     return CollectionResult(city=city, start=start, end=end, rows=rows)
 
@@ -73,52 +88,46 @@ def write_collection_csv(result: CollectionResult, path: Path) -> None:
     backtest_rows_to_dataframe(result.rows).to_csv(path, index=False)
 
 
-def _historical_openmeteo_row(
-    cache: JsonCache, city: str, station, target: date, actual_record: ActualRecord
-) -> BacktestRow | None:
-    params = _params(city, target, "openmeteo_naive")
-    cached = cache.get("openmeteo_naive", params)
-    if isinstance(cached, dict):
-        point_f = _optional_float(cached.get("point_f"))
-    else:
-        use_historical = target < date.today() - timedelta(days=2)
-        sources = [
-            openmeteo.fetch_source(
-                slug,
-                lat=station.lat,
-                lon=station.lon,
-                target=target,
-                use_historical=use_historical,
-            )
-            for slug, *_ in openmeteo.SOURCES
-        ]
-        members = openmeteo.members_dataframe(sources)
-        point_f = None if members.empty else naive_forecast_from_members(members).point_f
-        cache.set(
-            "openmeteo_naive",
-            params,
-            {"city": city, "target_date": target.isoformat(), "point_f": point_f},
+def _historical_openmeteo_rows(
+    cache: JsonCache,
+    city: str,
+    station,
+    target: date,
+    actual_record: ActualRecord,
+    openmeteo_mode: str,
+) -> list[BacktestRow]:
+    rows: list[BacktestRow] = []
+    for source in _openmeteo_output_sources(openmeteo_mode):
+        point_f = _cached_openmeteo_point(cache, city, station, target, source)
+        if point_f is None:
+            continue
+        row = backtest_row_from_records(
+            forecast=ForecastRecord(
+                city=city,
+                target_date=target,
+                source=source,
+                forecast_high_f=point_f,
+            ),
+            actual=actual_record,
         )
-
-    if point_f is None:
-        return None
-    return backtest_row_from_records(
-        forecast=ForecastRecord(
-            city=city,
-            target_date=target,
-            source="openmeteo_naive",
-            forecast_high_f=point_f,
-        ),
-        actual=actual_record,
-    )
+        if row is not None:
+            rows.append(row)
+    return rows
 
 
-def _prefetch_historical_openmeteo_points(cache: JsonCache, city: str, station, start: date, end: date) -> None:
+def _prefetch_historical_openmeteo_points(
+    cache: JsonCache,
+    city: str,
+    station,
+    start: date,
+    end: date,
+    openmeteo_mode: str,
+) -> None:
     targets = [
         target
         for target in date_range(start, end)
         if target < date.today()
-        and not isinstance(cache.get("openmeteo_naive", _params(city, target, "openmeteo_naive")), dict)
+        and _missing_openmeteo_outputs(cache, city, target, openmeteo_mode)
     ]
     if not targets:
         return
@@ -141,17 +150,87 @@ def _prefetch_historical_openmeteo_points(cache: JsonCache, city: str, station, 
                         by_target[forecast.target_date].append(forecast)
 
             for target, forecasts in by_target.items():
-                members = openmeteo.members_dataframe(forecasts)
-                point_f = None if members.empty else naive_forecast_from_members(members).point_f
-                cache.set(
-                    "openmeteo_naive",
-                    _params(city, target, "openmeteo_naive"),
-                    {
-                        "city": city,
-                        "target_date": target.isoformat(),
-                        "point_f": point_f,
-                    },
-                )
+                _cache_openmeteo_points(cache, city, target, forecasts)
+
+
+def _missing_openmeteo_outputs(
+    cache: JsonCache, city: str, target: date, openmeteo_mode: str
+) -> bool:
+    return any(
+        not isinstance(cache.get(source, _params(city, target, source)), dict)
+        for source in _openmeteo_output_sources(openmeteo_mode)
+    )
+
+
+def _openmeteo_output_sources(openmeteo_mode: str) -> list[str]:
+    source_slugs = [slug for slug, *_ in openmeteo.SOURCES]
+    if openmeteo_mode == "naive":
+        return [OPENMETEO_NAIVE_SOURCE]
+    if openmeteo_mode == "sources":
+        return source_slugs
+    if openmeteo_mode == "both":
+        return [OPENMETEO_NAIVE_SOURCE, *source_slugs]
+    raise ValueError(f"openmeteo_mode must be one of {sorted(OPENMETEO_MODES)}")
+
+
+def _cached_openmeteo_point(
+    cache: JsonCache, city: str, station, target: date, source: str
+) -> float | None:
+    params = _params(city, target, source)
+    cached = cache.get(source, params)
+    if isinstance(cached, dict):
+        return _optional_float(cached.get("point_f"))
+
+    use_historical = target < date.today() - timedelta(days=2)
+    forecasts = [
+        openmeteo.fetch_source(
+            slug,
+            lat=station.lat,
+            lon=station.lon,
+            target=target,
+            use_historical=use_historical,
+        )
+        for slug, *_ in openmeteo.SOURCES
+    ]
+    _cache_openmeteo_points(cache, city, target, forecasts)
+    cached = cache.get(source, params)
+    if isinstance(cached, dict):
+        return _optional_float(cached.get("point_f"))
+    return None
+
+
+def _cache_openmeteo_points(
+    cache: JsonCache,
+    city: str,
+    target: date,
+    forecasts: list[openmeteo.ModelDailyHigh],
+) -> None:
+    members = openmeteo.members_dataframe(forecasts)
+    naive_point = None if members.empty else naive_forecast_from_members(members).point_f
+    _cache_openmeteo_point(cache, city, target, OPENMETEO_NAIVE_SOURCE, naive_point)
+
+    by_source = {forecast.source: forecast for forecast in forecasts}
+    for slug, *_ in openmeteo.SOURCES:
+        forecast = by_source.get(slug)
+        point_f = None
+        if forecast is not None and forecast.members_f:
+            point_f = sum(forecast.members_f) / len(forecast.members_f)
+        _cache_openmeteo_point(cache, city, target, slug, point_f)
+
+
+def _cache_openmeteo_point(
+    cache: JsonCache, city: str, target: date, source: str, point_f: float | None
+) -> None:
+    cache.set(
+        source,
+        _params(city, target, source),
+        {
+            "city": city,
+            "target_date": target.isoformat(),
+            "source": source,
+            "point_f": point_f,
+        },
+    )
 
 
 def _group_contiguous_by_historical_mode(

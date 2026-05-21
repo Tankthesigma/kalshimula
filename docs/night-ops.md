@@ -103,6 +103,7 @@ python -m src.historical_runner_cli \
   --alpha 0.13 \
   --bias-strategy recent \
   --bias-recent-days 180 \
+  --openmeteo-mode naive \
   --workers 1 \
   --chunk-days 30
 ```
@@ -131,6 +132,26 @@ python -m src.historical_runner_cli \
   --alpha 0.13 \
   --bias-strategy recent \
   --bias-recent-days 180 \
+  --openmeteo-mode naive \
+  --workers 1 \
+  --chunk-days 30
+```
+
+For the model-source breakout run, use a fresh output directory and collect
+both the pooled baseline and individual Open-Meteo source rows:
+
+```bash
+python -m src.historical_runner_cli \
+  --start 2024-05-01 \
+  --end 2026-04-30 \
+  --test-start 2026-02-01 \
+  --cities nyc,chicago,miami,austin,la,denver,boston,philadelphia,houston,phoenix \
+  --out-dir data/runs/may2024_apr2026_10city_730day_openmeteo_sources \
+  --cache .cache/weather_2yr_openmeteo_sources_20260521 \
+  --alpha 0.13 \
+  --bias-strategy recent \
+  --bias-recent-days 180 \
+  --openmeteo-mode both \
   --workers 1 \
   --chunk-days 30
 ```
