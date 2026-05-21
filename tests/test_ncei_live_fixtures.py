@@ -8,9 +8,8 @@ flips a casing convention again, these tests will catch it on the PR that
 imports the broken parser instead of a week later via the scheduled live
 smoke workflow.
 
-To refresh: re-run the throwaway capture script alongside this file (it lives
-in repo root during development; not committed) and re-validate the expected
-``high_f`` values below.
+To refresh: run ``python -m scripts.refresh_source_fixtures`` from repo root
+and re-validate the expected ``high_f`` values below.
 """
 
 from __future__ import annotations
