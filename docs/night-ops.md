@@ -270,6 +270,7 @@ directory:
 - `latest_predictions_gate.txt`
 - `latest_predictions_model_policy.txt`
 - `latest_predictions_manifest.json`
+- `latest_predictions_check.json`
 
 The command requires the model gate by default and exits nonzero when the gate
 or any city prediction fails. The manifest is the machine-readable packet index:
