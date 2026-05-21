@@ -173,6 +173,7 @@ def test_train_eval_split_selects_bias_method_per_city_from_validation() -> None
     nyc_scores = result.validation_scores[result.validation_scores["city"] == "nyc"]
 
     assert set(nyc_scores["method"]) == {
+        "recent_90d",
         "recent_180d",
         "prior_same_month",
         "recent_365d",
@@ -180,7 +181,7 @@ def test_train_eval_split_selects_bias_method_per_city_from_validation() -> None
     }
     assert nyc["selected_bias_method"] == "prior_same_month"
     assert nyc["selected_validation_mae"] == pytest.approx(0)
-    assert austin["selected_bias_method"] == "recent_180d"
+    assert austin["selected_bias_method"] == "recent_90d"
     assert miami["selected_bias_method"] == "prior_same_month"
     assert miami["selection_fallback"]
     assert "selected_bias_method" in result.corrected_test_rows.columns
