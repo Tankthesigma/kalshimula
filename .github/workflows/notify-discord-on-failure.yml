@@ -1,0 +1,78 @@
+name: Notify Discord on Failure
+
+# Posts a one-line alert to the agent channel when CI or the live source
+# smoke workflow fails. Designed for unattended overnight ops — whoever is
+# next at the keyboard sees the failure in chat instead of digging through
+# the Actions tab.
+#
+# Setup (one-time, repo admin):
+#   gh secret set DISCORD_BOT_TOKEN
+#   gh secret set DISCORD_CHANNEL_ID
+# Both secrets are also used by the agent bridge. If either is missing
+# the job no-ops gracefully rather than failing.
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+      - Source Quality (live)
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  notify:
+    name: Post to Discord
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    timeout-minutes: 2
+
+    steps:
+      - name: Skip when secrets missing
+        id: gate
+        run: |
+          if [ -z "${{ secrets.DISCORD_BOT_TOKEN }}" ] || [ -z "${{ secrets.DISCORD_CHANNEL_ID }}" ]; then
+            echo "secrets unset; not posting"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post failure alert to Discord
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+          WF_NAME: ${{ github.event.workflow_run.name }}
+          WF_URL: ${{ github.event.workflow_run.html_url }}
+          WF_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WF_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WF_EVENT: ${{ github.event.workflow_run.event }}
+        run: |
+          short_sha="${WF_HEAD_SHA:0:7}"
+          # Use python for safe JSON escaping; curl-by-string would break on
+          # branch names containing quotes / colons / newlines.
+          payload=$(python3 -c "
+          import json, os
+          msg = (
+              f':rotating_light: workflow failed: **{os.environ[\"WF_NAME\"]}**\n'
+              f'branch: `{os.environ[\"WF_HEAD_BRANCH\"]}` @ `{os.environ[\"WF_HEAD_SHA\"][:7]}`\n'
+              f'trigger: {os.environ[\"WF_EVENT\"]}\n'
+              f'<{os.environ[\"WF_URL\"]}>'
+          )
+          print(json.dumps({'content': msg, 'allowed_mentions': {'parse': []}}))
+          ")
+          http_status=$(curl -sS -o /tmp/discord.out -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "https://discord.com/api/v10/channels/$DISCORD_CHANNEL_ID/messages")
+          echo "discord http=$http_status"
+          if [ "$http_status" != "200" ] && [ "$http_status" != "201" ]; then
+            head -c 600 /tmp/discord.out
+            exit 1
+          fi
