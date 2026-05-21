@@ -249,9 +249,10 @@ python -m src.model_gate_cli \
   --run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
 ```
 
-The completed two-year run should print `Outcome: PASS`. A failure means the
-current artifacts should be treated as a diagnostic model, not the recommended
-research baseline.
+The completed two-year run should print `Outcome: PASS`. The default gate first
+checks data coverage: at least 50,000 rows, 10 cities, 8 forecast sources, and
+700 unique target dates. A failure means the current artifacts should be treated
+as a diagnostic model, not the recommended research baseline.
 
 Live prediction should then point at the completed model run. The predictor
 uses `source_selection/recommended_sources.csv` when it exists, and prefers
