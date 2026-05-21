@@ -1,4 +1,4 @@
-﻿import pandas as pd
+import pandas as pd
 import pytest
 
 from src.models.baseline_training import (
@@ -38,6 +38,67 @@ def test_evaluate_corrected_predictions_groups_metrics() -> None:
     chicago = evaluation[evaluation["city"] == "chicago"].iloc[0]
     assert chicago["n"] == 1
     assert chicago["bias_corrected"] == pytest.approx(0.0)
+    assert pd.isna(chicago["interval_coverage_raw"])
+    assert pd.isna(chicago["interval_coverage_corrected"])
+
+
+def test_evaluate_corrected_predictions_computes_interval_coverage() -> None:
+    rows = pd.DataFrame(
+        [
+            {
+                "city": "denver",
+                "source": "openmeteo",
+                "actual_high_f": 70,
+                "point_f": 70,
+                "corrected_point_f": 70,
+                "interval_lower_raw_f": 69,
+                "interval_upper_raw_f": 71,
+                "interval_lower_corrected_f": 69,
+                "interval_upper_corrected_f": 71,
+            },
+            {
+                "city": "denver",
+                "source": "openmeteo",
+                "actual_high_f": 80,
+                "point_f": 70,
+                "corrected_point_f": 70,
+                "interval_lower_raw_f": 69,
+                "interval_upper_raw_f": 71,
+                "interval_lower_corrected_f": 69,
+                "interval_upper_corrected_f": 71,
+            },
+        ]
+    )
+
+    evaluation = evaluate_corrected_predictions(rows)
+    denver = evaluation.iloc[0]
+
+    assert denver["interval_coverage_raw"] == pytest.approx(0.5)
+    assert denver["interval_coverage_corrected"] == pytest.approx(0.5)
+    assert denver["interval_width_raw"] == pytest.approx(2.0)
+    assert denver["interval_width_corrected"] == pytest.approx(2.0)
+
+
+def test_evaluate_corrected_predictions_handles_missing_interval_values() -> None:
+    rows = pd.DataFrame(
+        [
+            {
+                "city": "denver",
+                "source": "openmeteo",
+                "actual_high_f": 70,
+                "point_f": 70,
+                "corrected_point_f": 70,
+                "interval_lower_raw_f": None,
+                "interval_upper_raw_f": None,
+            }
+        ]
+    )
+
+    evaluation = evaluate_corrected_predictions(rows)
+
+    assert evaluation.iloc[0]["mae_raw"] == pytest.approx(0.0)
+    assert evaluation.iloc[0]["interval_coverage_raw"] == pytest.approx(0.0)
+    assert pd.isna(evaluation.iloc[0]["interval_coverage_corrected"])
 
 
 def test_evaluate_corrected_predictions_returns_empty_stable_shape() -> None:
