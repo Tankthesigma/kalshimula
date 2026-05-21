@@ -98,6 +98,41 @@ def test_apply_prediction_artifacts_warns_on_missing_source(tmp_path) -> None:
     assert warnings == ["no bias row for denver/gfs_ens; leaving point uncorrected"]
 
 
+def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    selected_sources = run_dir / "source_selection" / "selected_sources.csv"
+    bias_table = run_dir / "train_eval" / "bias_table.csv"
+    selected_sources.parent.mkdir(parents=True)
+    bias_table.parent.mkdir(parents=True)
+    selected_sources.write_text("city,selected_source\n", encoding="utf-8")
+    bias_table.write_text("city,source,bias_correction_f\n", encoding="utf-8")
+
+    resolved = predict._resolve_model_artifacts(
+        model_run_dir=run_dir,
+        selected_sources=None,
+        bias_table=None,
+        interval_table=None,
+    )
+
+    assert resolved == (selected_sources, bias_table, None)
+
+
+def test_resolve_model_artifacts_allows_explicit_overrides(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    explicit_selected = tmp_path / "selected.csv"
+    explicit_bias = tmp_path / "bias.csv"
+    explicit_interval = tmp_path / "interval.csv"
+
+    resolved = predict._resolve_model_artifacts(
+        model_run_dir=run_dir,
+        selected_sources=explicit_selected,
+        bias_table=explicit_bias,
+        interval_table=explicit_interval,
+    )
+
+    assert resolved == (explicit_selected, explicit_bias, explicit_interval)
+
+
 def test_predict_cli_uses_selected_source(monkeypatch, tmp_path, capsys) -> None:
     selected_sources = tmp_path / "selected_sources.csv"
     selected_sources.write_text(
@@ -197,3 +232,56 @@ def test_predict_cli_applies_model_artifacts(monkeypatch, tmp_path, capsys) -> N
     assert "Calibration: Model source: gfs_ens" in output.out
     assert "Corrected point: 73.0" in output.out
     assert "Empirical interval: [70.0" in output.out
+
+
+def test_predict_cli_uses_model_run_dir(monkeypatch, tmp_path, capsys) -> None:
+    run_dir = tmp_path / "run"
+    selected_sources = run_dir / "source_selection" / "selected_sources.csv"
+    bias_table = run_dir / "train_eval" / "bias_table.csv"
+    interval_table = run_dir / "train_eval" / "interval_table.csv"
+    selected_sources.parent.mkdir(parents=True)
+    bias_table.parent.mkdir(parents=True)
+    selected_sources.write_text("city,selected_source\ndenver,gfs_ens\n", encoding="utf-8")
+    bias_table.write_text(
+        "city,source,n,mean_error_f,bias_correction_f\n"
+        "denver,gfs_ens,10,-2.0,2.0\n",
+        encoding="utf-8",
+    )
+    interval_table.write_text(
+        "city,source,n,lower_error_f,upper_error_f,alpha\n"
+        "denver,gfs_ens,10,-1.0,3.0,0.2\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        predict,
+        "_fetch_all_parallel",
+        lambda station, target, *, use_historical: [
+            ModelDailyHigh(
+                source="gfs_ens",
+                target_date=target,
+                members_f=[70.0, 72.0],
+            ),
+            ModelDailyHigh(
+                source="ecmwf_ens",
+                target_date=target,
+                members_f=[80.0, 82.0],
+            ),
+        ],
+    )
+
+    exit_code = predict.main(
+        [
+            "--city",
+            "denver",
+            "--date",
+            "2025-01-01",
+            "--model-run-dir",
+            str(run_dir),
+        ]
+    )
+    output = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "using selected source: gfs_ens" in output.err
+    assert "Corrected point: 73.0" in output.out

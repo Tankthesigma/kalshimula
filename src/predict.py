@@ -171,6 +171,29 @@ def _apply_prediction_artifacts(
     return row.iloc[0], warnings
 
 
+def _existing_artifact(path: Path) -> Path | None:
+    return path if path.exists() else None
+
+
+def _resolve_model_artifacts(
+    *,
+    model_run_dir: Path | None,
+    selected_sources: Path | None,
+    bias_table: Path | None,
+    interval_table: Path | None,
+) -> tuple[Path | None, Path | None, Path | None]:
+    """Resolve explicit artifact paths, optionally defaulting from a run dir."""
+    if model_run_dir is None:
+        return selected_sources, bias_table, interval_table
+    return (
+        selected_sources
+        or _existing_artifact(model_run_dir / "source_selection" / "selected_sources.csv"),
+        bias_table or _existing_artifact(model_run_dir / "train_eval" / "bias_table.csv"),
+        interval_table
+        or _existing_artifact(model_run_dir / "train_eval" / "interval_table.csv"),
+    )
+
+
 def _render_ascii_histogram(fc: NaiveForecast, width: int = 32) -> str:
     if not fc.bin_probs:
         return "  (no bins)"
@@ -243,6 +266,14 @@ def main(argv: list[str] | None = None) -> int:
         help="YYYY-MM-DD, or `today`/`tomorrow`/`yesterday`.",
     )
     parser.add_argument(
+        "--model-run-dir",
+        type=Path,
+        help=(
+            "Optional historical run directory. Defaults artifact paths to "
+            "<run>/source_selection/selected_sources.csv and train_eval model tables."
+        ),
+    )
+    parser.add_argument(
         "--selected-sources",
         type=Path,
         help=(
@@ -262,6 +293,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional train_eval/interval_table.csv to apply empirical intervals.",
     )
     args = parser.parse_args(argv)
+    selected_sources_path, bias_table_path, interval_table_path = _resolve_model_artifacts(
+        model_run_dir=args.model_run_dir,
+        selected_sources=args.selected_sources,
+        bias_table=args.bias_table,
+        interval_table=args.interval_table,
+    )
 
     station = get_station(args.city)
     target = _parse_date(args.date)
@@ -278,9 +315,9 @@ def main(argv: list[str] | None = None) -> int:
 
     selected_source = None
     selected_applied = False
-    if args.selected_sources:
+    if selected_sources_path:
         try:
-            selected_source = _load_selected_source(args.selected_sources, args.city)
+            selected_source = _load_selected_source(selected_sources_path, args.city)
         except (OSError, ValueError) as error:
             print(f"ERROR: could not read selected sources: {error}", file=sys.stderr)
             return 1
@@ -309,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
 
     fc = naive_forecast_from_members(members)
     calibration = None
-    if args.bias_table or args.interval_table:
+    if bias_table_path or interval_table_path:
         source = _prediction_source(selected_source, selected_applied=selected_applied)
         try:
             calibration, warnings = _apply_prediction_artifacts(
@@ -317,8 +354,8 @@ def main(argv: list[str] | None = None) -> int:
                 source=source,
                 target=target,
                 point_f=fc.point_f,
-                bias_table_path=args.bias_table,
-                interval_table_path=args.interval_table,
+                bias_table_path=bias_table_path,
+                interval_table_path=interval_table_path,
             )
         except (OSError, ValueError) as error:
             print(f"ERROR: could not apply model artifacts: {error}", file=sys.stderr)
