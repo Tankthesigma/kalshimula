@@ -38,6 +38,78 @@ def _step_checks(steps: dict[str, Any]) -> list[dict]:
     return checks
 
 
+def _load_json_artifact(artifacts: dict[str, Any], name: str) -> tuple[dict | None, str]:
+    raw_path = artifacts.get(name)
+    if raw_path is None:
+        return None, f"artifact path missing: {name}"
+    path = Path(str(raw_path))
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), str(path)
+    except (OSError, json.JSONDecodeError) as error:
+        return None, f"{path}: {error}"
+
+
+def _prediction_json_checks(payload: dict) -> list[dict]:
+    artifacts = payload.get("artifacts") or {}
+    prediction_json, detail = _load_json_artifact(artifacts, "prediction_json")
+    if prediction_json is None:
+        return [
+            {
+                "name": "prediction_json:readable",
+                "passed": False,
+                "detail": detail,
+            }
+        ]
+
+    predictions = prediction_json.get("predictions") or []
+    errors = prediction_json.get("errors") or []
+    model_gate = prediction_json.get("model_gate") or {}
+    required_prediction_fields = {"city", "forecast", "calibration", "threshold_probabilities"}
+    missing_field_rows = []
+    for index, prediction in enumerate(predictions):
+        missing = sorted(required_prediction_fields - set(prediction))
+        if missing:
+            missing_field_rows.append(f"row {index}: {missing}")
+
+    return [
+        {
+            "name": "prediction_json:schema_version",
+            "passed": prediction_json.get("schema_version") == "1.0",
+            "detail": f"schema_version={prediction_json.get('schema_version', 'missing')}",
+        },
+        {
+            "name": "prediction_json:gate",
+            "passed": (not model_gate.get("required")) or model_gate.get("passed") is True,
+            "detail": (
+                f"required={model_gate.get('required', 'missing')} "
+                f"passed={model_gate.get('passed', 'missing')}"
+            ),
+        },
+        {
+            "name": "prediction_json:error_count",
+            "passed": int(prediction_json.get("n_errors", len(errors))) == 0 and not errors,
+            "detail": (
+                f"n_errors={prediction_json.get('n_errors', 'missing')} "
+                f"errors={len(errors)}"
+            ),
+        },
+        {
+            "name": "prediction_json:prediction_count",
+            "passed": int(prediction_json.get("n_predictions", -1)) == len(predictions)
+            and len(predictions) > 0,
+            "detail": (
+                f"n_predictions={prediction_json.get('n_predictions', 'missing')} "
+                f"rows={len(predictions)}"
+            ),
+        },
+        {
+            "name": "prediction_json:prediction_fields",
+            "passed": not missing_field_rows,
+            "detail": "ok" if not missing_field_rows else "; ".join(missing_field_rows),
+        },
+    ]
+
+
 def build_packet_checks(manifest_path: Path) -> tuple[dict, list[dict]]:
     """Return manifest payload and packet verification checks."""
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -55,6 +127,7 @@ def build_packet_checks(manifest_path: Path) -> tuple[dict, list[dict]]:
     ]
     checks.extend(_step_checks(payload.get("steps") or {}))
     checks.extend(_artifact_checks(payload.get("artifacts") or {}))
+    checks.extend(_prediction_json_checks(payload))
     return payload, checks
 
 
