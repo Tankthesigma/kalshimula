@@ -34,6 +34,8 @@ def test_train_eval_split_fits_on_train_and_evaluates_test() -> None:
     assert "interval_lower_raw_f" in result.corrected_test_rows.columns
     assert "interval_lower_corrected_f" in result.corrected_test_rows.columns
     assert "interval_coverage_corrected" in result.evaluation.columns
+    assert len(result.source_residuals) == 1
+    assert len(result.monthly_residuals) == 1
     assert len(result.evaluation) == 1
 
 
@@ -62,3 +64,5 @@ def test_write_train_eval_outputs(tmp_path) -> None:
     assert (output_dir / "interval_table.csv").exists()
     assert (output_dir / "corrected_test_rows.csv").exists()
     assert (output_dir / "evaluation.csv").exists()
+    assert (output_dir / "source_residuals.csv").exists()
+    assert (output_dir / "monthly_residuals.csv").exists()
