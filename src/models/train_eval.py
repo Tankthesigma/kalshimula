@@ -15,6 +15,7 @@ from src.models.diagnostics import build_residual_diagnostics
 from src.models.intervals import apply_empirical_intervals, fit_empirical_intervals
 
 PER_CITY_BIAS_METHODS = (
+    "recent_90d",
     "recent_180d",
     "prior_same_month",
     "recent_365d",
@@ -250,6 +251,9 @@ def _fit_bias_for_strategy(
         return fit_bias_table(train)
     if normalized_strategy == "recent":
         recent = _recent_train_rows(train, bias_recent_days=bias_recent_days)
+        return fit_bias_table(recent)
+    if normalized_strategy in {"recent_90d", "recent_90"}:
+        recent = _recent_train_rows(train, bias_recent_days=90)
         return fit_bias_table(recent)
     if normalized_strategy in {"recent_180d", "recent_180"}:
         recent = _recent_train_rows(train, bias_recent_days=180)

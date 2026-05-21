@@ -9,6 +9,7 @@ import pandas as pd
 
 DEFAULT_FALLBACK_SOURCE = "openmeteo_naive"
 DEFAULT_METHOD_ORDER = (
+    "recent_90d",
     "recent_180d",
     "prior_same_month",
     "recent_global",

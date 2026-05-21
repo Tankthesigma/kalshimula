@@ -188,6 +188,21 @@ python -m src.source_selection_cli \
   --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_selection
 ```
 
+To re-check the current bias recency and interval-alpha choice for the
+recommended source:
+
+```bash
+python -m src.validation_grid_cli \
+  --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/validation_grid_gfs_ens \
+  --validation-start 2025-11-01 \
+  --test-start 2026-02-01 \
+  --recent-days 90,180,365 \
+  --alphas 0.2,0.13 \
+  --target-coverage 0.8 \
+  --source gfs_ens
+```
+
 Live prediction should then point at the completed model run. The predictor
 uses `source_selection/recommended_sources.csv` when it exists:
 

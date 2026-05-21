@@ -271,8 +271,8 @@ Policy comparison:
 
 | Policy | Selected source | Avg validation MAE | Avg corrected MAE | Avg coverage | Avg interval width |
 |---|---|---:|---:|---:|---:|
-| Per-city validation | Mixed per city | 0.908°F | 1.182°F | 80.45% | 3.79°F |
-| Best global validation source | `gfs_ens` | 0.969°F | **1.050°F** | **84.72%** | **3.70°F** |
+| Per-city validation | Mixed per city | 0.900°F | 1.156°F | 80.45% | 3.79°F |
+| Best global validation source | `gfs_ens` | 0.943°F | **1.044°F** | **84.72%** | **3.70°F** |
 | Pooled baseline | `openmeteo_naive` | n/a | 1.302°F | 80.00% | 4.37°F |
 
 The per-city validation selector beats the pooled baseline, but it overfits
@@ -289,6 +289,37 @@ python -m src.predict \
   --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
 ```
 
+### Recency/alpha validation grid
+
+Use `src.validation_grid_cli` to compare recent bias windows and interval
+alpha values without recollecting data:
+
+```bash
+python -m src.validation_grid_cli \
+  --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/validation_grid_gfs_ens \
+  --validation-start 2025-11-01 \
+  --test-start 2026-02-01 \
+  --recent-days 90,180,365 \
+  --alphas 0.2,0.13 \
+  --target-coverage 0.8 \
+  --source gfs_ens
+```
+
+On the completed two-year run, the validation grid selected `recent_90d` with
+`alpha=0.13` for `gfs_ens`:
+
+| Config | Validation MAE | Validation coverage | Held-out MAE | Held-out coverage | Held-out width |
+|---|---:|---:|---:|---:|---:|
+| `recent_90d`, alpha 0.13 | **0.990°F** | 84.13% | **0.992°F** | 84.72% | 3.70°F |
+| `recent_180d`, alpha 0.13 | 1.071°F | 84.13% | 1.010°F | 84.72% | 3.70°F |
+| `recent_365d`, alpha 0.13 | 1.036°F | 84.13% | 1.057°F | 84.72% | 3.70°F |
+
+This is a bias/interval config diagnostic, separate from source selection. It
+suggests the next production artifact should regularize toward global
+`gfs_ens` plus a shorter recent-bias window, then rerun source/bias policy
+comparison before changing the live default.
+
 ## Known limitations and next steps
 
 - **Recommended source is global, not city-specific.** The best completed
@@ -299,9 +330,12 @@ python -m src.predict \
   Tuesday in July or Sunday in January. A smaller global alpha reaches the
   overall 80% target, but NYC/Boston/Philadelphia still under-cover. A
   per-city or seasonal interval calibration pass is the next interval slice.
-- **Recent-window tuning.** The 180-day window is the best tested setting so
-  far. A small validation-grid check over 90/180/365 days should confirm or
-  refine that window before treating it as a durable default.
+- **Bias policy regularization.** The validation grid now points to global
+  `recent_90d` for `gfs_ens`, while the current `train_eval` artifact still
+  performs per-city bias-method selection. The next modeling slice is a formal
+  comparison of global-vs-per-city bias policy so `predict --model-run-dir`
+  can consume the recommended bias policy as directly as it consumes
+  `recommended_sources.csv`.
 - **Test sample size.** 89 days/city is enough for an MAE estimate; tight
   for coverage estimation. NYC's 51.7% reading at n=89 has a ~5%-point
   standard error — the real coverage is probably 47–57%, still well below
