@@ -1,4 +1,4 @@
-﻿"""Empirical interval calibration helpers."""
+"""Empirical interval calibration helpers."""
 
 from __future__ import annotations
 
@@ -17,7 +17,12 @@ INTERVAL_COLUMNS = [
 
 
 def fit_empirical_intervals(rows: pd.DataFrame, *, alpha: float = 0.2) -> pd.DataFrame:
-    """Fit empirical central error intervals by city/source."""
+    """Fit empirical central residual intervals by city/source.
+
+    ``lower_error_f`` and ``upper_error_f`` are quantiles of
+    ``actual_high_f - point_f`` and are added to a point forecast to produce
+    bounds.
+    """
     if not 0 < alpha < 1:
         raise ValueError("alpha must be between 0 and 1")
     required = {"city", "source", "point_f", "actual_high_f"}
@@ -48,7 +53,12 @@ def fit_empirical_intervals(rows: pd.DataFrame, *, alpha: float = 0.2) -> pd.Dat
 
 
 def apply_empirical_intervals(rows: pd.DataFrame, intervals: pd.DataFrame) -> pd.DataFrame:
-    """Add calibrated lower/upper point forecast bounds."""
+    """Add calibrated lower/upper forecast bounds.
+
+    Existing ``interval_lower_f`` / ``interval_upper_f`` columns are preserved
+    as raw point aliases for compatibility. Explicit ``*_raw_f`` and
+    ``*_corrected_f`` columns make the centering contract visible to consumers.
+    """
     required = {"city", "source", "point_f"}
     missing = required - set(rows.columns)
     if missing:
@@ -65,8 +75,18 @@ def apply_empirical_intervals(rows: pd.DataFrame, intervals: pd.DataFrame) -> pd
     )
     merged["lower_error_f"] = merged["lower_error_f"].fillna(0.0)
     merged["upper_error_f"] = merged["upper_error_f"].fillna(0.0)
-    merged["interval_lower_f"] = merged["point_f"].astype(float) + merged["lower_error_f"]
-    merged["interval_upper_f"] = merged["point_f"].astype(float) + merged["upper_error_f"]
+    point = merged["point_f"].astype(float)
+    lower_error = merged["lower_error_f"].astype(float)
+    upper_error = merged["upper_error_f"].astype(float)
+    merged["interval_lower_raw_f"] = point + lower_error
+    merged["interval_upper_raw_f"] = point + upper_error
+    merged["interval_lower_f"] = merged["interval_lower_raw_f"]
+    merged["interval_upper_f"] = merged["interval_upper_raw_f"]
+    if "corrected_point_f" in merged.columns:
+        corrected = merged["corrected_point_f"].astype(float)
+        correction = corrected - point
+        merged["interval_lower_corrected_f"] = corrected + lower_error - correction
+        merged["interval_upper_corrected_f"] = corrected + upper_error - correction
     return merged
 
 
