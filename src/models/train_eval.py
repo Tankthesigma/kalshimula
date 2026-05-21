@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 
 import pandas as pd
@@ -41,11 +42,65 @@ def split_rows_by_date(
     return train, test
 
 
+def split_rows_by_month_stratified(
+    rows: pd.DataFrame, *, test_fraction: float = 0.2
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Split each city/source/month into train/test rows by date order.
+
+    This is a diagnostic split for measuring month-aware calibration on short
+    windows. It is not a substitute for the default chronological split.
+    """
+    if not 0 < test_fraction < 1:
+        raise ValueError("test_fraction must be between 0 and 1")
+    required = {"city", "source", "target_date"}
+    missing = required - set(rows.columns)
+    if missing:
+        raise ValueError(f"missing required columns: {sorted(missing)}")
+
+    df = rows.copy()
+    df["target_date"] = pd.to_datetime(df["target_date"])
+    df["_month"] = df["target_date"].dt.month.astype("Int64")
+    df["_row_order"] = range(len(df))
+
+    train_parts = []
+    test_parts = []
+    for _, group in df.sort_values(["target_date", "_row_order"]).groupby(
+        ["city", "source", "_month"], sort=True
+    ):
+        if len(group) < 2:
+            train_parts.append(group)
+            continue
+        test_count = min(max(1, ceil(len(group) * test_fraction)), len(group) - 1)
+        train_parts.append(group.iloc[:-test_count])
+        test_parts.append(group.iloc[-test_count:])
+
+    train = pd.concat(train_parts, ignore_index=False) if train_parts else df.iloc[0:0]
+    test = pd.concat(test_parts, ignore_index=False) if test_parts else df.iloc[0:0]
+    drop_cols = ["_month", "_row_order"]
+    return (
+        train.drop(columns=drop_cols).sort_values("target_date").copy(),
+        test.drop(columns=drop_cols).sort_values("target_date").copy(),
+    )
+
+
 def train_eval_split(
-    rows: pd.DataFrame, *, test_start: str | pd.Timestamp, alpha: float = 0.2
+    rows: pd.DataFrame,
+    *,
+    test_start: str | pd.Timestamp | None = None,
+    alpha: float = 0.2,
+    split_strategy: str = "date",
+    test_fraction: float = 0.2,
 ) -> TrainEvalResult:
     """Fit bias/intervals on train rows and evaluate corrected forecasts on test rows."""
-    train, test = split_rows_by_date(rows, test_start=test_start)
+    normalized_strategy = split_strategy.replace("-", "_")
+    if normalized_strategy == "date":
+        if test_start is None:
+            raise ValueError("test_start is required for date split")
+        train, test = split_rows_by_date(rows, test_start=test_start)
+    elif normalized_strategy == "month_stratified":
+        train, test = split_rows_by_month_stratified(rows, test_fraction=test_fraction)
+    else:
+        raise ValueError(f"unknown split_strategy: {split_strategy}")
     if train.empty:
         raise ValueError("train split is empty")
     if test.empty:
@@ -70,11 +125,23 @@ def train_eval_split(
 
 
 def write_train_eval_outputs(
-    *, input_path: Path, output_dir: Path, test_start: str, alpha: float = 0.2
+    *,
+    input_path: Path,
+    output_dir: Path,
+    test_start: str | None = None,
+    alpha: float = 0.2,
+    split_strategy: str = "date",
+    test_fraction: float = 0.2,
 ) -> TrainEvalResult:
     """Run leakage-safe train/test evaluation and write CSV artifacts."""
     rows = pd.read_csv(input_path, parse_dates=["target_date"])
-    result = train_eval_split(rows, test_start=test_start, alpha=alpha)
+    result = train_eval_split(
+        rows,
+        test_start=test_start,
+        alpha=alpha,
+        split_strategy=split_strategy,
+        test_fraction=test_fraction,
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     result.train_rows.to_csv(output_dir / "train_rows.csv", index=False)
     result.test_rows.to_csv(output_dir / "test_rows.csv", index=False)
