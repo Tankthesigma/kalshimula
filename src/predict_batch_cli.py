@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -34,6 +34,7 @@ def _prediction_for_city(
     threshold_residuals_path: Path | None,
     threshold_recalibration_table_path: Path | None,
     threshold_offsets: tuple[int, ...] | None,
+    generated_at: datetime,
 ) -> dict:
     station = get_station(city)
     use_historical = target < date.today() - timedelta(days=2)
@@ -118,9 +119,14 @@ def _prediction_for_city(
         selected_applied=selected_applied,
         calibration=calibration,
         threshold_probabilities=threshold_probabilities,
+        generated_at=generated_at,
+        model_run_dir=model_run_dir,
+        selected_sources_path=selected_sources_path,
+        bias_table_path=bias_table_path,
+        interval_table_path=interval_table_path,
+        threshold_residuals_path=threshold_residuals_path,
+        threshold_recalibration_table_path=threshold_recalibration_table_path,
     )
-    if model_run_dir is not None:
-        payload["model_run_dir"] = str(model_run_dir)
     return payload
 
 
@@ -135,9 +141,11 @@ def build_batch_payload(
     threshold_residuals_path: Path | None,
     threshold_recalibration_table_path: Path | None,
     threshold_offsets: tuple[int, ...] | None,
+    generated_at: datetime | None = None,
 ) -> tuple[dict, int]:
     predictions = []
     errors = []
+    created_at = generated_at or datetime.now(UTC)
     for city in cities:
         try:
             predictions.append(
@@ -151,6 +159,7 @@ def build_batch_payload(
                     threshold_residuals_path=threshold_residuals_path,
                     threshold_recalibration_table_path=threshold_recalibration_table_path,
                     threshold_offsets=threshold_offsets,
+                    generated_at=created_at,
                 )
             )
         except Exception as error:  # noqa: BLE001
@@ -158,7 +167,29 @@ def build_batch_payload(
             print(f"  ! {city}: {error}", file=sys.stderr)
 
     payload = {
+        "schema_version": predict.PREDICTION_JSON_SCHEMA_VERSION,
+        "generated_at": created_at.isoformat(),
         "target_date": target.isoformat(),
+        "artifact_paths": {
+            "model_run_dir": str(model_run_dir) if model_run_dir is not None else None,
+            "selected_sources": (
+                str(selected_sources_path) if selected_sources_path is not None else None
+            ),
+            "bias_table": str(bias_table_path) if bias_table_path is not None else None,
+            "interval_table": (
+                str(interval_table_path) if interval_table_path is not None else None
+            ),
+            "threshold_residuals": (
+                str(threshold_residuals_path)
+                if threshold_residuals_path is not None
+                else None
+            ),
+            "threshold_recalibration_table": (
+                str(threshold_recalibration_table_path)
+                if threshold_recalibration_table_path is not None
+                else None
+            ),
+        },
         "n_predictions": len(predictions),
         "n_errors": len(errors),
         "predictions": predictions,

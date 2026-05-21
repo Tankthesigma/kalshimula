@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 
 from src import predict_batch_cli
 from src.fetchers.openmeteo import ModelDailyHigh
@@ -64,9 +65,15 @@ def test_predict_batch_cli_writes_json(monkeypatch, tmp_path, capsys) -> None:
 
     payload = json.loads(capsys.readouterr().out)
     assert code == 0
+    assert payload["schema_version"] == "1.0"
+    assert payload["generated_at"].endswith("+00:00")
+    assert payload["artifact_paths"]["selected_sources"] == str(selected_sources)
+    assert payload["artifact_paths"]["bias_table"] == str(bias_table)
     assert payload["n_predictions"] == 2
     assert payload["n_errors"] == 0
     assert payload["predictions"][0]["city"] == "denver"
+    assert payload["predictions"][0]["schema_version"] == "1.0"
+    assert payload["predictions"][0]["artifact_paths"]["selected_sources"] == str(selected_sources)
     assert payload["predictions"][0]["threshold_probabilities"][0]["threshold_f"] == 73
     assert payload["predictions"][1]["calibration"]["corrected_point_f"] == 40.0
 
@@ -140,3 +147,31 @@ def test_build_batch_payload_can_write_file(monkeypatch, tmp_path) -> None:
     assert code == 0
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["predictions"][0]["forecast"]["point_f"] == 70.0
+
+
+def test_build_batch_payload_uses_single_generated_at(monkeypatch) -> None:
+    generated_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+
+    monkeypatch.setattr(
+        "src.predict._fetch_all_parallel",
+        lambda station, target, *, use_historical: [
+            ModelDailyHigh(source="gfs_ens", target_date=target, members_f=[70.0])
+        ],
+    )
+
+    payload, code = predict_batch_cli.build_batch_payload(
+        cities=["denver"],
+        target=datetime(2025, 1, 1).date(),
+        model_run_dir=None,
+        selected_sources_path=None,
+        bias_table_path=None,
+        interval_table_path=None,
+        threshold_residuals_path=None,
+        threshold_recalibration_table_path=None,
+        threshold_offsets=None,
+        generated_at=generated_at,
+    )
+
+    assert code == 0
+    assert payload["generated_at"] == "2026-01-02T03:04:05+00:00"
+    assert payload["predictions"][0]["generated_at"] == "2026-01-02T03:04:05+00:00"

@@ -418,6 +418,8 @@ messages stay on stderr.
 For multiple cities, use `src.predict_batch_cli` with the same model artifacts
 and threshold offsets. It writes one JSON object with `predictions` and
 `errors`, so downstream tools can continue when a single city/source is missing.
+Both single and batch JSON include `schema_version`, `generated_at`, and
+`artifact_paths` for downstream compatibility checks.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:
