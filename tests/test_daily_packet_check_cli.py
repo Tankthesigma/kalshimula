@@ -106,6 +106,34 @@ def test_daily_packet_check_cli_writes_report(tmp_path, capsys) -> None:
     assert "Outcome: PASS" in out_path.read_text(encoding="utf-8")
 
 
+def test_daily_packet_check_cli_emits_json(tmp_path, capsys) -> None:
+    manifest = _write_packet(tmp_path)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["schema_version"] == "1.0"
+    assert payload["manifest"] == str(manifest)
+    assert payload["passed"] is True
+    assert any(check["name"] == "prediction_json:prediction_fields" for check in payload["checks"])
+
+
+def test_daily_packet_check_cli_writes_json_report(tmp_path, capsys) -> None:
+    manifest = _write_packet(tmp_path)
+    out_path = tmp_path / "packet_check.json"
+
+    code = daily_packet_check_cli.main(
+        ["--manifest", str(manifest), "--json", "--out", str(out_path)]
+    )
+
+    assert code == 0
+    assert capsys.readouterr().out == ""
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["passed"] is True
+    assert payload["target_date"] == "tomorrow"
+
+
 def test_daily_packet_check_cli_fails_nonzero_step(tmp_path, capsys) -> None:
     manifest = _write_packet(tmp_path, exit_code=1)
 

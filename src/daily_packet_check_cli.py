@@ -157,6 +157,20 @@ def render_packet_check_report(manifest_path: Path, payload: dict, checks: list[
     return "\n".join(lines)
 
 
+def build_packet_check_payload(manifest_path: Path, payload: dict, checks: list[dict]) -> dict:
+    """Build a machine-readable packet-check result."""
+    return {
+        "schema_version": "1.0",
+        "manifest": str(manifest_path),
+        "generated_at": payload.get("generated_at"),
+        "target_date": payload.get("target_date"),
+        "cities": payload.get("cities"),
+        "require_gate": bool(payload.get("require_gate")),
+        "passed": all(check["passed"] for check in checks),
+        "checks": checks,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="daily_packet_check",
@@ -164,15 +178,23 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     args = parser.parse_args(argv)
 
     payload, checks = build_packet_checks(args.manifest)
-    report = render_packet_check_report(args.manifest, payload, checks)
+    if args.json:
+        output = json.dumps(
+            build_packet_check_payload(args.manifest, payload, checks),
+            indent=2,
+            sort_keys=True,
+        )
+    else:
+        output = render_packet_check_report(args.manifest, payload, checks)
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(report + "\n", encoding="utf-8")
+        args.out.write_text(output + "\n", encoding="utf-8")
     else:
-        print(report)
+        print(output)
     return 0 if all(check["passed"] for check in checks) else 1
 
 

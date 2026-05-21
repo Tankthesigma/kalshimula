@@ -50,6 +50,7 @@ python -m src.predict_batch_cli --cities denver,boston,nyc --date tomorrow --mod
 python -m src.prediction_review_cli --input data\runs\<run>\latest_predictions.json --out data\runs\<run>\latest_predictions.txt
 python -m src.daily_model_refresh_cli --model-run-dir data\runs\<run>
 python -m src.daily_packet_check_cli --manifest data\runs\<run>\latest_predictions_manifest.json
+python -m src.daily_packet_check_cli --manifest data\runs\<run>\latest_predictions_manifest.json --json --out data\runs\<run>\latest_predictions_check.json
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -86,7 +87,8 @@ existence before a dashboard or downstream script consumes the packet. The
 checker also validates the prediction JSON gate status, prediction/error counts,
 and required prediction fields, including source, station, forecast,
 selected-source-application status, calibration, threshold probabilities, and
-artifact paths for dashboard use.
+artifact paths for dashboard use. Add `--json` when a script needs the check
+result as structured data instead of text.
 
 Collect one city/date range into backtest rows:
 

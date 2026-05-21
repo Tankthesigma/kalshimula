@@ -289,6 +289,8 @@ do not match the rows, or required prediction fields are absent. Required
 prediction fields include city, selected source, whether that source was
 applied, station metadata, forecast, calibration, threshold probabilities, and
 artifact paths.
+For automation, add `--json --out latest_predictions_check.json` so scripts can
+read the check result without scraping the text report.
 
 For a one-off city check, use the lower-level predictor:
 
