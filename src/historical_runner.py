@@ -58,6 +58,8 @@ def run_historical_pipeline(
     out_dir: Path,
     cache_root: Path,
     alpha: float = 0.2,
+    bias_strategy: str = "seasonal",
+    bias_recent_days: int | None = None,
     progress: ProgressLogger | None = None,
     workers: int = 1,
     chunk_days: int = 1,
@@ -174,6 +176,8 @@ def run_historical_pipeline(
             output_dir=train_eval_dir,
             test_start=test_start.isoformat(),
             alpha=alpha,
+            bias_strategy=bias_strategy,
+            bias_recent_days=bias_recent_days,
         )
 
     return HistoricalRunResult(

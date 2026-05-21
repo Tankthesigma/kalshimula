@@ -32,9 +32,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--cache", default=Path(".cache/weather"), type=Path)
     parser.add_argument("--alpha", default=0.2, type=float)
+    parser.add_argument(
+        "--bias-strategy",
+        choices=["seasonal", "global", "recent"],
+        default="seasonal",
+        help="Bias correction strategy for train/test evaluation.",
+    )
+    parser.add_argument(
+        "--bias-recent-days",
+        type=int,
+        help="Number of trailing train days to use when --bias-strategy=recent.",
+    )
     parser.add_argument("--workers", default=1, type=int)
     parser.add_argument("--chunk-days", default=1, type=int)
     args = parser.parse_args(argv)
+    if args.bias_strategy == "recent" and args.bias_recent_days is None:
+        parser.error("--bias-recent-days is required when --bias-strategy=recent")
 
     result = run_historical_pipeline(
         cities=args.cities,
@@ -44,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         out_dir=args.out_dir,
         cache_root=args.cache,
         alpha=args.alpha,
+        bias_strategy=args.bias_strategy,
+        bias_recent_days=args.bias_recent_days,
         progress=print,
         workers=args.workers,
         chunk_days=args.chunk_days,
