@@ -275,6 +275,15 @@ The command requires the model gate by default and exits nonzero when the gate
 or any city prediction fails. The manifest is the machine-readable packet index:
 it records output paths, input date/cities/threshold offsets, per-step exit
 codes, and the final command exit code.
+Verify the packet before using it in a dashboard or downstream script:
+
+```bash
+python -m src.daily_packet_check_cli \
+  --manifest data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions_manifest.json
+```
+
+The checker exits nonzero if the manifest records a failed step or if any
+referenced artifact is missing or empty.
 
 For a one-off city check, use the lower-level predictor:
 

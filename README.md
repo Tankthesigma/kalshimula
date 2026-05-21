@@ -49,6 +49,7 @@ python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<r
 python -m src.predict_batch_cli --cities denver,boston,nyc --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --require-gate --out data\runs\<run>\latest_predictions.json
 python -m src.prediction_review_cli --input data\runs\<run>\latest_predictions.json --out data\runs\<run>\latest_predictions.txt
 python -m src.daily_model_refresh_cli --model-run-dir data\runs\<run>
+python -m src.daily_packet_check_cli --manifest data\runs\<run>\latest_predictions_manifest.json
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -80,6 +81,8 @@ Use `src.daily_model_refresh_cli` for the normal morning refresh: it writes the
 gated all-city batch JSON, text prediction review, model gate report, and model
 policy summary in one command, plus a manifest JSON that indexes the packet
 paths and exit codes.
+Use `src.daily_packet_check_cli` to verify the manifest exit codes and artifact
+existence before a dashboard or downstream script consumes the packet.
 
 Collect one city/date range into backtest rows:
 
