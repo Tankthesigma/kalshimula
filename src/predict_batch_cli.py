@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import predict
+from src import model_gate_cli, predict
 from src.config import get_station, load_stations
 from src.fetchers.openmeteo import members_dataframe
 from src.models.ensemble import naive_forecast_from_members
@@ -130,6 +130,99 @@ def _prediction_for_city(
     return payload
 
 
+def _artifact_paths_payload(
+    *,
+    model_run_dir: Path | None,
+    selected_sources_path: Path | None,
+    bias_table_path: Path | None,
+    interval_table_path: Path | None,
+    threshold_residuals_path: Path | None,
+    threshold_recalibration_table_path: Path | None,
+) -> dict:
+    return {
+        "model_run_dir": str(model_run_dir) if model_run_dir is not None else None,
+        "selected_sources": (
+            str(selected_sources_path) if selected_sources_path is not None else None
+        ),
+        "bias_table": str(bias_table_path) if bias_table_path is not None else None,
+        "interval_table": (
+            str(interval_table_path) if interval_table_path is not None else None
+        ),
+        "threshold_residuals": (
+            str(threshold_residuals_path) if threshold_residuals_path is not None else None
+        ),
+        "threshold_recalibration_table": (
+            str(threshold_recalibration_table_path)
+            if threshold_recalibration_table_path is not None
+            else None
+        ),
+    }
+
+
+def _gate_check_payload(check: model_gate_cli.GateCheck) -> dict:
+    return {
+        "name": check.name,
+        "value": check.value,
+        "threshold": check.threshold,
+        "passed": check.passed,
+        "detail": check.detail,
+    }
+
+
+def build_gate_payload(run_dir: Path) -> tuple[dict, bool]:
+    """Build the default readiness gate payload for a model run."""
+    checks = model_gate_cli.build_gate_checks(
+        run_dir=run_dir,
+        max_test_mae=model_gate_cli.DEFAULT_MAX_TEST_MAE,
+        min_interval_coverage=model_gate_cli.DEFAULT_MIN_INTERVAL_COVERAGE,
+        max_interval_width=model_gate_cli.DEFAULT_MAX_INTERVAL_WIDTH,
+        max_recalibrated_brier=model_gate_cli.DEFAULT_MAX_RECALIBRATED_BRIER,
+        max_recalibrated_ece=model_gate_cli.DEFAULT_MAX_RECALIBRATED_ECE,
+        min_brier_improvement=model_gate_cli.DEFAULT_MIN_BRIER_IMPROVEMENT,
+        min_ece_improvement=model_gate_cli.DEFAULT_MIN_ECE_IMPROVEMENT,
+        expected_source=model_gate_cli.DEFAULT_EXPECTED_SOURCE,
+    )
+    passed = all(check.passed for check in checks)
+    return {
+        "required": True,
+        "passed": passed,
+        "checks": [_gate_check_payload(check) for check in checks],
+    }, passed
+
+
+def _gate_failure_payload(
+    *,
+    target,
+    created_at: datetime,
+    model_run_dir: Path | None,
+    selected_sources_path: Path | None,
+    bias_table_path: Path | None,
+    interval_table_path: Path | None,
+    threshold_residuals_path: Path | None,
+    threshold_recalibration_table_path: Path | None,
+    model_gate: dict,
+    error: str,
+) -> dict:
+    return {
+        "schema_version": predict.PREDICTION_JSON_SCHEMA_VERSION,
+        "generated_at": created_at.isoformat(),
+        "target_date": target.isoformat(),
+        "artifact_paths": _artifact_paths_payload(
+            model_run_dir=model_run_dir,
+            selected_sources_path=selected_sources_path,
+            bias_table_path=bias_table_path,
+            interval_table_path=interval_table_path,
+            threshold_residuals_path=threshold_residuals_path,
+            threshold_recalibration_table_path=threshold_recalibration_table_path,
+        ),
+        "model_gate": model_gate,
+        "n_predictions": 0,
+        "n_errors": 1,
+        "predictions": [],
+        "errors": [{"city": "__model_gate__", "error": error}],
+    }
+
+
 def build_batch_payload(
     *,
     cities: list[str],
@@ -141,6 +234,7 @@ def build_batch_payload(
     threshold_residuals_path: Path | None,
     threshold_recalibration_table_path: Path | None,
     threshold_offsets: tuple[int, ...] | None,
+    model_gate: dict | None = None,
     generated_at: datetime | None = None,
 ) -> tuple[dict, int]:
     predictions = []
@@ -170,26 +264,15 @@ def build_batch_payload(
         "schema_version": predict.PREDICTION_JSON_SCHEMA_VERSION,
         "generated_at": created_at.isoformat(),
         "target_date": target.isoformat(),
-        "artifact_paths": {
-            "model_run_dir": str(model_run_dir) if model_run_dir is not None else None,
-            "selected_sources": (
-                str(selected_sources_path) if selected_sources_path is not None else None
-            ),
-            "bias_table": str(bias_table_path) if bias_table_path is not None else None,
-            "interval_table": (
-                str(interval_table_path) if interval_table_path is not None else None
-            ),
-            "threshold_residuals": (
-                str(threshold_residuals_path)
-                if threshold_residuals_path is not None
-                else None
-            ),
-            "threshold_recalibration_table": (
-                str(threshold_recalibration_table_path)
-                if threshold_recalibration_table_path is not None
-                else None
-            ),
-        },
+        "artifact_paths": _artifact_paths_payload(
+            model_run_dir=model_run_dir,
+            selected_sources_path=selected_sources_path,
+            bias_table_path=bias_table_path,
+            interval_table_path=interval_table_path,
+            threshold_residuals_path=threshold_residuals_path,
+            threshold_recalibration_table_path=threshold_recalibration_table_path,
+        ),
+        "model_gate": model_gate or {"required": False, "passed": None, "checks": []},
         "n_predictions": len(predictions),
         "n_errors": len(errors),
         "predictions": predictions,
@@ -217,6 +300,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--threshold-residuals", type=Path)
     parser.add_argument("--threshold-recalibration-table", type=Path)
     parser.add_argument("--threshold-offsets")
+    parser.add_argument(
+        "--require-gate",
+        action="store_true",
+        help="Fail without predictions unless --model-run-dir passes the readiness gate.",
+    )
     parser.add_argument("--out", type=Path, help="Optional JSON output path.")
     args = parser.parse_args(argv)
 
@@ -240,6 +328,76 @@ def main(argv: list[str] | None = None) -> int:
         if args.threshold_offsets
         else None
     )
+    created_at = datetime.now(UTC)
+    gate_payload = {"required": False, "passed": None, "checks": []}
+    if args.require_gate:
+        if args.model_run_dir is None:
+            gate_payload = {"required": True, "passed": False, "checks": []}
+            payload = _gate_failure_payload(
+                target=target,
+                created_at=created_at,
+                model_run_dir=args.model_run_dir,
+                selected_sources_path=selected_sources_path,
+                bias_table_path=bias_table_path,
+                interval_table_path=interval_table_path,
+                threshold_residuals_path=threshold_residuals_path,
+                threshold_recalibration_table_path=threshold_recalibration_table_path,
+                model_gate=gate_payload,
+                error="--require-gate requires --model-run-dir",
+            )
+            text = json.dumps(payload, indent=2, sort_keys=True)
+            if args.out is not None:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(text + "\n", encoding="utf-8")
+            else:
+                print(text)
+            return 1
+
+        try:
+            gate_payload, gate_passed = build_gate_payload(args.model_run_dir)
+        except ValueError as error:
+            gate_payload = {"required": True, "passed": False, "checks": []}
+            payload = _gate_failure_payload(
+                target=target,
+                created_at=created_at,
+                model_run_dir=args.model_run_dir,
+                selected_sources_path=selected_sources_path,
+                bias_table_path=bias_table_path,
+                interval_table_path=interval_table_path,
+                threshold_residuals_path=threshold_residuals_path,
+                threshold_recalibration_table_path=threshold_recalibration_table_path,
+                model_gate=gate_payload,
+                error=f"model readiness gate failed: {error}",
+            )
+            text = json.dumps(payload, indent=2, sort_keys=True)
+            if args.out is not None:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(text + "\n", encoding="utf-8")
+            else:
+                print(text)
+            return 1
+
+        if not gate_passed:
+            payload = _gate_failure_payload(
+                target=target,
+                created_at=created_at,
+                model_run_dir=args.model_run_dir,
+                selected_sources_path=selected_sources_path,
+                bias_table_path=bias_table_path,
+                interval_table_path=interval_table_path,
+                threshold_residuals_path=threshold_residuals_path,
+                threshold_recalibration_table_path=threshold_recalibration_table_path,
+                model_gate=gate_payload,
+                error="model readiness gate did not pass",
+            )
+            text = json.dumps(payload, indent=2, sort_keys=True)
+            if args.out is not None:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(text + "\n", encoding="utf-8")
+            else:
+                print(text)
+            return 1
+
     payload, exit_code = build_batch_payload(
         cities=args.cities,
         target=target,
@@ -250,6 +408,8 @@ def main(argv: list[str] | None = None) -> int:
         threshold_residuals_path=threshold_residuals_path,
         threshold_recalibration_table_path=threshold_recalibration_table_path,
         threshold_offsets=offsets,
+        model_gate=gate_payload,
+        generated_at=created_at,
     )
     text = json.dumps(payload, indent=2, sort_keys=True)
     if args.out is not None:

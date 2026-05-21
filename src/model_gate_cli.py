@@ -18,6 +18,16 @@ class GateCheck:
     detail: str
 
 
+DEFAULT_MAX_TEST_MAE = 1.05
+DEFAULT_MIN_INTERVAL_COVERAGE = 0.80
+DEFAULT_MAX_INTERVAL_WIDTH = 3.8
+DEFAULT_MAX_RECALIBRATED_BRIER = 0.058
+DEFAULT_MAX_RECALIBRATED_ECE = 0.012
+DEFAULT_MIN_BRIER_IMPROVEMENT = 0.002
+DEFAULT_MIN_ECE_IMPROVEMENT = 0.010
+DEFAULT_EXPECTED_SOURCE = "gfs_ens"
+
+
 def _read_csv(path: Path) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         raise ValueError(f"missing artifact: {path}")
@@ -179,14 +189,24 @@ def main(argv: list[str] | None = None) -> int:
         description="Fail if selected model artifacts miss research-readiness thresholds.",
     )
     parser.add_argument("--run-dir", required=True, type=Path)
-    parser.add_argument("--max-test-mae", default=1.05, type=float)
-    parser.add_argument("--min-interval-coverage", default=0.80, type=float)
-    parser.add_argument("--max-interval-width", default=3.8, type=float)
-    parser.add_argument("--max-recalibrated-brier", default=0.058, type=float)
-    parser.add_argument("--max-recalibrated-ece", default=0.012, type=float)
-    parser.add_argument("--min-brier-improvement", default=0.002, type=float)
-    parser.add_argument("--min-ece-improvement", default=0.010, type=float)
-    parser.add_argument("--expected-source", default="gfs_ens")
+    parser.add_argument("--max-test-mae", default=DEFAULT_MAX_TEST_MAE, type=float)
+    parser.add_argument(
+        "--min-interval-coverage", default=DEFAULT_MIN_INTERVAL_COVERAGE, type=float
+    )
+    parser.add_argument("--max-interval-width", default=DEFAULT_MAX_INTERVAL_WIDTH, type=float)
+    parser.add_argument(
+        "--max-recalibrated-brier", default=DEFAULT_MAX_RECALIBRATED_BRIER, type=float
+    )
+    parser.add_argument(
+        "--max-recalibrated-ece", default=DEFAULT_MAX_RECALIBRATED_ECE, type=float
+    )
+    parser.add_argument(
+        "--min-brier-improvement", default=DEFAULT_MIN_BRIER_IMPROVEMENT, type=float
+    )
+    parser.add_argument(
+        "--min-ece-improvement", default=DEFAULT_MIN_ECE_IMPROVEMENT, type=float
+    )
+    parser.add_argument("--expected-source", default=DEFAULT_EXPECTED_SOURCE)
     args = parser.parse_args(argv)
 
     try:

@@ -46,7 +46,7 @@ Use recommended Open-Meteo sources and trained model artifacts in live predictio
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run>
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --json
-python -m src.predict_batch_cli --cities denver,boston,nyc --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --out data\runs\<run>\latest_predictions.json
+python -m src.predict_batch_cli --cities denver,boston,nyc --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --require-gate --out data\runs\<run>\latest_predictions.json
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -68,7 +68,9 @@ threshold-probability fields. Use `src.predict_batch_cli` for multi-city JSON
 payloads; it continues after individual city failures and records them in the
 `errors` array. JSON outputs include `schema_version`, `generated_at`, and
 `artifact_paths` so downstream tools can verify which model artifacts produced
-the numbers.
+the numbers. Add `--require-gate` to batch prediction when the payload will feed
+a dashboard or review script; it emits zero predictions and exits nonzero unless
+the model run passes `src.model_gate_cli`.
 
 Collect one city/date range into backtest rows:
 
