@@ -100,10 +100,12 @@ def test_apply_prediction_artifacts_warns_on_missing_source(tmp_path) -> None:
 
 def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
     run_dir = tmp_path / "run"
+    recommended_sources = run_dir / "source_selection" / "recommended_sources.csv"
     selected_sources = run_dir / "source_selection" / "selected_sources.csv"
     bias_table = run_dir / "train_eval" / "bias_table.csv"
-    selected_sources.parent.mkdir(parents=True)
+    recommended_sources.parent.mkdir(parents=True)
     bias_table.parent.mkdir(parents=True)
+    recommended_sources.write_text("city,selected_source\n", encoding="utf-8")
     selected_sources.write_text("city,selected_source\n", encoding="utf-8")
     bias_table.write_text("city,source,bias_correction_f\n", encoding="utf-8")
 
@@ -114,7 +116,23 @@ def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
         interval_table=None,
     )
 
-    assert resolved == (selected_sources, bias_table, None)
+    assert resolved == (recommended_sources, bias_table, None)
+
+
+def test_resolve_model_artifacts_falls_back_to_selected_sources(tmp_path) -> None:
+    run_dir = tmp_path / "run"
+    selected_sources = run_dir / "source_selection" / "selected_sources.csv"
+    selected_sources.parent.mkdir(parents=True)
+    selected_sources.write_text("city,selected_source\n", encoding="utf-8")
+
+    resolved = predict._resolve_model_artifacts(
+        model_run_dir=run_dir,
+        selected_sources=None,
+        bias_table=None,
+        interval_table=None,
+    )
+
+    assert resolved == (selected_sources, None, None)
 
 
 def test_resolve_model_artifacts_allows_explicit_overrides(tmp_path) -> None:
@@ -236,12 +254,18 @@ def test_predict_cli_applies_model_artifacts(monkeypatch, tmp_path, capsys) -> N
 
 def test_predict_cli_uses_model_run_dir(monkeypatch, tmp_path, capsys) -> None:
     run_dir = tmp_path / "run"
+    recommended_sources = run_dir / "source_selection" / "recommended_sources.csv"
     selected_sources = run_dir / "source_selection" / "selected_sources.csv"
     bias_table = run_dir / "train_eval" / "bias_table.csv"
     interval_table = run_dir / "train_eval" / "interval_table.csv"
-    selected_sources.parent.mkdir(parents=True)
+    recommended_sources.parent.mkdir(parents=True)
     bias_table.parent.mkdir(parents=True)
-    selected_sources.write_text("city,selected_source\ndenver,gfs_ens\n", encoding="utf-8")
+    recommended_sources.write_text(
+        "city,selected_source\ndenver,gfs_ens\n", encoding="utf-8"
+    )
+    selected_sources.write_text(
+        "city,selected_source\ndenver,openmeteo_naive\n", encoding="utf-8"
+    )
     bias_table.write_text(
         "city,source,n,mean_error_f,bias_correction_f\n"
         "denver,gfs_ens,10,-2.0,2.0\n",
