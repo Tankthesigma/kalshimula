@@ -100,6 +100,9 @@ python -m src.historical_runner_cli \
   --cities nyc,chicago,miami,austin,la,denver,boston,philadelphia,houston,phoenix \
   --out-dir data/runs/may2025_apr2026_10city_365day_ncei_clean \
   --cache .cache/weather_ncei_clean_20260521 \
+  --alpha 0.13 \
+  --bias-strategy recent \
+  --bias-recent-days 180 \
   --workers 1 \
   --chunk-days 30
 ```
@@ -113,6 +116,24 @@ leaving old NCEI/POWER envelopes behind.
 If Open-Meteo returns 429 (daily quota), the runner stops cleanly -- wait
 for the UTC midnight quota reset, then rerun the same command. The
 existing `out-dir` picks up where it left off.
+
+For the two-year model baseline, use the same train/eval settings with the
+two-year date window:
+
+```bash
+python -m src.historical_runner_cli \
+  --start 2024-05-01 \
+  --end 2026-04-30 \
+  --test-start 2026-02-01 \
+  --cities nyc,chicago,miami,austin,la,denver,boston,philadelphia,houston,phoenix \
+  --out-dir data/runs/may2024_apr2026_10city_730day_ncei_clean \
+  --cache .cache/weather_2yr_ncei_clean_20260521 \
+  --alpha 0.13 \
+  --bias-strategy recent \
+  --bias-recent-days 180 \
+  --workers 1 \
+  --chunk-days 30
+```
 
 ## Bridge health
 

@@ -14,6 +14,8 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
         out_dir,
         cache_root,
         alpha,
+        bias_strategy,
+        bias_recent_days,
         progress,
         workers,
         chunk_days,
@@ -24,7 +26,9 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
         assert test_start == date(2025, 1, 3)
         assert out_dir == tmp_path / "run"
         assert cache_root == tmp_path / "cache"
-        assert alpha == 0.2
+        assert alpha == 0.13
+        assert bias_strategy == "recent"
+        assert bias_recent_days == 180
         assert progress is print
         assert workers == 3
         assert chunk_days == 5
@@ -58,6 +62,12 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
             str(tmp_path / "run"),
             "--cache",
             str(tmp_path / "cache"),
+            "--alpha",
+            "0.13",
+            "--bias-strategy",
+            "recent",
+            "--bias-recent-days",
+            "180",
             "--workers",
             "3",
             "--chunk-days",

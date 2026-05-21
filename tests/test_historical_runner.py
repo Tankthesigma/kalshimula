@@ -87,6 +87,41 @@ def test_run_historical_pipeline_writes_artifacts_incrementally(
     assert (result.train_eval_dir / "evaluation.csv").exists()
 
 
+def test_run_historical_pipeline_passes_bias_options_to_train_eval(
+    monkeypatch, tmp_path
+) -> None:
+    captured = {}
+
+    def fake_collect_backtest_rows(*, city, start, end, cache_root):
+        return _collection(city, start)
+
+    def fake_write_train_eval_outputs(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        historical_runner, "collect_backtest_rows", fake_collect_backtest_rows
+    )
+    monkeypatch.setattr(
+        historical_runner, "write_train_eval_outputs", fake_write_train_eval_outputs
+    )
+
+    run_historical_pipeline(
+        cities=["denver"],
+        start=date(2025, 1, 1),
+        end=date(2025, 1, 3),
+        test_start=date(2025, 1, 3),
+        out_dir=tmp_path / "run",
+        cache_root=tmp_path / "cache",
+        alpha=0.13,
+        bias_strategy="recent",
+        bias_recent_days=180,
+    )
+
+    assert captured["alpha"] == pytest.approx(0.13)
+    assert captured["bias_strategy"] == "recent"
+    assert captured["bias_recent_days"] == 180
+
+
 def test_run_historical_pipeline_skips_existing_rows_on_rerun(
     monkeypatch, tmp_path
 ) -> None:
