@@ -28,6 +28,12 @@ SUMMARY_COLUMNS = [
     "interval_coverage_raw",
     "interval_width_raw",
 ]
+POLICY_COMPARISON_COLUMNS = [
+    "policy",
+    "selected_source",
+    "validation_mae",
+    *SUMMARY_COLUMNS,
+]
 
 
 @dataclass(frozen=True)
@@ -37,6 +43,7 @@ class SourceSelectionResult:
     selected_sources: pd.DataFrame
     selected_evaluation: pd.DataFrame
     summary: pd.DataFrame
+    policy_comparison: pd.DataFrame
 
 
 def select_sources_by_validation(
@@ -132,6 +139,37 @@ def summarize_selected_sources(selected_evaluation: pd.DataFrame) -> pd.DataFram
     return pd.DataFrame([row], columns=SUMMARY_COLUMNS)
 
 
+def compare_source_policies(
+    *,
+    validation_scores: pd.DataFrame,
+    evaluation: pd.DataFrame,
+    selected_sources: pd.DataFrame,
+    selected_summary: pd.DataFrame,
+) -> pd.DataFrame:
+    """Compare per-city selected sources against the best global source.
+
+    The global policy is selected from validation only: for each source/city,
+    use the best validation MAE across bias methods, then average across cities.
+    Held-out test metrics are joined from ``evaluation`` afterward.
+    """
+    if selected_summary.empty:
+        return pd.DataFrame(columns=POLICY_COMPARISON_COLUMNS)
+
+    rows = [
+        {
+            "policy": "per_city_validation",
+            "selected_source": "per_city",
+            "validation_mae": _mean_or_na(selected_sources["source_validation_mae"]),
+            **selected_summary.iloc[0].to_dict(),
+        }
+    ]
+
+    global_row = _best_global_source_policy(validation_scores, evaluation)
+    if global_row is not None:
+        rows.append(global_row)
+    return pd.DataFrame(rows, columns=POLICY_COMPARISON_COLUMNS)
+
+
 def write_source_selection_outputs(
     *, validation_scores_path: Path, evaluation_path: Path, output_dir: Path
 ) -> SourceSelectionResult:
@@ -141,6 +179,12 @@ def write_source_selection_outputs(
     selected_sources = select_sources_by_validation(validation_scores)
     selected_evaluation = evaluate_selected_sources(evaluation, selected_sources)
     summary = summarize_selected_sources(selected_evaluation)
+    policy_comparison = compare_source_policies(
+        validation_scores=validation_scores,
+        evaluation=evaluation,
+        selected_sources=selected_sources,
+        selected_summary=summary,
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     selected_sources.to_csv(output_dir / "selected_sources.csv", index=False)
@@ -148,10 +192,12 @@ def write_source_selection_outputs(
         output_dir / "selected_source_evaluation.csv", index=False
     )
     summary.to_csv(output_dir / "selected_source_summary.csv", index=False)
+    policy_comparison.to_csv(output_dir / "source_policy_comparison.csv", index=False)
     return SourceSelectionResult(
         selected_sources=selected_sources,
         selected_evaluation=selected_evaluation,
         summary=summary,
+        policy_comparison=policy_comparison,
     )
 
 
@@ -160,3 +206,58 @@ def _fallback_source_row(group: pd.DataFrame, *, fallback_source: str) -> pd.Ser
     if not fallback_rows.empty:
         return fallback_rows.sort_values(["source", "method"]).iloc[0]
     return group.sort_values(["source", "method"]).iloc[0]
+
+
+def _best_global_source_policy(
+    validation_scores: pd.DataFrame, evaluation: pd.DataFrame
+) -> dict | None:
+    required_validation = {"city", "source", "validation_mae"}
+    required_evaluation = {"city", "source"}
+    if required_validation - set(validation_scores.columns):
+        return None
+    if required_evaluation - set(evaluation.columns):
+        return None
+
+    valid = validation_scores[validation_scores["validation_mae"].notna()].copy()
+    if valid.empty:
+        return None
+
+    city_source = (
+        valid.groupby(["city", "source"], sort=True)["validation_mae"]
+        .min()
+        .reset_index()
+    )
+    source_scores = (
+        city_source.groupby("source", sort=True)["validation_mae"]
+        .mean()
+        .reset_index()
+        .sort_values(["validation_mae", "source"])
+    )
+    winner = source_scores.iloc[0]
+    source = str(winner["source"])
+    source_evaluation = evaluation[evaluation["source"].astype(str) == source]
+    summary = _summarize_evaluation(source_evaluation)
+    return {
+        "policy": "best_global_validation_source",
+        "selected_source": source,
+        "validation_mae": float(winner["validation_mae"]),
+        **summary,
+    }
+
+
+def _summarize_evaluation(evaluation: pd.DataFrame) -> dict:
+    row = {"n_cities": int(evaluation["city"].nunique()) if "city" in evaluation else 0}
+    for column in SUMMARY_COLUMNS[1:]:
+        row[column] = (
+            float(evaluation[column].mean())
+            if column in evaluation.columns and not evaluation.empty
+            else pd.NA
+        )
+    return row
+
+
+def _mean_or_na(values: pd.Series) -> object:
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric.empty:
+        return pd.NA
+    return float(numeric.mean())
