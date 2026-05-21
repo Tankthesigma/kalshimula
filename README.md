@@ -49,6 +49,8 @@ python -m src.collect_cli --city denver --start 2025-01-01 --end 2025-01-07 --ou
 Use `--openmeteo-mode both` on historical runs when you want individual
 Open-Meteo source rows (`gfs_ens`, `ecmwf_ens`, `icon_ens`, `gem_ens`,
 `aifs`, `graphcast`, `hrrr`) alongside the pooled `openmeteo_naive` baseline.
+Some models do not return every historical date; unavailable source/date pairs
+are cached as missing and omitted from the backtest rows.
 
 Summarize collected rows:
 

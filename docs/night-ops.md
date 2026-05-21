@@ -156,6 +156,10 @@ python -m src.historical_runner_cli \
   --chunk-days 30
 ```
 
+Some Open-Meteo models do not return every historical date. Missing
+source/date pairs are cached as missing and omitted from `rows.csv`; use
+`summary.csv` to see which sources were actually available.
+
 ## Bridge health
 
 The Discord bridge runs in a WSL tmux session (`bridge`) and forwards

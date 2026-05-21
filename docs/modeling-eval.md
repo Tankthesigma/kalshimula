@@ -237,9 +237,9 @@ below target, so a later per-city interval calibration pass is still warranted.
   averaged into a single point). New historical runs can use
   `--openmeteo-mode both` to include individual Open-Meteo source rows
   (`gfs_ens`, `ecmwf_ens`, `icon_ens`, `gem_ens`, `aifs`, `graphcast`,
-  `hrrr`) alongside the pooled baseline. The next modeling step is to rerun
-  the two-year evaluation with that mode and compare source-specific residuals
-  by city/month.
+  `hrrr`) alongside the pooled baseline when those upstream model/date pairs
+  are available. The next modeling step is to rerun the two-year evaluation
+  with that mode and compare source-specific residuals by city/month.
 - **Pooled-by-city-source intervals.** Same alpha quantile width whether
   Tuesday in July or Sunday in January. A smaller global alpha reaches the
   overall 80% target, but NYC/Boston/Philadelphia still under-cover. A
