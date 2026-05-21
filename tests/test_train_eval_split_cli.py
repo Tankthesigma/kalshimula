@@ -1,4 +1,4 @@
-﻿import pandas as pd
+import pandas as pd
 
 from src.train_eval_split_cli import main
 
@@ -28,3 +28,33 @@ def test_train_eval_split_cli_writes_outputs(tmp_path, capsys) -> None:
     assert code == 0
     assert (output_dir / "evaluation.csv").exists()
     assert "2 train rows, 1 test rows" in capsys.readouterr().out
+
+
+def test_train_eval_split_cli_supports_month_stratified_split(tmp_path, capsys) -> None:
+    input_path = tmp_path / "rows.csv"
+    output_dir = tmp_path / "eval"
+    pd.DataFrame(
+        [
+            {"city": "denver", "target_date": "2025-01-01", "source": "openmeteo", "point_f": 70, "actual_high_f": 68},
+            {"city": "denver", "target_date": "2025-01-02", "source": "openmeteo", "point_f": 72, "actual_high_f": 70},
+            {"city": "denver", "target_date": "2025-02-01", "source": "openmeteo", "point_f": 40, "actual_high_f": 43},
+            {"city": "denver", "target_date": "2025-02-02", "source": "openmeteo", "point_f": 42, "actual_high_f": 45},
+        ]
+    ).to_csv(input_path, index=False)
+
+    code = main(
+        [
+            "--input",
+            str(input_path),
+            "--split-strategy",
+            "month-stratified",
+            "--test-fraction",
+            "0.5",
+            "--out-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert code == 0
+    assert (output_dir / "evaluation.csv").exists()
+    assert "2 train rows, 2 test rows" in capsys.readouterr().out
