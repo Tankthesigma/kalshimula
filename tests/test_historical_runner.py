@@ -123,6 +123,105 @@ def test_run_historical_pipeline_passes_bias_options_to_train_eval(
     assert captured["bias_recent_days"] == 180
 
 
+def test_run_historical_pipeline_writes_source_selection_when_validation_enabled(
+    monkeypatch, tmp_path
+) -> None:
+    captured = {}
+
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
+        return _collection(city, start)
+
+    def fake_write_train_eval_outputs(**kwargs):
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True)
+        pd.DataFrame(
+            [
+                {
+                    "city": "denver",
+                    "source": "openmeteo_naive",
+                    "method": "recent_180d",
+                    "validation_mae": 0.8,
+                }
+            ]
+        ).to_csv(output_dir / "validation_scores.csv", index=False)
+        pd.DataFrame(
+            [
+                {
+                    "city": "denver",
+                    "source": "openmeteo_naive",
+                    "mae_raw": 1.0,
+                    "mae_corrected": 0.7,
+                    "interval_coverage_raw": 0.8,
+                    "interval_width_raw": 3.0,
+                }
+            ]
+        ).to_csv(output_dir / "evaluation.csv", index=False)
+
+    def fake_write_source_selection_outputs(**kwargs):
+        captured.update(kwargs)
+        kwargs["output_dir"].mkdir(parents=True)
+
+    monkeypatch.setattr(
+        historical_runner, "collect_backtest_rows", fake_collect_backtest_rows
+    )
+    monkeypatch.setattr(
+        historical_runner, "write_train_eval_outputs", fake_write_train_eval_outputs
+    )
+    monkeypatch.setattr(
+        historical_runner,
+        "write_source_selection_outputs",
+        fake_write_source_selection_outputs,
+    )
+
+    result = run_historical_pipeline(
+        cities=["denver"],
+        start=date(2025, 1, 1),
+        end=date(2025, 1, 3),
+        test_start=date(2025, 1, 3),
+        validation_start=date(2025, 1, 2),
+        out_dir=tmp_path / "run",
+        cache_root=tmp_path / "cache",
+    )
+
+    assert captured["validation_scores_path"] == (
+        result.train_eval_dir / "validation_scores.csv"
+    )
+    assert captured["evaluation_path"] == result.train_eval_dir / "evaluation.csv"
+    assert captured["output_dir"] == result.source_selection_dir
+
+
+def test_run_historical_pipeline_skips_source_selection_without_validation(
+    monkeypatch, tmp_path
+) -> None:
+    calls = []
+
+    def fake_collect_backtest_rows(*, city, start, end, cache_root, openmeteo_mode):
+        return _collection(city, start)
+
+    def fake_write_source_selection_outputs(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(
+        historical_runner, "collect_backtest_rows", fake_collect_backtest_rows
+    )
+    monkeypatch.setattr(
+        historical_runner,
+        "write_source_selection_outputs",
+        fake_write_source_selection_outputs,
+    )
+
+    run_historical_pipeline(
+        cities=["denver"],
+        start=date(2025, 1, 1),
+        end=date(2025, 1, 3),
+        test_start=date(2025, 1, 3),
+        out_dir=tmp_path / "run",
+        cache_root=tmp_path / "cache",
+    )
+
+    assert calls == []
+
+
 def test_run_historical_pipeline_passes_openmeteo_mode_to_collect(
     monkeypatch, tmp_path
 ) -> None:
