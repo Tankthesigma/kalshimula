@@ -164,8 +164,8 @@ python -m src.historical_runner_cli \
   --end 2026-04-30 \
   --test-start 2026-02-01 \
   --cities nyc,chicago,miami,austin,la,denver,boston,philadelphia,houston,phoenix \
-  --out-dir data/runs/may2024_apr2026_10city_730day_openmeteo_sources \
-  --cache .cache/weather_2yr_openmeteo_sources_20260521 \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr \
+  --cache .cache/weather_2yr_ncei_clean_20260521 \
   --alpha 0.13 \
   --bias-strategy recent \
   --bias-recent-days 180 \
@@ -177,6 +177,26 @@ python -m src.historical_runner_cli \
 Some Open-Meteo models do not return every historical date. Missing
 source/date pairs are cached as missing and omitted from `rows.csv`; use
 `summary.csv` to see which sources were actually available.
+
+After a completed source-breakout run, refresh the recommended live source
+policy:
+
+```bash
+python -m src.source_selection_cli \
+  --validation-scores data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/train_eval/validation_scores.csv \
+  --evaluation data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/train_eval/evaluation.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_selection
+```
+
+Live prediction should then point at the completed model run. The predictor
+uses `source_selection/recommended_sources.csv` when it exists:
+
+```bash
+python -m src.predict \
+  --city denver \
+  --date tomorrow \
+  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
+```
 
 ## Bridge health
 
