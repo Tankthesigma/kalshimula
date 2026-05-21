@@ -77,7 +77,8 @@ Use `src.prediction_review_cli` to turn the batch JSON into a compact human
 review table with gate status, corrected points, intervals, and threshold
 probabilities.
 Use `src.daily_model_refresh_cli` for the normal morning refresh: it writes the
-gated all-city batch JSON and the text review report in one command.
+gated all-city batch JSON, text prediction review, model gate report, and model
+policy summary in one command.
 
 Collect one city/date range into backtest rows:
 

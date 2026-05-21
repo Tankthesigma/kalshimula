@@ -262,9 +262,16 @@ python -m src.daily_model_refresh_cli \
   --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
 ```
 
-That is the normal daily check. It writes `latest_predictions.json` and
-`latest_predictions.txt` under the run directory, requires the model gate by
-default, and exits nonzero when the gate or any city prediction fails.
+That is the normal daily check. It writes the morning model packet under the run
+directory:
+
+- `latest_predictions.json`
+- `latest_predictions.txt`
+- `latest_predictions_gate.txt`
+- `latest_predictions_model_policy.txt`
+
+The command requires the model gate by default and exits nonzero when the gate
+or any city prediction fails.
 
 For a one-off city check, use the lower-level predictor:
 
