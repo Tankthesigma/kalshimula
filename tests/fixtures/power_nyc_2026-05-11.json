@@ -1,0 +1,50 @@
+{
+  "captured_for_slug": "nyc",
+  "captured_for_station": "KNYC",
+  "captured_target_date": "2026-05-11",
+  "expected_high_f": 59.918,
+  "payload": {
+    "geometry": {
+      "coordinates": [
+        -73.969,
+        40.779,
+        75.84
+      ],
+      "type": "Point"
+    },
+    "header": {
+      "api": {
+        "name": "POWER Daily API",
+        "version": "v2.9.2"
+      },
+      "end": "20260511",
+      "fill_value": -999.0,
+      "sources": [
+        "GEOSIT",
+        "POWER"
+      ],
+      "start": "20260511",
+      "time_standard": "LST",
+      "title": "NASA/POWER Source Native Resolution Daily Data"
+    },
+    "messages": [],
+    "parameters": {
+      "T2M_MAX": {
+        "longname": "Temperature at 2 Meters Maximum",
+        "units": "C"
+      }
+    },
+    "properties": {
+      "parameter": {
+        "T2M_MAX": {
+          "20260511": 15.51
+        }
+      }
+    },
+    "times": {
+      "data": 0.129,
+      "process": 0.01
+    },
+    "type": "Feature"
+  }
+}
