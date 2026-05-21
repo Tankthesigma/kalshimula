@@ -420,6 +420,10 @@ and threshold offsets. It writes one JSON object with `predictions` and
 `errors`, so downstream tools can continue when a single city/source is missing.
 Both single and batch JSON include `schema_version`, `generated_at`, and
 `artifact_paths` for downstream compatibility checks.
+For dashboard or review automation, add `--require-gate` to batch prediction.
+That runs the default `src.model_gate_cli` checks before any forecast fetches;
+if the run fails the gate, the JSON contains no predictions, one
+`__model_gate__` error, and the failed checks in `model_gate`.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

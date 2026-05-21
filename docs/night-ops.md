@@ -270,6 +270,9 @@ structured fields instead of the text report.
 For a multi-city refresh, use `src.predict_batch_cli` with `--out`; inspect the
 top-level `errors` array before treating the payload as complete. JSON payloads
 include `schema_version`, `generated_at`, and `artifact_paths` for traceability.
+Use `--require-gate` for dashboard or review refreshes so a stale or degraded
+model run emits zero predictions unless the saved artifacts pass the readiness
+gate.
 
 ## Bridge health
 
