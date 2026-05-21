@@ -89,7 +89,7 @@ def test_train_eval_split_fits_on_train_and_evaluates_test() -> None:
     assert len(result.source_residuals) == 1
     assert len(result.monthly_residuals) == 1
     assert len(result.evaluation) == 1
-    assert result.evaluation.iloc[0]["selected_bias_method"] == "seasonal"
+    assert result.evaluation.iloc[0]["selected_bias_method"] == "prior_same_month"
 
 
 def test_train_eval_split_supports_month_stratified_strategy() -> None:
@@ -175,13 +175,13 @@ def test_train_eval_split_selects_bias_method_per_city_from_validation() -> None
     assert set(nyc_scores["method"]) == {
         "recent_180d",
         "prior_same_month",
-        "recent_global",
-        "all_global",
+        "recent_365d",
+        "all_train",
     }
     assert nyc["selected_bias_method"] == "prior_same_month"
     assert nyc["selected_validation_mae"] == pytest.approx(0)
     assert austin["selected_bias_method"] == "recent_180d"
-    assert miami["selected_bias_method"] == "seasonal"
+    assert miami["selected_bias_method"] == "prior_same_month"
     assert miami["selection_fallback"]
     assert "selected_bias_method" in result.corrected_test_rows.columns
     assert "selected_validation_mae" in result.evaluation.columns
@@ -199,6 +199,15 @@ def test_train_eval_split_rejects_invalid_recent_bias_window() -> None:
             test_start="2025-01-03",
             bias_strategy="recent",
             bias_recent_days=0,
+        )
+
+
+def test_train_eval_split_rejects_empty_validation_slice() -> None:
+    with pytest.raises(ValueError, match="validation slice is empty"):
+        train_eval_split(
+            _rows(),
+            test_start="2025-01-03",
+            validation_start="2025-01-03",
         )
 
 

@@ -17,10 +17,10 @@ from src.models.intervals import apply_empirical_intervals, fit_empirical_interv
 PER_CITY_BIAS_METHODS = (
     "recent_180d",
     "prior_same_month",
-    "recent_global",
-    "all_global",
+    "recent_365d",
+    "all_train",
 )
-DEFAULT_SELECTION_FALLBACK = "seasonal"
+DEFAULT_SELECTION_FALLBACK = "prior_same_month"
 VALIDATION_SCORE_COLUMNS = [
     "city",
     "source",
@@ -122,7 +122,14 @@ def train_eval_split(
     candidate_methods: tuple[str, ...] = PER_CITY_BIAS_METHODS,
     fallback_method: str = DEFAULT_SELECTION_FALLBACK,
 ) -> TrainEvalResult:
-    """Fit bias/intervals on train rows and evaluate corrected forecasts on test rows."""
+    """Fit bias/intervals on train rows and evaluate corrected forecasts on test rows.
+
+    When validation_start is set, validation rows are held out for method
+    selection only. Final bias and interval tables are fit on the full pre-test
+    train slice, so no test row sees its own residual. Without validation_start,
+    behavior matches the legacy bias_strategy path, whose default seasonal
+    strategy is equivalent to prior_same_month plus fallback rows.
+    """
     normalized_strategy = split_strategy.replace("-", "_")
     if normalized_strategy == "date":
         if test_start is None:
@@ -153,6 +160,8 @@ def train_eval_split(
         train, validation = split_rows_by_date(train, test_start=validation_start)
         if train.empty:
             raise ValueError("train-validation fit split is empty")
+        if validation.empty:
+            raise ValueError("validation slice is empty; check validation_start vs train.max()")
         validation_scores = _score_candidate_methods(
             train_rows=train,
             validation_rows=validation,
@@ -245,12 +254,12 @@ def _fit_bias_for_strategy(
     if normalized_strategy in {"recent_180d", "recent_180"}:
         recent = _recent_train_rows(train, bias_recent_days=180)
         return fit_bias_table(recent)
-    if normalized_strategy in {"recent_global", "recent_365d", "recent_365"}:
+    if normalized_strategy in {"recent_365d", "recent_365", "recent_global"}:
         recent = _recent_train_rows(train, bias_recent_days=365)
         return fit_bias_table(recent)
-    if normalized_strategy in {"prior_same_month", "monthly"}:
+    if normalized_strategy in {"prior_same_month", "monthly", "seasonal"}:
         return fit_bias_table(train, group_month=True)
-    if normalized_strategy == "all_global":
+    if normalized_strategy in {"all_train", "all_global", "global"}:
         return fit_bias_table(train)
     raise ValueError(f"unknown bias_strategy: {bias_strategy}")
 
@@ -344,6 +353,8 @@ def _select_methods(
 def _fit_method_tables(
     train: pd.DataFrame, methods: tuple[str, ...]
 ) -> dict[str, pd.DataFrame]:
+    # Candidate methods use concrete recent_<N>d labels; bare "recent" still
+    # requires bias_recent_days through the legacy single-strategy path.
     return {
         method: _fit_bias_for_strategy(
             train,
@@ -385,6 +396,10 @@ def _default_selected_methods(
     method = bias_strategy.replace("-", "_")
     if method == "recent" and bias_recent_days is not None:
         method = f"recent_{bias_recent_days}d"
+    elif method == "seasonal":
+        method = "prior_same_month"
+    elif method == "global":
+        method = "all_train"
     pairs = test[["city", "source"]].drop_duplicates().sort_values(["city", "source"])
     selected = pairs.copy()
     selected["selected_bias_method"] = method
