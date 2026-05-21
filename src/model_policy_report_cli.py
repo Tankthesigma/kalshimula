@@ -108,7 +108,11 @@ def _interval_policy_lines(comparison: pd.DataFrame) -> list[str]:
     ]
 
 
-def _threshold_lines(summary: pd.DataFrame, test_group_summary: pd.DataFrame) -> list[str]:
+def _threshold_lines(
+    summary: pd.DataFrame,
+    test_group_summary: pd.DataFrame,
+    test_group_calibration: pd.DataFrame,
+) -> list[str]:
     if summary.empty:
         return ["Threshold probabilities: missing probability_calibration/threshold_calibration_summary.csv"]
     required = {"split", "n_events", "brier_score", "expected_calibration_error"}
@@ -137,6 +141,31 @@ def _threshold_lines(summary: pd.DataFrame, test_group_summary: pd.DataFrame) ->
             f"brier={_fmt_number(worst.get('brier_score'))}, "
             f"ece={_fmt_number(worst.get('expected_calibration_error'))}, "
             f"events={int(worst.get('n_events', 0)):,}"
+        )
+    required_bucket = {
+        "city",
+        "source",
+        "bucket_start",
+        "bucket_end",
+        "n",
+        "calibration_gap",
+    }
+    if not test_group_calibration.empty and required_bucket.issubset(test_group_calibration.columns):
+        buckets = test_group_calibration.assign(
+            abs_gap=test_group_calibration["calibration_gap"].astype(float).abs()
+        )
+        worst_bucket = buckets.sort_values(
+            ["abs_gap", "n"],
+            ascending=[False, False],
+            na_position="last",
+        ).iloc[0]
+        lines.append(
+            "  worst test bucket: "
+            f"{worst_bucket.get('city', 'n/a')}/{worst_bucket.get('source', 'n/a')} "
+            f"{_fmt_percent(worst_bucket.get('bucket_start'))}-"
+            f"{_fmt_percent(worst_bucket.get('bucket_end'))} "
+            f"gap={_fmt_number(worst_bucket.get('calibration_gap'))}, "
+            f"events={int(worst_bucket.get('n', 0)):,}"
         )
     return lines
 
@@ -171,6 +200,9 @@ def build_model_policy_report(run_dir: Path) -> str:
     threshold_test_group_summary = _read_csv_if_exists(
         run_dir / "probability_calibration" / "threshold_test_group_summary.csv"
     )
+    threshold_test_group_calibration = _read_csv_if_exists(
+        run_dir / "probability_calibration" / "threshold_test_group_calibration.csv"
+    )
 
     lines = [f"Run: {run_dir}"]
     lines.extend(_data_lines(rows))
@@ -178,7 +210,13 @@ def build_model_policy_report(run_dir: Path) -> str:
     lines.extend(_model_policy_lines(model_policy))
     lines.extend(_bias_policy_lines(bias_comparison))
     lines.extend(_interval_policy_lines(interval_comparison))
-    lines.extend(_threshold_lines(threshold_summary, threshold_test_group_summary))
+    lines.extend(
+        _threshold_lines(
+            threshold_summary,
+            threshold_test_group_summary,
+            threshold_test_group_calibration,
+        )
+    )
     return "\n".join(lines)
 
 
