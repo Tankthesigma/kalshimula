@@ -78,7 +78,8 @@ review table with gate status, corrected points, intervals, and threshold
 probabilities.
 Use `src.daily_model_refresh_cli` for the normal morning refresh: it writes the
 gated all-city batch JSON, text prediction review, model gate report, and model
-policy summary in one command.
+policy summary in one command, plus a manifest JSON that indexes the packet
+paths and exit codes.
 
 Collect one city/date range into backtest rows:
 

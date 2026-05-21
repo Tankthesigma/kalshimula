@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
-from src import model_gate_cli, model_policy_report_cli, predict_batch_cli, prediction_review_cli
+from src import (
+    model_gate_cli,
+    model_policy_report_cli,
+    predict_batch_cli,
+    prediction_review_cli,
+)
 from src.config import load_stations
 
 
@@ -17,6 +24,7 @@ class RefreshPaths:
     review_out: Path
     gate_out: Path
     policy_out: Path
+    manifest_out: Path
 
 
 def build_refresh_paths(
@@ -32,6 +40,7 @@ def build_refresh_paths(
         review_out=directory / f"{prefix}.txt",
         gate_out=directory / f"{prefix}_gate.txt",
         policy_out=directory / f"{prefix}_model_policy.txt",
+        manifest_out=directory / f"{prefix}_manifest.json",
     )
 
 
@@ -81,6 +90,51 @@ def _write_policy_report(*, run_dir: Path, out_path: Path) -> None:
     report = model_policy_report_cli.build_model_policy_report(run_dir)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(report + "\n", encoding="utf-8")
+
+
+def _write_manifest(
+    *,
+    out_path: Path,
+    model_run_dir: Path,
+    cities: str,
+    target_date: str,
+    threshold_offsets: str,
+    require_gate: bool,
+    paths: RefreshPaths,
+    batch_code: int,
+    review_code: int,
+    gate_code: int,
+) -> int:
+    exit_code = next(
+        (code for code in (batch_code, review_code, gate_code) if code != 0),
+        0,
+    )
+    payload = {
+        "schema_version": "1.0",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "model_run_dir": str(model_run_dir),
+        "cities": cities,
+        "target_date": target_date,
+        "threshold_offsets": threshold_offsets,
+        "require_gate": require_gate,
+        "exit_code": exit_code,
+        "steps": {
+            "batch_predictions": {"exit_code": batch_code},
+            "prediction_review": {"exit_code": review_code},
+            "model_gate_report": {"exit_code": gate_code},
+            "model_policy_report": {"exit_code": 0},
+        },
+        "artifacts": {
+            "prediction_json": str(paths.json_out),
+            "prediction_review": str(paths.review_out),
+            "model_gate_report": str(paths.gate_out),
+            "model_policy_report": str(paths.policy_out),
+            "manifest": str(paths.manifest_out),
+        },
+    }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -134,10 +188,20 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote prediction review: {paths.review_out}")
     print(f"Wrote model gate report: {paths.gate_out}")
     print(f"Wrote model policy report: {paths.policy_out}")
-    for code in (batch_code, review_code, gate_code):
-        if code != 0:
-            return code
-    return 0
+    exit_code = _write_manifest(
+        out_path=paths.manifest_out,
+        model_run_dir=args.model_run_dir,
+        cities=args.cities,
+        target_date=args.date,
+        threshold_offsets=args.threshold_offsets,
+        require_gate=not args.no_require_gate,
+        paths=paths,
+        batch_code=batch_code,
+        review_code=review_code,
+        gate_code=gate_code,
+    )
+    print(f"Wrote packet manifest: {paths.manifest_out}")
+    return exit_code
 
 
 if __name__ == "__main__":

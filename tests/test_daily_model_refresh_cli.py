@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from src import daily_model_refresh_cli
@@ -14,6 +15,7 @@ def test_build_refresh_paths_defaults_to_model_run_dir() -> None:
     assert paths.review_out == Path("run/latest.txt")
     assert paths.gate_out == Path("run/latest_gate.txt")
     assert paths.policy_out == Path("run/latest_model_policy.txt")
+    assert paths.manifest_out == Path("run/latest_manifest.json")
 
 
 def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, capsys) -> None:
@@ -106,6 +108,17 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
     assert "Wrote prediction review" in output
     assert "Wrote model gate report" in output
     assert "Wrote model policy report" in output
+    assert "Wrote packet manifest" in output
+    manifest = json.loads((tmp_path / "out" / "morning_manifest.json").read_text())
+    assert manifest["exit_code"] == 0
+    assert manifest["cities"] == "denver,boston"
+    assert manifest["target_date"] == "2026-04-30"
+    assert manifest["threshold_offsets"] == "-2,0,2"
+    assert manifest["require_gate"] is True
+    assert manifest["steps"]["batch_predictions"]["exit_code"] == 0
+    assert manifest["artifacts"]["model_policy_report"] == str(
+        tmp_path / "out" / "morning_model_policy.txt"
+    )
 
 
 def test_daily_model_refresh_cli_returns_batch_failure_but_still_reviews(
@@ -143,6 +156,10 @@ def test_daily_model_refresh_cli_returns_batch_failure_but_still_reviews(
 
     assert code == 1
     assert calls == ["batch", "review", "gate", "policy"]
+    manifest = json.loads((tmp_path / "run" / "bad_manifest.json").read_text())
+    assert manifest["exit_code"] == 1
+    assert manifest["steps"]["batch_predictions"]["exit_code"] == 1
+    assert manifest["steps"]["prediction_review"]["exit_code"] == 1
 
 
 def test_daily_model_refresh_cli_can_skip_required_gate(monkeypatch, tmp_path) -> None:
@@ -169,6 +186,10 @@ def test_daily_model_refresh_cli_can_skip_required_gate(monkeypatch, tmp_path) -
 
     assert code == 0
     assert "--require-gate" not in captured["argv"]
+    manifest = json.loads(
+        (tmp_path / "run" / "latest_predictions_manifest.json").read_text()
+    )
+    assert manifest["require_gate"] is False
 
 
 def test_write_gate_report_writes_failure_for_missing_artifacts(tmp_path) -> None:
@@ -199,3 +220,31 @@ def test_write_policy_report_writes_model_policy_summary(tmp_path) -> None:
     text = out_path.read_text(encoding="utf-8")
     assert "Data: missing or empty rows.csv" in text
     assert "Model policy: missing model_policy/model_policy.csv" in text
+
+
+def test_write_manifest_uses_first_nonzero_exit_code(tmp_path) -> None:
+    paths = daily_model_refresh_cli.build_refresh_paths(
+        model_run_dir=tmp_path / "run",
+        out_dir=tmp_path / "out",
+        prefix="packet",
+    )
+
+    code = daily_model_refresh_cli._write_manifest(
+        out_path=paths.manifest_out,
+        model_run_dir=tmp_path / "run",
+        cities="denver",
+        target_date="tomorrow",
+        threshold_offsets="-2,0,2",
+        require_gate=True,
+        paths=paths,
+        batch_code=0,
+        review_code=1,
+        gate_code=0,
+    )
+
+    payload = json.loads(paths.manifest_out.read_text(encoding="utf-8"))
+    assert code == 1
+    assert payload["schema_version"] == "1.0"
+    assert payload["exit_code"] == 1
+    assert payload["steps"]["prediction_review"]["exit_code"] == 1
+    assert payload["artifacts"]["manifest"] == str(paths.manifest_out)
