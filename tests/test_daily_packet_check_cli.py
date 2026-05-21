@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from src import daily_packet_check_cli
 
 
-def _artifact_paths() -> dict:
+def _placeholder_artifact_paths() -> dict:
     return {
         "bias_table": "run/model_policy/bias_table.csv",
         "interval_table": "run/model_policy/interval_table.csv",
@@ -17,12 +17,45 @@ def _artifact_paths() -> dict:
     }
 
 
-def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
+def _write_model_artifacts(tmp_path) -> dict:
+    run_dir = tmp_path / "run"
+    paths = {
+        "bias_table": run_dir / "model_policy" / "bias_table.csv",
+        "interval_table": run_dir / "model_policy" / "interval_table.csv",
+        "model_run_dir": run_dir,
+        "selected_sources": run_dir / "source_selection" / "recommended_sources.csv",
+        "threshold_recalibration_table": (
+            run_dir / "probability_calibration" / "threshold_recalibration_table.csv"
+        ),
+        "threshold_residuals": (
+            run_dir / "probability_calibration" / "threshold_residuals.csv"
+        ),
+    }
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for name, path in paths.items():
+        if name == "model_run_dir":
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("header\nvalue\n", encoding="utf-8")
+    return {
+        name: str(path)
+        for name, path in paths.items()
+    }
+
+
+def _prediction_payload(
+    *,
+    artifact_paths=None,
+    gate_passed=True,
+    n_errors=0,
+    n_predictions=1,
+):
     errors = [{"city": "boston", "error": "failed"}] if n_errors else []
+    artifact_paths = artifact_paths or _placeholder_artifact_paths()
     predictions = (
         [
             {
-                "artifact_paths": _artifact_paths(),
+                "artifact_paths": artifact_paths,
                 "city": "denver",
                 "forecast": {"point_f": 70.0},
                 "calibration": {"corrected_point_f": 71.0},
@@ -48,7 +81,7 @@ def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
         "generated_at": "2026-05-21T12:00:00+00:00",
         "target_date": "2026-05-22",
         "model_gate": {"required": True, "passed": gate_passed},
-        "artifact_paths": _artifact_paths(),
+        "artifact_paths": artifact_paths,
         "n_predictions": n_predictions,
         "n_errors": n_errors,
         "predictions": predictions,
@@ -67,17 +100,29 @@ def _write_packet(
 ):
     review_artifact = tmp_path / "latest_predictions.txt"
     prediction_artifact = tmp_path / "latest_predictions.json"
+    artifact_paths = _write_model_artifacts(tmp_path)
+    prediction_payload = prediction_payload or _prediction_payload(
+        artifact_paths=artifact_paths
+    )
+    placeholders = _placeholder_artifact_paths()
+    for name, placeholder in placeholders.items():
+        if prediction_payload.get("artifact_paths", {}).get(name) == placeholder:
+            prediction_payload["artifact_paths"][name] = artifact_paths[name]
+        for prediction in prediction_payload.get("predictions") or []:
+            row_paths = prediction.get("artifact_paths") or {}
+            if row_paths.get(name) == placeholder:
+                row_paths[name] = artifact_paths[name]
     if not missing_artifact:
         review_artifact.write_text("Prediction review\n", encoding="utf-8")
         prediction_artifact.write_text(
-            json.dumps(prediction_payload or _prediction_payload()),
+            json.dumps(prediction_payload),
             encoding="utf-8",
         )
     manifest = tmp_path / "latest_predictions_manifest.json"
     payload = {
         "schema_version": "1.0",
         "generated_at": "2026-05-21T12:00:00+00:00",
-        "model_run_dir": "run",
+        "model_run_dir": artifact_paths["model_run_dir"],
         "cities": "denver",
         "target_date": "tomorrow",
         "threshold_offsets": "-2,0,2",
@@ -306,7 +351,7 @@ def test_daily_packet_check_cli_fails_artifact_path_mismatch(tmp_path, capsys) -
 
     output = capsys.readouterr().out
     assert code == 1
-    assert "FAIL prediction_json:artifact_paths" in output
+    assert "FAIL prediction_json:model_artifact_files" in output
     assert "bias_table" in output
 
 

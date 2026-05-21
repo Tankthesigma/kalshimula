@@ -229,6 +229,38 @@ def _artifact_traceability_check(manifest: dict, prediction_json: dict) -> dict:
     }
 
 
+def _model_artifact_file_check(prediction_json: dict) -> dict:
+    artifact_paths = prediction_json.get("artifact_paths") or {}
+    file_artifacts = {
+        "bias_table",
+        "interval_table",
+        "selected_sources",
+        "threshold_recalibration_table",
+        "threshold_residuals",
+    }
+    problems = []
+    run_dir = artifact_paths.get("model_run_dir")
+    if not run_dir:
+        problems.append("model_run_dir missing")
+    elif not Path(str(run_dir)).is_dir():
+        problems.append(f"model_run_dir missing or not a directory: {run_dir}")
+
+    for name in sorted(file_artifacts):
+        raw_path = artifact_paths.get(name)
+        if not raw_path:
+            problems.append(f"{name} missing")
+            continue
+        path = Path(str(raw_path))
+        if not path.exists() or not path.is_file() or path.stat().st_size <= 0:
+            problems.append(f"{name} missing or empty: {raw_path}")
+
+    return {
+        "name": "prediction_json:model_artifact_files",
+        "passed": not problems,
+        "detail": "ok" if not problems else "; ".join(problems),
+    }
+
+
 def _station_metadata_check(prediction_json: dict) -> dict:
     problems = []
     for index, prediction in enumerate(prediction_json.get("predictions") or []):
@@ -409,6 +441,7 @@ def _prediction_json_checks(
     ]
     checks.append(_station_metadata_check(prediction_json))
     checks.append(_artifact_traceability_check(payload, prediction_json))
+    checks.append(_model_artifact_file_check(prediction_json))
     checks.append(_threshold_contract_check(payload, prediction_json))
     checks.extend(_prediction_consistency_checks(payload, prediction_json))
     if max_age_hours is not None:

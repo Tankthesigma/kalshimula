@@ -301,10 +301,11 @@ too: every prediction must include exactly the requested `threshold_offsets`,
 each probability must be in `[0, 1]`, and each threshold must be centered on the
 rounded corrected point. It verifies artifact traceability too: the top-level
 prediction `artifact_paths` must point at the manifest run directory, and every
-per-city prediction must use the same model artifacts. Station metadata must
-include a nonempty name, a valid four-character `nws_station`, and numeric
-`lst_offset_hours`. It also fails when the manifest requires selected-source
-application and a prediction fell back. Required
+per-city prediction must use the same model artifacts. Those referenced model
+artifact files must also exist and be nonempty when the packet is checked.
+Station metadata must include a nonempty name, a valid four-character
+`nws_station`, and numeric `lst_offset_hours`. It also fails when the manifest
+requires selected-source application and a prediction fell back. Required
 prediction fields include city, selected source, whether that source was
 applied, station metadata, forecast, calibration, threshold probabilities, and
 artifact paths.
