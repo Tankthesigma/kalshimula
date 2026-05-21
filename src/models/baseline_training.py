@@ -1,4 +1,4 @@
-"""Dependency-free baseline training and evaluation."""
+"""Dependency-free baseline training and evaluation."""
 
 from __future__ import annotations
 
