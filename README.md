@@ -85,7 +85,8 @@ Use `src.daily_packet_check_cli` to verify the manifest exit codes and artifact
 existence before a dashboard or downstream script consumes the packet. The
 checker also validates the prediction JSON gate status, prediction/error counts,
 and required prediction fields, including source, station, forecast,
-calibration, threshold probabilities, and artifact paths for dashboard use.
+selected-source-application status, calibration, threshold probabilities, and
+artifact paths for dashboard use.
 
 Collect one city/date range into backtest rows:
 

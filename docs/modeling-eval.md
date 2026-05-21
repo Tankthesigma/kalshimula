@@ -437,8 +437,8 @@ Use `src.daily_packet_check_cli` to verify the manifest and referenced packet
 artifacts before feeding them into an external dashboard or review script. It
 also validates the prediction JSON gate status, error count, prediction count,
 and required per-city prediction fields needed by a dashboard: selected source,
-station metadata, forecast, calibration, threshold probabilities, and artifact
-paths.
+whether that source was applied, station metadata, forecast, calibration,
+threshold probabilities, and artifact paths.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

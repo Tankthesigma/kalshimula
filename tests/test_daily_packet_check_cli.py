@@ -13,6 +13,7 @@ def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
                 "forecast": {"point_f": 70.0},
                 "calibration": {"corrected_point_f": 71.0},
                 "selected_source": "gfs_ens",
+                "selected_source_applied": True,
                 "station": {"name": "Denver", "nws_station": "KDEN"},
                 "threshold_probabilities": [],
             }
@@ -176,6 +177,7 @@ def test_daily_packet_check_cli_requires_dashboard_contract_fields(
     payload = _prediction_payload()
     payload["predictions"][0].pop("station")
     payload["predictions"][0].pop("selected_source")
+    payload["predictions"][0].pop("selected_source_applied")
     manifest = _write_packet(tmp_path, prediction_payload=payload)
 
     code = daily_packet_check_cli.main(["--manifest", str(manifest)])
@@ -184,4 +186,5 @@ def test_daily_packet_check_cli_requires_dashboard_contract_fields(
     assert code == 1
     assert "FAIL prediction_json:prediction_fields" in output
     assert "selected_source" in output
+    assert "selected_source_applied" in output
     assert "station" in output

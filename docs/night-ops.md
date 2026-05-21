@@ -286,8 +286,9 @@ The checker exits nonzero if the manifest records a failed step or if any
 referenced artifact is missing or empty. It also parses the prediction JSON and
 fails if the required gate did not pass, `n_errors` is nonzero, prediction counts
 do not match the rows, or required prediction fields are absent. Required
-prediction fields include city, selected source, station metadata, forecast,
-calibration, threshold probabilities, and artifact paths.
+prediction fields include city, selected source, whether that source was
+applied, station metadata, forecast, calibration, threshold probabilities, and
+artifact paths.
 
 For a one-off city check, use the lower-level predictor:
 
