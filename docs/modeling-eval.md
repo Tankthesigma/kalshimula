@@ -44,6 +44,16 @@ This split is useful for answering "does the month-aware model have signal?"
 It is **not** the default leakage-safe production split because train rows can
 come from the same calendar month as test rows.
 
+Treat month-stratified output as a **ceiling** on how well a model that knows
+the season can do, not as an estimate of live forecast quality. The
+chronological split is the only split whose evaluation numbers transfer to
+production. If chronological and month-stratified results diverge, that gap is
+roughly the size of the regime-shift problem to solve next; it is not headroom
+to ship.
+
+Use enough rows per month for this diagnostic. Tiny month groups can produce
+one-row test folds, which make interval coverage noisy.
+
 ## Bias correction
 
 `src/models/bias.py::fit_bias_table` accepts a `group_month=True` flag (the
@@ -170,6 +180,10 @@ Bolded values are the watch-list items:
 - **NYC**: largest residual bias (-1.64°F) and worst interval coverage
   (52%). Same root cause — train and test bias regimes differ. Don't ship
   NYC intervals to research consumers until coverage is closer to 80%.
+
+Month-stratified diagnostic on the same data improved average corrected MAE
+from 1.335°F to 1.115°F and interval coverage from 75.5% to 79.7%. Treat that
+as the regime-shift gap to close, not as production performance.
 
 ## Known limitations and next steps
 
