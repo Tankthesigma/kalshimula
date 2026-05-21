@@ -413,6 +413,20 @@ corrected point is 47°F, `--threshold-offsets=-2,0,2` prints
 When a recalibration table is present, each line shows the recalibrated
 probability first and the raw empirical-residual probability in parentheses.
 
+Use `src.model_gate_cli` as the final research-readiness check after refreshing
+all selected model artifacts:
+
+```bash
+python -m src.model_gate_cli \
+  --run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
+```
+
+The default gate checks that the selected source is `gfs_ens`, held-out MAE is
+at most 1.05°F, interval coverage is at least 80%, average interval width is at
+most 3.8°F, recalibrated threshold Brier/ECE are at most 0.058/0.012, and the
+recalibration improves raw Brier/ECE by at least 0.002/0.010. The completed
+two-year run passes all of those gates.
+
 ## Known limitations and next steps
 
 - **Recommended source is global, not city-specific.** The best completed
