@@ -243,21 +243,58 @@ python -m src.source_selection_cli \
   --out-dir data/runs/<run-dir>/source_selection
 ```
 
-This writes `selected_sources.csv`, `selected_source_evaluation.csv`, and
-`selected_source_summary.csv`. The selection is validation-driven; the test
-metrics are joined afterward so the output can be compared against
-`openmeteo_naive` without choosing winners from the test set.
+This writes:
+
+- `selected_sources.csv`: diagnostic per-city validation winners.
+- `selected_source_evaluation.csv`: held-out test metrics for those winners.
+- `selected_source_summary.csv`: averaged held-out metrics for those winners.
+- `source_policy_comparison.csv`: per-city validation policy vs the best
+  single global validation source.
+- `recommended_sources.csv`: production source map for `predict --model-run-dir`.
+
+The selections are validation-driven; test metrics are joined afterward so the
+output can be compared against `openmeteo_naive` without choosing winners from
+the test set.
+
+### Completed two-year source-breakout run
+
+Run: `data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/`
+
+- Rows: 55,490
+- City/date chunks: 7,300 / 7,300
+- Collection errors: 0
+- Train/test split: train before 2026-02-01; held-out test Feb-Apr 2026.
+- Validation split: validation from 2025-11-01 through 2026-01-31.
+- `alpha`: 0.13
+
+Policy comparison:
+
+| Policy | Selected source | Avg validation MAE | Avg corrected MAE | Avg coverage | Avg interval width |
+|---|---|---:|---:|---:|---:|
+| Per-city validation | Mixed per city | 0.908°F | 1.182°F | 80.45% | 3.79°F |
+| Best global validation source | `gfs_ens` | 0.969°F | **1.050°F** | **84.72%** | **3.70°F** |
+| Pooled baseline | `openmeteo_naive` | n/a | 1.302°F | 80.00% | 4.37°F |
+
+The per-city validation selector beats the pooled baseline, but it overfits
+some city/source choices on this test window. The best single global validation
+source, `gfs_ens`, wins on held-out corrected MAE, coverage, and interval
+width. `recommended_sources.csv` therefore maps every city to `gfs_ens`.
+
+Live prediction should use the completed run directly:
+
+```bash
+python -m src.predict \
+  --city denver \
+  --date tomorrow \
+  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
+```
 
 ## Known limitations and next steps
 
-- **Single forecast source in the existing headline run.** The 365-day and
-  two-year numbers above ride on `openmeteo_naive` (the Open-Meteo ensemble
-  averaged into a single point). New historical runs can use
-  `--openmeteo-mode both` to include individual Open-Meteo source rows
-  (`gfs_ens`, `ecmwf_ens`, `icon_ens`, `gem_ens`, `aifs`, `graphcast`,
-  `hrrr`) alongside the pooled baseline when those upstream model/date pairs
-  are available. The next modeling step is to rerun the two-year evaluation
-  with that mode and compare source-specific residuals by city/month.
+- **Recommended source is global, not city-specific.** The best completed
+  policy is the single global `gfs_ens` source. The per-city validation policy
+  remains useful as a diagnostic, but it underperformed the global policy on
+  held-out test.
 - **Pooled-by-city-source intervals.** Same alpha quantile width whether
   Tuesday in July or Sunday in January. A smaller global alpha reaches the
   overall 80% target, but NYC/Boston/Philadelphia still under-cover. A
