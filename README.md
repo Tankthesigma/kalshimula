@@ -46,6 +46,7 @@ Use recommended Open-Meteo sources and trained model artifacts in live predictio
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run>
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --json
+python -m src.predict_batch_cli --cities denver,boston,nyc --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --out data\runs\<run>\latest_predictions.json
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -63,7 +64,9 @@ prints offline threshold probabilities around the rounded corrected point. When
 probabilities are adjusted by the validation-fitted bucket recalibration table
 and the raw probability is shown in parentheses. Use `--json` when a script,
 dashboard, or review tool needs machine-readable forecast, calibration, and
-threshold-probability fields.
+threshold-probability fields. Use `src.predict_batch_cli` for multi-city JSON
+payloads; it continues after individual city failures and records them in the
+`errors` array.
 
 Collect one city/date range into backtest rows:
 

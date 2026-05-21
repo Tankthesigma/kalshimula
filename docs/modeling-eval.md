@@ -415,6 +415,9 @@ probability first and the raw empirical-residual probability in parentheses.
 Add `--json` to emit the same calibrated forecast and threshold probabilities
 as machine-readable JSON for dashboards or review scripts; progress/status
 messages stay on stderr.
+For multiple cities, use `src.predict_batch_cli` with the same model artifacts
+and threshold offsets. It writes one JSON object with `predictions` and
+`errors`, so downstream tools can continue when a single city/source is missing.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:
