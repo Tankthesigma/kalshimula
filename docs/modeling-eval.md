@@ -424,6 +424,10 @@ For dashboard or review automation, add `--require-gate` to batch prediction.
 That runs the default `src.model_gate_cli` checks before any forecast fetches;
 if the run fails the gate, the JSON contains no predictions, one
 `__model_gate__` error, and the failed checks in `model_gate`.
+Use `src.prediction_review_cli` to render the batch JSON into a compact text
+review table. It exits nonzero when a required gate fails or the payload has
+city-level errors, which makes it suitable for manual-review scripts before any
+future dashboard consumes the same JSON.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

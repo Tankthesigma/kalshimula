@@ -47,6 +47,7 @@ python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<r
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --json
 python -m src.predict_batch_cli --cities denver,boston,nyc --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --require-gate --out data\runs\<run>\latest_predictions.json
+python -m src.prediction_review_cli --input data\runs\<run>\latest_predictions.json --out data\runs\<run>\latest_predictions.txt
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -71,6 +72,9 @@ payloads; it continues after individual city failures and records them in the
 the numbers. Add `--require-gate` to batch prediction when the payload will feed
 a dashboard or review script; it emits zero predictions and exits nonzero unless
 the model run passes `src.model_gate_cli`.
+Use `src.prediction_review_cli` to turn the batch JSON into a compact human
+review table with gate status, corrected points, intervals, and threshold
+probabilities.
 
 Collect one city/date range into backtest rows:
 
