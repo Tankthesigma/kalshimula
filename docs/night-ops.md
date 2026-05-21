@@ -299,8 +299,10 @@ an absolute manifest target date differs from the prediction target date, or the
 packet is older than `max_packet_age_hours`. It verifies threshold probabilities
 too: every prediction must include exactly the requested `threshold_offsets`,
 each probability must be in `[0, 1]`, and each threshold must be centered on the
-rounded corrected point. It also fails when the manifest requires
-selected-source application and a prediction fell back. Required
+rounded corrected point. It verifies artifact traceability too: the top-level
+prediction `artifact_paths` must point at the manifest run directory, and every
+per-city prediction must use the same model artifacts. It also fails when the
+manifest requires selected-source application and a prediction fell back. Required
 prediction fields include city, selected source, whether that source was
 applied, station metadata, forecast, calibration, threshold probabilities, and
 artifact paths.
