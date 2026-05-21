@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -90,6 +91,92 @@ def _packet_freshness_check(
         "name": "prediction_json:freshness",
         "passed": 0 <= age_hours <= max_age_hours,
         "detail": f"age_hours={age_hours:.3f} max_age_hours={max_age_hours:g}",
+    }
+
+
+def _parse_threshold_offsets(value: Any) -> list[int]:
+    if value is None:
+        return []
+    offsets = []
+    for raw_offset in str(value).split(","):
+        raw_offset = raw_offset.strip()
+        if raw_offset:
+            offsets.append(int(raw_offset))
+    return offsets
+
+
+def _threshold_contract_check(manifest: dict, prediction_json: dict) -> dict:
+    try:
+        expected_offsets = _parse_threshold_offsets(manifest.get("threshold_offsets"))
+    except ValueError as error:
+        return {
+            "name": "prediction_json:threshold_probabilities",
+            "passed": False,
+            "detail": f"invalid threshold_offsets: {error}",
+        }
+    if not expected_offsets:
+        return {
+            "name": "prediction_json:threshold_probabilities",
+            "passed": True,
+            "detail": "no threshold offsets requested",
+        }
+
+    problems = []
+    for index, prediction in enumerate(prediction_json.get("predictions") or []):
+        city = str(prediction.get("city", index))
+        calibration = prediction.get("calibration") or {}
+        center = calibration.get("corrected_point_f", calibration.get("point_f"))
+        if center is None:
+            problems.append(f"{city}: missing corrected point")
+            continue
+        try:
+            rounded_center = int(math.floor(float(center) + 0.5))
+        except (TypeError, ValueError):
+            problems.append(f"{city}: invalid corrected point")
+            continue
+
+        rows = prediction.get("threshold_probabilities") or []
+        actual_offsets = []
+        for row in rows:
+            try:
+                offset = int(row["offset_f"])
+                threshold = int(row["threshold_f"])
+                probability = float(row["predicted_probability"])
+            except (KeyError, TypeError, ValueError) as error:
+                problems.append(f"{city}: invalid threshold row ({error})")
+                continue
+            actual_offsets.append(offset)
+            expected_threshold = rounded_center + offset
+            if threshold != expected_threshold:
+                problems.append(
+                    f"{city}: threshold {threshold} != {expected_threshold} for offset {offset}"
+                )
+            if not 0 <= probability <= 1:
+                problems.append(f"{city}: probability out of range for offset {offset}")
+            if "raw_predicted_probability" in row:
+                try:
+                    raw_probability = float(row["raw_predicted_probability"])
+                except (TypeError, ValueError):
+                    problems.append(f"{city}: invalid raw probability for offset {offset}")
+                else:
+                    if not 0 <= raw_probability <= 1:
+                        problems.append(f"{city}: raw probability out of range for offset {offset}")
+
+        missing_offsets = sorted(set(expected_offsets) - set(actual_offsets))
+        extra_offsets = sorted(set(actual_offsets) - set(expected_offsets))
+        duplicate_offsets = sorted(
+            offset for offset in set(actual_offsets) if actual_offsets.count(offset) > 1
+        )
+        if missing_offsets or extra_offsets or duplicate_offsets:
+            problems.append(
+                f"{city}: offsets expected={expected_offsets} actual={actual_offsets} "
+                f"missing={missing_offsets} extra={extra_offsets} duplicates={duplicate_offsets}"
+            )
+
+    return {
+        "name": "prediction_json:threshold_probabilities",
+        "passed": not problems,
+        "detail": "ok" if not problems else "; ".join(problems),
     }
 
 
@@ -242,6 +329,7 @@ def _prediction_json_checks(
             "detail": "ok" if not missing_field_rows else "; ".join(missing_field_rows),
         },
     ]
+    checks.append(_threshold_contract_check(payload, prediction_json))
     checks.extend(_prediction_consistency_checks(payload, prediction_json))
     if max_age_hours is not None:
         checks.append(

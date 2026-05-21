@@ -16,7 +16,11 @@ def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
                 "selected_source": "gfs_ens",
                 "selected_source_applied": True,
                 "station": {"name": "Denver", "nws_station": "KDEN"},
-                "threshold_probabilities": [],
+                "threshold_probabilities": [
+                    {"offset_f": -2, "threshold_f": 69, "predicted_probability": 0.9},
+                    {"offset_f": 0, "threshold_f": 71, "predicted_probability": 0.5},
+                    {"offset_f": 2, "threshold_f": 73, "predicted_probability": 0.1},
+                ],
             }
         ]
         if n_predictions
@@ -124,6 +128,10 @@ def test_daily_packet_check_cli_emits_json(tmp_path, capsys) -> None:
     assert payload["max_packet_age_hours"] is None
     assert any(check["name"] == "prediction_json:prediction_fields" for check in payload["checks"])
     assert any(check["name"] == "prediction_json:cities" for check in payload["checks"])
+    assert any(
+        check["name"] == "prediction_json:threshold_probabilities"
+        for check in payload["checks"]
+    )
 
 
 def test_daily_packet_check_cli_writes_json_report(tmp_path, capsys) -> None:
@@ -267,6 +275,56 @@ def test_daily_packet_check_cli_fails_invalid_prediction_timestamp(
     output = capsys.readouterr().out
     assert code == 1
     assert "FAIL prediction_json:generated_at" in output
+
+
+def test_daily_packet_check_cli_fails_missing_threshold_offset(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["threshold_probabilities"] = [
+        {"offset_f": -2, "threshold_f": 69, "predicted_probability": 0.9},
+        {"offset_f": 0, "threshold_f": 71, "predicted_probability": 0.5},
+    ]
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:threshold_probabilities" in output
+    assert "missing=[2]" in output
+
+
+def test_daily_packet_check_cli_fails_invalid_threshold_probability(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["threshold_probabilities"][1][
+        "predicted_probability"
+    ] = 1.5
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:threshold_probabilities" in output
+    assert "probability out of range" in output
+
+
+def test_daily_packet_check_cli_fails_threshold_not_centered(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["threshold_probabilities"][0]["threshold_f"] = 70
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:threshold_probabilities" in output
+    assert "threshold 70 != 69" in output
 
 
 def test_build_packet_checks_enforces_manifest_freshness(tmp_path) -> None:

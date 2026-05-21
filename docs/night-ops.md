@@ -296,8 +296,11 @@ fails if the required gate did not pass, `n_errors` is nonzero, prediction count
 do not match the rows, required prediction fields are absent, the prediction
 timestamp is invalid, the manifest city list differs from the prediction rows,
 an absolute manifest target date differs from the prediction target date, or the
-packet is older than `max_packet_age_hours`. It also fails when the manifest
-requires selected-source application and a prediction fell back. Required
+packet is older than `max_packet_age_hours`. It verifies threshold probabilities
+too: every prediction must include exactly the requested `threshold_offsets`,
+each probability must be in `[0, 1]`, and each threshold must be centered on the
+rounded corrected point. It also fails when the manifest requires
+selected-source application and a prediction fell back. Required
 prediction fields include city, selected source, whether that source was
 applied, station metadata, forecast, calibration, threshold probabilities, and
 artifact paths.
