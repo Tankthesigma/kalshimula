@@ -146,6 +146,31 @@ def _write_artifacts(run_dir):
         run_dir / "probability_calibration" / "threshold_test_group_calibration.csv",
         index=False,
     )
+    pd.DataFrame(
+        [
+            {
+                "policy": "raw_empirical_residual",
+                "split": "test",
+                "n_events": 6230,
+                "brier_score": 0.0609,
+                "expected_calibration_error": 0.0241,
+                "mean_predicted_probability": 0.5089,
+                "observed_frequency": 0.5140,
+            },
+            {
+                "policy": "validation_bucket_recalibrated",
+                "split": "test",
+                "n_events": 6230,
+                "brier_score": 0.0569,
+                "expected_calibration_error": 0.0096,
+                "mean_predicted_probability": 0.5085,
+                "observed_frequency": 0.5140,
+            },
+        ]
+    ).to_csv(
+        run_dir / "probability_calibration" / "threshold_recalibration_comparison.csv",
+        index=False,
+    )
 
 
 def test_build_model_policy_report_summarizes_artifacts(tmp_path) -> None:
@@ -163,6 +188,7 @@ def test_build_model_policy_report_summarizes_artifacts(tmp_path) -> None:
     assert "test: events=6,230, brier=0.061, ece=0.024" in report
     assert "worst test group: boston/gfs_ens brier=0.080, ece=0.050" in report
     assert "worst test bucket: boston/gfs_ens 50.0%-60.0% gap=-0.150" in report
+    assert "recalibrated test: brier=0.057 (raw 0.061), ece=0.010 (raw 0.024)" in report
 
 
 def test_build_model_policy_report_handles_missing_artifacts(tmp_path) -> None:

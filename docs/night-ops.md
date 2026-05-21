@@ -229,7 +229,9 @@ python -m src.threshold_calibration_cli \
   --validation-start 2025-11-01 \
   --test-start 2026-02-01 \
   --offsets=-6,-4,-2,0,2,4,6 \
-  --buckets 10
+  --buckets 10 \
+  --recalibration-prior-strength 25 \
+  --min-recalibration-events 20
 ```
 
 This writes overall calibration plus per-city/source summaries and bucket
@@ -237,6 +239,8 @@ tables. Check `threshold_test_group_summary.csv` and
 `threshold_test_group_calibration.csv` before trusting a clean overall score; on
 the completed two-year run, NYC was the weakest threshold-probability group, and
 its 30-40% probability bucket was the largest miss.
+Also check `threshold_recalibration_comparison.csv`; the completed run improved
+from raw Brier/ECE 0.0609/0.0241 to recalibrated Brier/ECE 0.0569/0.0096.
 
 Live prediction should then point at the completed model run. The predictor
 uses `source_selection/recommended_sources.csv` when it exists, and prefers
