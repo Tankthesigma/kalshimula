@@ -258,6 +258,17 @@ uses `source_selection/recommended_sources.csv` when it exists, and prefers
 `model_policy/` bias/interval tables over older `train_eval/` tables:
 
 ```bash
+python -m src.daily_model_refresh_cli \
+  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
+```
+
+That is the normal daily check. It writes `latest_predictions.json` and
+`latest_predictions.txt` under the run directory, requires the model gate by
+default, and exits nonzero when the gate or any city prediction fails.
+
+For a one-off city check, use the lower-level predictor:
+
+```bash
 python -m src.predict \
   --city denver \
   --date tomorrow \

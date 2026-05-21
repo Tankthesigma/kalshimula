@@ -428,6 +428,9 @@ Use `src.prediction_review_cli` to render the batch JSON into a compact text
 review table. It exits nonzero when a required gate fails or the payload has
 city-level errors, which makes it suitable for manual-review scripts before any
 future dashboard consumes the same JSON.
+For the normal all-city refresh, use `src.daily_model_refresh_cli`; it runs the
+gated batch prediction and review rendering together and writes
+`latest_predictions.json` plus `latest_predictions.txt` under the run directory.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

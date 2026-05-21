@@ -48,6 +48,7 @@ python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<r
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --json
 python -m src.predict_batch_cli --cities denver,boston,nyc --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2 --require-gate --out data\runs\<run>\latest_predictions.json
 python -m src.prediction_review_cli --input data\runs\<run>\latest_predictions.json --out data\runs\<run>\latest_predictions.txt
+python -m src.daily_model_refresh_cli --model-run-dir data\runs\<run>
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -75,6 +76,8 @@ the model run passes `src.model_gate_cli`.
 Use `src.prediction_review_cli` to turn the batch JSON into a compact human
 review table with gate status, corrected points, intervals, and threshold
 probabilities.
+Use `src.daily_model_refresh_cli` for the normal morning refresh: it writes the
+gated all-city batch JSON and the text review report in one command.
 
 Collect one city/date range into backtest rows:
 
