@@ -273,6 +273,17 @@ include `schema_version`, `generated_at`, and `artifact_paths` for traceability.
 Use `--require-gate` for dashboard or review refreshes so a stale or degraded
 model run emits zero predictions unless the saved artifacts pass the readiness
 gate.
+Render the JSON for human review with:
+
+```bash
+python -m src.prediction_review_cli \
+  --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.json \
+  --out data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.txt
+```
+
+The review command exits nonzero when the batch payload has a failed required
+gate or city-level errors. Use `--allow-errors` only when intentionally
+inspecting a partial payload.
 
 ## Bridge health
 
