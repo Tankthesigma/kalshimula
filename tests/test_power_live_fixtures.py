@@ -10,9 +10,9 @@ already different from the modern Access Data Service (see NCEI for the
 same class of bug). Pinning the live shape catches a future field
 rename or units flip at PR-gate time.
 
-To refresh: re-run the throwaway capture script that lived next to this
-file during development. The script writes fixtures with explicit LF
-newlines so Windows captures don't need a CRLF cleanup pass.
+To refresh: run ``python -m scripts.refresh_source_fixtures`` from repo root.
+The script writes fixtures with explicit LF newlines so Windows captures
+don't need a CRLF cleanup pass.
 """
 
 from __future__ import annotations
