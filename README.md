@@ -66,7 +66,9 @@ and the raw probability is shown in parentheses. Use `--json` when a script,
 dashboard, or review tool needs machine-readable forecast, calibration, and
 threshold-probability fields. Use `src.predict_batch_cli` for multi-city JSON
 payloads; it continues after individual city failures and records them in the
-`errors` array.
+`errors` array. JSON outputs include `schema_version`, `generated_at`, and
+`artifact_paths` so downstream tools can verify which model artifacts produced
+the numbers.
 
 Collect one city/date range into backtest rows:
 

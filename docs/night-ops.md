@@ -268,7 +268,8 @@ python -m src.predict \
 Use `--json` on the same command when a downstream script or dashboard needs
 structured fields instead of the text report.
 For a multi-city refresh, use `src.predict_batch_cli` with `--out`; inspect the
-top-level `errors` array before treating the payload as complete.
+top-level `errors` array before treating the payload as complete. JSON payloads
+include `schema_version`, `generated_at`, and `artifact_paths` for traceability.
 
 ## Bridge health
 

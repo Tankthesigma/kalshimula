@@ -14,7 +14,7 @@ import json
 import math
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +29,8 @@ from src.fetchers.openmeteo import (
 from src.models.bias import apply_bias_correction
 from src.models.ensemble import NaiveForecast, naive_forecast_from_members
 from src.models.intervals import apply_empirical_intervals
+
+PREDICTION_JSON_SCHEMA_VERSION = "1.0"
 
 # Windows default console is cp1252 and chokes on box-drawing glyphs.
 for _stream in (sys.stdout, sys.stderr):
@@ -415,8 +417,31 @@ def _json_payload(
     selected_applied: bool,
     calibration: pd.Series | None,
     threshold_probabilities: pd.DataFrame | None,
+    generated_at: datetime | None = None,
+    model_run_dir: Path | None = None,
+    selected_sources_path: Path | None = None,
+    bias_table_path: Path | None = None,
+    interval_table_path: Path | None = None,
+    threshold_residuals_path: Path | None = None,
+    threshold_recalibration_table_path: Path | None = None,
 ) -> dict:
+    artifact_paths = {
+        "model_run_dir": str(model_run_dir) if model_run_dir is not None else None,
+        "selected_sources": str(selected_sources_path) if selected_sources_path is not None else None,
+        "bias_table": str(bias_table_path) if bias_table_path is not None else None,
+        "interval_table": str(interval_table_path) if interval_table_path is not None else None,
+        "threshold_residuals": (
+            str(threshold_residuals_path) if threshold_residuals_path is not None else None
+        ),
+        "threshold_recalibration_table": (
+            str(threshold_recalibration_table_path)
+            if threshold_recalibration_table_path is not None
+            else None
+        ),
+    }
     return {
+        "schema_version": PREDICTION_JSON_SCHEMA_VERSION,
+        "generated_at": (generated_at or datetime.now(UTC)).isoformat(),
         "city": station.slug,
         "station": {
             "name": station.name,
@@ -435,6 +460,7 @@ def _json_payload(
             "bin_probabilities": {str(key): value for key, value in fc.bin_probs.items()},
             "per_source_counts": fc.per_source_counts,
         },
+        "artifact_paths": artifact_paths,
         "calibration": _json_calibration(calibration),
         "threshold_probabilities": _json_thresholds(threshold_probabilities),
     }
@@ -667,6 +693,12 @@ def main(argv: list[str] | None = None) -> int:
                     selected_applied=selected_applied,
                     calibration=calibration,
                     threshold_probabilities=threshold_probabilities,
+                    model_run_dir=args.model_run_dir,
+                    selected_sources_path=selected_sources_path,
+                    bias_table_path=bias_table_path,
+                    interval_table_path=interval_table_path,
+                    threshold_residuals_path=threshold_residuals_path,
+                    threshold_recalibration_table_path=threshold_recalibration_table_path,
                 ),
                 indent=2,
                 sort_keys=True,

@@ -460,8 +460,13 @@ def test_predict_cli_prints_json(monkeypatch, tmp_path, capsys) -> None:
     payload = json.loads(output.out)
 
     assert exit_code == 0
+    assert payload["schema_version"] == "1.0"
+    assert payload["generated_at"].endswith("+00:00")
     assert payload["city"] == "denver"
     assert payload["selected_source"] == "gfs_ens"
+    assert payload["artifact_paths"]["selected_sources"] == str(selected_sources)
+    assert payload["artifact_paths"]["bias_table"] == str(bias_table)
+    assert payload["artifact_paths"]["threshold_residuals"] == str(threshold_residuals)
     assert payload["forecast"]["point_f"] == 71.0
     assert payload["calibration"]["corrected_point_f"] == 73.0
     assert payload["threshold_probabilities"] == [
