@@ -51,6 +51,7 @@ GROUP_CALIBRATION_COLUMNS = [
     "split",
     "city",
     "source",
+    "bucket_index",
     "bucket_start",
     "bucket_end",
     "n",
@@ -58,6 +59,21 @@ GROUP_CALIBRATION_COLUMNS = [
     "observed_frequency",
     "calibration_gap",
 ]
+RECALIBRATION_TABLE_COLUMNS = [
+    "city",
+    "source",
+    "bucket_index",
+    "bucket_start",
+    "bucket_end",
+    "n",
+    "mean_predicted_probability",
+    "observed_frequency",
+    "recalibrated_probability",
+    "prior_strength",
+    "min_events",
+    "used",
+]
+RECALIBRATION_COMPARISON_COLUMNS = ["policy", *SUMMARY_COLUMNS]
 
 
 @dataclass(frozen=True)
@@ -74,6 +90,12 @@ class ThresholdCalibrationResult:
     test_group_summary: pd.DataFrame
     validation_group_calibration: pd.DataFrame
     test_group_calibration: pd.DataFrame
+    recalibration_table: pd.DataFrame
+    test_recalibrated_events: pd.DataFrame
+    test_recalibrated_calibration: pd.DataFrame
+    test_recalibrated_group_summary: pd.DataFrame
+    test_recalibrated_group_calibration: pd.DataFrame
+    recalibration_comparison: pd.DataFrame
 
 
 def evaluate_threshold_calibration(
@@ -85,6 +107,8 @@ def evaluate_threshold_calibration(
     test_start: str | pd.Timestamp,
     offsets: tuple[int, ...] = (-4, -2, 0, 2, 4),
     n_buckets: int = 10,
+    recalibration_prior_strength: float = 25.0,
+    min_recalibration_events: int = 20,
 ) -> ThresholdCalibrationResult:
     """Evaluate threshold probabilities from empirical corrected residuals.
 
@@ -97,6 +121,10 @@ def evaluate_threshold_calibration(
         raise ValueError("offsets must contain at least one value")
     if n_buckets <= 0:
         raise ValueError("n_buckets must be positive")
+    if recalibration_prior_strength < 0:
+        raise ValueError("recalibration_prior_strength must be non-negative")
+    if min_recalibration_events <= 0:
+        raise ValueError("min_recalibration_events must be positive")
 
     source_rows = filter_rows_to_recommended_sources(rows, recommended_sources)
     if source_rows.empty:
@@ -132,6 +160,40 @@ def evaluate_threshold_calibration(
         "validation", validation_events, n_buckets=n_buckets
     )
     test_group_calibration = _group_calibration("test", test_events, n_buckets=n_buckets)
+    recalibration_table = _recalibration_table(
+        validation_events,
+        n_buckets=n_buckets,
+        prior_strength=recalibration_prior_strength,
+        min_events=min_recalibration_events,
+    )
+    test_recalibrated_events = _apply_recalibration(
+        test_events,
+        recalibration_table=recalibration_table,
+        n_buckets=n_buckets,
+    )
+    test_recalibrated_calibration = _calibration(
+        test_recalibrated_events,
+        n_buckets=n_buckets,
+        probability_column="recalibrated_probability",
+    )
+    test_recalibrated_group_summary = _group_summary(
+        "test_recalibrated",
+        test_recalibrated_events,
+        n_buckets=n_buckets,
+        probability_column="recalibrated_probability",
+    )
+    test_recalibrated_group_calibration = _group_calibration(
+        "test_recalibrated",
+        test_recalibrated_events,
+        n_buckets=n_buckets,
+        probability_column="recalibrated_probability",
+    )
+    recalibration_comparison = _recalibration_comparison(
+        raw_events=test_events,
+        raw_calibration=test_calibration,
+        recalibrated_events=test_recalibrated_events,
+        recalibrated_calibration=test_recalibrated_calibration,
+    )
     return ThresholdCalibrationResult(
         validation_events=validation_events,
         test_events=test_events,
@@ -143,6 +205,12 @@ def evaluate_threshold_calibration(
         test_group_summary=test_group_summary,
         validation_group_calibration=validation_group_calibration,
         test_group_calibration=test_group_calibration,
+        recalibration_table=recalibration_table,
+        test_recalibrated_events=test_recalibrated_events,
+        test_recalibrated_calibration=test_recalibrated_calibration,
+        test_recalibrated_group_summary=test_recalibrated_group_summary,
+        test_recalibrated_group_calibration=test_recalibrated_group_calibration,
+        recalibration_comparison=recalibration_comparison,
     )
 
 
@@ -156,6 +224,8 @@ def write_threshold_calibration_outputs(
     test_start: str,
     offsets: tuple[int, ...] = (-4, -2, 0, 2, 4),
     n_buckets: int = 10,
+    recalibration_prior_strength: float = 25.0,
+    min_recalibration_events: int = 20,
 ) -> ThresholdCalibrationResult:
     """Run threshold probability calibration from CSV artifacts and write outputs."""
     rows = pd.read_csv(input_path, parse_dates=["target_date"])
@@ -169,6 +239,8 @@ def write_threshold_calibration_outputs(
         test_start=test_start,
         offsets=offsets,
         n_buckets=n_buckets,
+        recalibration_prior_strength=recalibration_prior_strength,
+        min_recalibration_events=min_recalibration_events,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     result.validation_events.to_csv(output_dir / "threshold_validation_events.csv", index=False)
@@ -190,6 +262,24 @@ def write_threshold_calibration_outputs(
     )
     result.test_group_calibration.to_csv(
         output_dir / "threshold_test_group_calibration.csv", index=False
+    )
+    result.recalibration_table.to_csv(
+        output_dir / "threshold_recalibration_table.csv", index=False
+    )
+    result.test_recalibrated_events.to_csv(
+        output_dir / "threshold_test_recalibrated_events.csv", index=False
+    )
+    result.test_recalibrated_calibration.to_csv(
+        output_dir / "threshold_test_recalibrated_calibration.csv", index=False
+    )
+    result.test_recalibrated_group_summary.to_csv(
+        output_dir / "threshold_test_recalibrated_group_summary.csv", index=False
+    )
+    result.test_recalibrated_group_calibration.to_csv(
+        output_dir / "threshold_test_recalibrated_group_calibration.csv", index=False
+    )
+    result.recalibration_comparison.to_csv(
+        output_dir / "threshold_recalibration_comparison.csv", index=False
     )
     return result
 
@@ -269,15 +359,26 @@ def _residual_rows(rows: pd.DataFrame) -> pd.DataFrame:
     return out[RESIDUAL_COLUMNS].copy()
 
 
-def _calibration(events: pd.DataFrame, *, n_buckets: int) -> pd.DataFrame:
+def _calibration(
+    events: pd.DataFrame,
+    *,
+    n_buckets: int,
+    probability_column: str = "predicted_probability",
+) -> pd.DataFrame:
     return calibration_table(
-        predicted_probabilities=events["predicted_probability"].astype(float).tolist(),
+        predicted_probabilities=events[probability_column].astype(float).tolist(),
         outcomes=events["outcome"].astype(bool).tolist(),
         n_buckets=n_buckets,
     )
 
 
-def _summary_row(split: str, events: pd.DataFrame, buckets: pd.DataFrame) -> dict:
+def _summary_row(
+    split: str,
+    events: pd.DataFrame,
+    buckets: pd.DataFrame,
+    *,
+    probability_column: str = "predicted_probability",
+) -> dict:
     if events.empty:
         return {
             "split": split,
@@ -287,7 +388,7 @@ def _summary_row(split: str, events: pd.DataFrame, buckets: pd.DataFrame) -> dic
             "mean_predicted_probability": pd.NA,
             "observed_frequency": pd.NA,
         }
-    probabilities = events["predicted_probability"].astype(float)
+    probabilities = events[probability_column].astype(float)
     outcomes = events["outcome"].astype(float)
     return {
         "split": split,
@@ -299,13 +400,21 @@ def _summary_row(split: str, events: pd.DataFrame, buckets: pd.DataFrame) -> dic
     }
 
 
-def _group_summary(split: str, events: pd.DataFrame, *, n_buckets: int) -> pd.DataFrame:
+def _group_summary(
+    split: str,
+    events: pd.DataFrame,
+    *,
+    n_buckets: int,
+    probability_column: str = "predicted_probability",
+) -> pd.DataFrame:
     if events.empty:
         return pd.DataFrame(columns=GROUP_SUMMARY_COLUMNS)
     rows = []
     for (city, source), group in events.groupby(["city", "source"], sort=True):
-        buckets = _calibration(group, n_buckets=n_buckets)
-        row = _summary_row(split, group, buckets)
+        buckets = _calibration(
+            group, n_buckets=n_buckets, probability_column=probability_column
+        )
+        row = _summary_row(split, group, buckets, probability_column=probability_column)
         rows.append(
             {
                 "split": split,
@@ -321,18 +430,27 @@ def _group_summary(split: str, events: pd.DataFrame, *, n_buckets: int) -> pd.Da
     return pd.DataFrame(rows, columns=GROUP_SUMMARY_COLUMNS)
 
 
-def _group_calibration(split: str, events: pd.DataFrame, *, n_buckets: int) -> pd.DataFrame:
+def _group_calibration(
+    split: str,
+    events: pd.DataFrame,
+    *,
+    n_buckets: int,
+    probability_column: str = "predicted_probability",
+) -> pd.DataFrame:
     if events.empty:
         return pd.DataFrame(columns=GROUP_CALIBRATION_COLUMNS)
     rows = []
     for (city, source), group in events.groupby(["city", "source"], sort=True):
-        buckets = _calibration(group, n_buckets=n_buckets)
+        buckets = _calibration(
+            group, n_buckets=n_buckets, probability_column=probability_column
+        )
         for bucket in buckets.itertuples(index=False):
             rows.append(
                 {
                     "split": split,
                     "city": city,
                     "source": source,
+                    "bucket_index": int(bucket.bucket_start * n_buckets),
                     "bucket_start": bucket.bucket_start,
                     "bucket_end": bucket.bucket_end,
                     "n": bucket.n,
@@ -345,6 +463,81 @@ def _group_calibration(split: str, events: pd.DataFrame, *, n_buckets: int) -> p
                 }
             )
     return pd.DataFrame(rows, columns=GROUP_CALIBRATION_COLUMNS)
+
+
+def _recalibration_table(
+    validation_events: pd.DataFrame,
+    *,
+    n_buckets: int,
+    prior_strength: float,
+    min_events: int,
+) -> pd.DataFrame:
+    buckets = _group_calibration("validation", validation_events, n_buckets=n_buckets)
+    if buckets.empty:
+        return pd.DataFrame(columns=RECALIBRATION_TABLE_COLUMNS)
+    out = buckets.drop(columns=["split", "calibration_gap"]).copy()
+    numerator = (
+        out["observed_frequency"].astype(float) * out["n"].astype(float)
+        + out["mean_predicted_probability"].astype(float) * float(prior_strength)
+    )
+    denominator = out["n"].astype(float) + float(prior_strength)
+    out["recalibrated_probability"] = (numerator / denominator).clip(0.0, 1.0)
+    out["prior_strength"] = float(prior_strength)
+    out["min_events"] = int(min_events)
+    out["used"] = out["n"].astype(int) >= int(min_events)
+    return out[RECALIBRATION_TABLE_COLUMNS].copy()
+
+
+def _apply_recalibration(
+    events: pd.DataFrame,
+    *,
+    recalibration_table: pd.DataFrame,
+    n_buckets: int,
+) -> pd.DataFrame:
+    out = events.copy()
+    out["raw_predicted_probability"] = out["predicted_probability"].astype(float)
+    out["bucket_index"] = _bucket_indexes(out["predicted_probability"], n_buckets=n_buckets)
+    if recalibration_table.empty:
+        out["recalibrated_probability"] = out["raw_predicted_probability"]
+        out["recalibration_n"] = pd.NA
+        out["recalibration_used"] = False
+        return out
+
+    lookup = recalibration_table[
+        ["city", "source", "bucket_index", "n", "recalibrated_probability", "used"]
+    ].rename(columns={"n": "recalibration_n", "used": "recalibration_used"})
+    out = out.merge(lookup, how="left", on=["city", "source", "bucket_index"])
+    out["recalibration_used"] = out["recalibration_used"].fillna(False).astype(bool)
+    out["recalibrated_probability"] = out["recalibrated_probability"].where(
+        out["recalibration_used"], out["raw_predicted_probability"]
+    )
+    out["recalibrated_probability"] = out["recalibrated_probability"].astype(float).clip(0.0, 1.0)
+    return out
+
+
+def _bucket_indexes(probabilities: pd.Series, *, n_buckets: int) -> pd.Series:
+    return (probabilities.astype(float).clip(lower=0.0, upper=0.999999) * n_buckets).astype(int)
+
+
+def _recalibration_comparison(
+    *,
+    raw_events: pd.DataFrame,
+    raw_calibration: pd.DataFrame,
+    recalibrated_events: pd.DataFrame,
+    recalibrated_calibration: pd.DataFrame,
+) -> pd.DataFrame:
+    raw = _summary_row("test", raw_events, raw_calibration)
+    recalibrated = _summary_row(
+        "test",
+        recalibrated_events,
+        recalibrated_calibration,
+        probability_column="recalibrated_probability",
+    )
+    rows = [
+        {"policy": "raw_empirical_residual", **raw},
+        {"policy": "validation_bucket_recalibrated", **recalibrated},
+    ]
+    return pd.DataFrame(rows, columns=RECALIBRATION_COMPARISON_COLUMNS)
 
 
 def _expected_calibration_error(buckets: pd.DataFrame) -> float:

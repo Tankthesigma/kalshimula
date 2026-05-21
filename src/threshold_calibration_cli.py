@@ -25,6 +25,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Comma-separated threshold offsets around rounded corrected point.",
     )
     parser.add_argument("--buckets", default=10, type=int)
+    parser.add_argument(
+        "--recalibration-prior-strength",
+        default=25.0,
+        type=float,
+        help="Shrinkage strength for validation-bucket probability recalibration.",
+    )
+    parser.add_argument(
+        "--min-recalibration-events",
+        default=20,
+        type=int,
+        help="Minimum validation events required to apply a city/source bucket mapping.",
+    )
     args = parser.parse_args(argv)
 
     result = write_threshold_calibration_outputs(
@@ -36,11 +48,18 @@ def main(argv: list[str] | None = None) -> int:
         test_start=args.test_start,
         offsets=_parse_int_list(args.offsets, name="offsets"),
         n_buckets=args.buckets,
+        recalibration_prior_strength=args.recalibration_prior_strength,
+        min_recalibration_events=args.min_recalibration_events,
     )
     test = result.summary[result.summary["split"] == "test"].iloc[0]
+    recalibrated = result.recalibration_comparison[
+        result.recalibration_comparison["policy"] == "validation_bucket_recalibrated"
+    ].iloc[0]
     print(
         f"Wrote threshold calibration to {args.out_dir}: "
-        f"{int(test['n_events'])} test events, brier={test['brier_score']:.4f}"
+        f"{int(test['n_events'])} test events, "
+        f"raw brier={test['brier_score']:.4f}, "
+        f"recalibrated brier={recalibrated['brier_score']:.4f}"
     )
     return 0
 

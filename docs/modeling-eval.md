@@ -374,7 +374,9 @@ python -m src.threshold_calibration_cli \
   --validation-start 2025-11-01 \
   --test-start 2026-02-01 \
   --offsets=-6,-4,-2,0,2,4,6 \
-  --buckets 10
+  --buckets 10 \
+  --recalibration-prior-strength 25 \
+  --min-recalibration-events 20
 ```
 
 The CLI estimates `P(actual_high_f >= threshold_f)` from empirical corrected
@@ -386,6 +388,13 @@ Brier 0.085 and ECE 0.081 over 623 threshold events. The worst bucket was NYC's
 30-40% predicted-probability bucket: mean predicted 0.349, observed 0.733 over
 45 events. That makes NYC's mid-low probability bucket the first target for
 probability calibration work.
+
+The same command also fits a validation-only city/source bucket recalibration
+table and applies it to the held-out test events. On the completed run, that
+reduced test Brier from 0.0609 to 0.0569 and expected calibration error from
+0.0241 to 0.0096. `predict --model-run-dir` automatically uses
+`probability_calibration/threshold_recalibration_table.csv` when it exists and
+prints the raw probability beside the recalibrated one.
 
 After the residual artifact exists, live prediction can print threshold
 probabilities without any market integration:
@@ -401,6 +410,8 @@ python -m src.predict \
 The offsets are applied around the rounded corrected point. For example, if the
 corrected point is 47°F, `--threshold-offsets=-2,0,2` prints
 `P(high >= 45°F)`, `P(high >= 47°F)`, and `P(high >= 49°F)`.
+When a recalibration table is present, each line shows the recalibrated
+probability first and the raw empirical-residual probability in parentheses.
 
 ## Known limitations and next steps
 

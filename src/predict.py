@@ -187,11 +187,35 @@ def _load_threshold_residuals(
     return selected["residual_f"].astype(float)
 
 
+def _load_threshold_recalibration_table(
+    path: Path, *, city: str, source: str
+) -> pd.DataFrame:
+    table = pd.read_csv(path)
+    required = {
+        "city",
+        "source",
+        "bucket_start",
+        "bucket_end",
+        "recalibrated_probability",
+        "used",
+    }
+    missing = required - set(table.columns)
+    if missing:
+        raise ValueError(f"threshold recalibration CSV missing columns: {sorted(missing)}")
+    selected = table[
+        (table["city"].astype(str).str.lower() == city.lower())
+        & (table["source"].astype(str) == source)
+        & (table["used"].astype(str).str.lower() == "true")
+    ]
+    return selected.copy()
+
+
 def _threshold_probability_rows(
     *,
     calibration: pd.Series,
     residuals: pd.Series,
     offsets: tuple[int, ...],
+    recalibration_table: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Estimate threshold event probabilities from empirical residuals."""
     if residuals.empty:
@@ -217,7 +241,34 @@ def _threshold_probability_rows(
                 "predicted_probability": probability,
             }
         )
-    return pd.DataFrame(records)
+    rows = pd.DataFrame(records)
+    if recalibration_table is not None and not recalibration_table.empty:
+        rows = _apply_threshold_probability_recalibration(rows, recalibration_table)
+    return rows
+
+
+def _apply_threshold_probability_recalibration(
+    rows: pd.DataFrame, recalibration_table: pd.DataFrame
+) -> pd.DataFrame:
+    out = rows.copy()
+    out["raw_predicted_probability"] = out["predicted_probability"].astype(float)
+    out["recalibration_used"] = False
+    for index, row in out.iterrows():
+        probability = float(row["raw_predicted_probability"])
+        matches = recalibration_table[
+            (recalibration_table["bucket_start"].astype(float) <= probability)
+            & (
+                (probability < recalibration_table["bucket_end"].astype(float))
+                | (recalibration_table["bucket_end"].astype(float) >= 1.0)
+            )
+        ]
+        if matches.empty:
+            continue
+        recalibrated = float(matches.iloc[0]["recalibrated_probability"])
+        out.at[index, "predicted_probability"] = min(max(recalibrated, 0.0), 1.0)
+        out.at[index, "recalibration_used"] = True
+    return out
+
 
 
 def _existing_artifact(path: Path) -> Path | None:
@@ -231,10 +282,17 @@ def _resolve_model_artifacts(
     bias_table: Path | None,
     interval_table: Path | None,
     threshold_residuals: Path | None,
-) -> tuple[Path | None, Path | None, Path | None, Path | None]:
+    threshold_recalibration_table: Path | None,
+) -> tuple[Path | None, Path | None, Path | None, Path | None, Path | None]:
     """Resolve explicit artifact paths, optionally defaulting from a run dir."""
     if model_run_dir is None:
-        return selected_sources, bias_table, interval_table, threshold_residuals
+        return (
+            selected_sources,
+            bias_table,
+            interval_table,
+            threshold_residuals,
+            threshold_recalibration_table,
+        )
     return (
         selected_sources
         or _existing_artifact(
@@ -250,6 +308,12 @@ def _resolve_model_artifacts(
         threshold_residuals
         or _existing_artifact(
             model_run_dir / "probability_calibration" / "threshold_residuals.csv"
+        ),
+        threshold_recalibration_table
+        or _existing_artifact(
+            model_run_dir
+            / "probability_calibration"
+            / "threshold_recalibration_table.csv"
         ),
     )
 
@@ -290,9 +354,14 @@ def _render_threshold_probabilities(thresholds: pd.DataFrame | None) -> str:
         return ""
     lines = ["Threshold probabilities:"]
     for row in thresholds.itertuples(index=False):
+        suffix = ""
+        if hasattr(row, "raw_predicted_probability") and getattr(
+            row, "recalibration_used", False
+        ):
+            suffix = f" (raw {float(row.raw_predicted_probability) * 100:>4.1f}%)"
         lines.append(
             f"  P(high >= {int(row.threshold_f)}°F): "
-            f"{float(row.predicted_probability) * 100:>5.1f}%"
+            f"{float(row.predicted_probability) * 100:>5.1f}%{suffix}"
         )
     return "\n".join(lines) + "\n"
 
@@ -374,6 +443,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Optional probability_calibration/threshold_residuals.csv.",
     )
     parser.add_argument(
+        "--threshold-recalibration-table",
+        type=Path,
+        help="Optional probability_calibration/threshold_recalibration_table.csv.",
+    )
+    parser.add_argument(
         "--threshold-offsets",
         help=(
             "Optional comma-separated integer offsets around rounded corrected "
@@ -381,12 +455,19 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
-    selected_sources_path, bias_table_path, interval_table_path, threshold_residuals_path = _resolve_model_artifacts(
+    (
+        selected_sources_path,
+        bias_table_path,
+        interval_table_path,
+        threshold_residuals_path,
+        threshold_recalibration_table_path,
+    ) = _resolve_model_artifacts(
         model_run_dir=args.model_run_dir,
         selected_sources=args.selected_sources,
         bias_table=args.bias_table,
         interval_table=args.interval_table,
         threshold_residuals=args.threshold_residuals,
+        threshold_recalibration_table=args.threshold_recalibration_table,
     )
 
     station = get_station(args.city)
@@ -474,10 +555,18 @@ def main(argv: list[str] | None = None) -> int:
                 residuals = _load_threshold_residuals(
                     threshold_residuals_path, city=args.city, source=source
                 )
+                recalibration_table = None
+                if threshold_recalibration_table_path is not None:
+                    recalibration_table = _load_threshold_recalibration_table(
+                        threshold_recalibration_table_path,
+                        city=args.city,
+                        source=source,
+                    )
                 threshold_probabilities = _threshold_probability_rows(
                     calibration=calibration,
                     residuals=residuals,
                     offsets=_parse_int_list(args.threshold_offsets, name="threshold-offsets"),
+                    recalibration_table=recalibration_table,
                 )
                 if threshold_probabilities.empty:
                     print(

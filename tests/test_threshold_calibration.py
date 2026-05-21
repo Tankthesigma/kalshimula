@@ -75,6 +75,12 @@ def test_evaluate_threshold_calibration_writes_events_and_summary() -> None:
     assert result.validation_group_calibration["city"].unique().tolist() == ["denver"]
     assert result.test_group_calibration["source"].unique().tolist() == ["gfs_ens"]
     assert "calibration_gap" in result.test_group_calibration.columns
+    assert not result.recalibration_table.empty
+    assert "recalibrated_probability" in result.test_recalibrated_events.columns
+    assert result.recalibration_comparison["policy"].tolist() == [
+        "raw_empirical_residual",
+        "validation_bucket_recalibrated",
+    ]
 
 
 def test_write_threshold_calibration_outputs(tmp_path) -> None:
@@ -108,3 +114,9 @@ def test_write_threshold_calibration_outputs(tmp_path) -> None:
     assert (output_dir / "threshold_test_group_summary.csv").exists()
     assert (output_dir / "threshold_validation_group_calibration.csv").exists()
     assert (output_dir / "threshold_test_group_calibration.csv").exists()
+    assert (output_dir / "threshold_recalibration_table.csv").exists()
+    assert (output_dir / "threshold_test_recalibrated_events.csv").exists()
+    assert (output_dir / "threshold_test_recalibrated_calibration.csv").exists()
+    assert (output_dir / "threshold_test_recalibrated_group_summary.csv").exists()
+    assert (output_dir / "threshold_test_recalibrated_group_calibration.csv").exists()
+    assert (output_dir / "threshold_recalibration_comparison.csv").exists()

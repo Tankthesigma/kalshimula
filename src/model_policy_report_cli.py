@@ -112,6 +112,7 @@ def _threshold_lines(
     summary: pd.DataFrame,
     test_group_summary: pd.DataFrame,
     test_group_calibration: pd.DataFrame,
+    recalibration_comparison: pd.DataFrame,
 ) -> list[str]:
     if summary.empty:
         return ["Threshold probabilities: missing probability_calibration/threshold_calibration_summary.csv"]
@@ -167,6 +168,23 @@ def _threshold_lines(
             f"gap={_fmt_number(worst_bucket.get('calibration_gap'))}, "
             f"events={int(worst_bucket.get('n', 0)):,}"
         )
+    if not recalibration_comparison.empty and {"policy", "brier_score"}.issubset(
+        recalibration_comparison.columns
+    ):
+        rows = recalibration_comparison.set_index("policy")
+        if {
+            "raw_empirical_residual",
+            "validation_bucket_recalibrated",
+        }.issubset(rows.index):
+            raw = rows.loc["raw_empirical_residual"]
+            recalibrated = rows.loc["validation_bucket_recalibrated"]
+            lines.append(
+                "  recalibrated test: "
+                f"brier={_fmt_number(recalibrated.get('brier_score'))} "
+                f"(raw {_fmt_number(raw.get('brier_score'))}), "
+                f"ece={_fmt_number(recalibrated.get('expected_calibration_error'))} "
+                f"(raw {_fmt_number(raw.get('expected_calibration_error'))})"
+            )
     return lines
 
 
@@ -203,6 +221,9 @@ def build_model_policy_report(run_dir: Path) -> str:
     threshold_test_group_calibration = _read_csv_if_exists(
         run_dir / "probability_calibration" / "threshold_test_group_calibration.csv"
     )
+    threshold_recalibration_comparison = _read_csv_if_exists(
+        run_dir / "probability_calibration" / "threshold_recalibration_comparison.csv"
+    )
 
     lines = [f"Run: {run_dir}"]
     lines.extend(_data_lines(rows))
@@ -215,6 +236,7 @@ def build_model_policy_report(run_dir: Path) -> str:
             threshold_summary,
             threshold_test_group_summary,
             threshold_test_group_calibration,
+            threshold_recalibration_comparison,
         )
     )
     return "\n".join(lines)

@@ -119,6 +119,41 @@ def test_threshold_probability_rows_use_empirical_residuals() -> None:
     assert rows["predicted_probability"].tolist() == [0.75, 0.5]
 
 
+def test_threshold_probability_rows_apply_recalibration_table() -> None:
+    calibration = pd.Series(
+        {
+            "city": "denver",
+            "source": "gfs_ens",
+            "point_f": 70.0,
+            "corrected_point_f": 72.0,
+        }
+    )
+    residuals = pd.Series([-2.0, 0.0, 2.0, 4.0])
+    recalibration_table = pd.DataFrame(
+        [
+            {
+                "city": "denver",
+                "source": "gfs_ens",
+                "bucket_start": 0.7,
+                "bucket_end": 0.8,
+                "recalibrated_probability": 0.6,
+                "used": True,
+            }
+        ]
+    )
+
+    rows = predict._threshold_probability_rows(
+        calibration=calibration,
+        residuals=residuals,
+        offsets=(0, 2),
+        recalibration_table=recalibration_table,
+    )
+
+    assert rows["predicted_probability"].tolist() == [0.6, 0.5]
+    assert rows["raw_predicted_probability"].tolist() == [0.75, 0.5]
+    assert rows["recalibration_used"].tolist() == [True, False]
+
+
 def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
     run_dir = tmp_path / "run"
     recommended_sources = run_dir / "source_selection" / "recommended_sources.csv"
@@ -126,6 +161,9 @@ def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
     policy_bias_table = run_dir / "model_policy" / "bias_table.csv"
     policy_interval_table = run_dir / "model_policy" / "interval_table.csv"
     threshold_residuals = run_dir / "probability_calibration" / "threshold_residuals.csv"
+    threshold_recalibration = (
+        run_dir / "probability_calibration" / "threshold_recalibration_table.csv"
+    )
     train_eval_bias_table = run_dir / "train_eval" / "bias_table.csv"
     recommended_sources.parent.mkdir(parents=True)
     policy_bias_table.parent.mkdir(parents=True)
@@ -136,6 +174,10 @@ def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
     policy_bias_table.write_text("city,source,bias_correction_f\n", encoding="utf-8")
     policy_interval_table.write_text("city,source,lower_error_f,upper_error_f\n", encoding="utf-8")
     threshold_residuals.write_text("city,source,residual_f\n", encoding="utf-8")
+    threshold_recalibration.write_text(
+        "city,source,bucket_start,bucket_end,recalibrated_probability,used\n",
+        encoding="utf-8",
+    )
     train_eval_bias_table.write_text("city,source,bias_correction_f\n", encoding="utf-8")
 
     resolved = predict._resolve_model_artifacts(
@@ -144,6 +186,7 @@ def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
         bias_table=None,
         interval_table=None,
         threshold_residuals=None,
+        threshold_recalibration_table=None,
     )
 
     assert resolved == (
@@ -151,6 +194,7 @@ def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
         policy_bias_table,
         policy_interval_table,
         threshold_residuals,
+        threshold_recalibration,
     )
 
 
@@ -166,9 +210,10 @@ def test_resolve_model_artifacts_falls_back_to_selected_sources(tmp_path) -> Non
         bias_table=None,
         interval_table=None,
         threshold_residuals=None,
+        threshold_recalibration_table=None,
     )
 
-    assert resolved == (selected_sources, None, None, None)
+    assert resolved == (selected_sources, None, None, None, None)
 
 
 def test_resolve_model_artifacts_allows_explicit_overrides(tmp_path) -> None:
@@ -177,6 +222,7 @@ def test_resolve_model_artifacts_allows_explicit_overrides(tmp_path) -> None:
     explicit_bias = tmp_path / "bias.csv"
     explicit_interval = tmp_path / "interval.csv"
     explicit_threshold = tmp_path / "threshold_residuals.csv"
+    explicit_recalibration = tmp_path / "threshold_recalibration_table.csv"
 
     resolved = predict._resolve_model_artifacts(
         model_run_dir=run_dir,
@@ -184,9 +230,16 @@ def test_resolve_model_artifacts_allows_explicit_overrides(tmp_path) -> None:
         bias_table=explicit_bias,
         interval_table=explicit_interval,
         threshold_residuals=explicit_threshold,
+        threshold_recalibration_table=explicit_recalibration,
     )
 
-    assert resolved == (explicit_selected, explicit_bias, explicit_interval, explicit_threshold)
+    assert resolved == (
+        explicit_selected,
+        explicit_bias,
+        explicit_interval,
+        explicit_threshold,
+        explicit_recalibration,
+    )
 
 
 def test_predict_cli_uses_selected_source(monkeypatch, tmp_path, capsys) -> None:
@@ -308,6 +361,13 @@ def test_predict_cli_prints_threshold_probabilities(monkeypatch, tmp_path, capsy
         "denver,gfs_ens,4\n",
         encoding="utf-8",
     )
+    threshold_recalibration = tmp_path / "threshold_recalibration_table.csv"
+    threshold_recalibration.write_text(
+        "city,source,bucket_start,bucket_end,recalibrated_probability,used\n"
+        "denver,gfs_ens,0.7,0.8,0.6,True\n"
+        "denver,gfs_ens,0.5,0.6,0.4,True\n",
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr(
         predict,
@@ -333,6 +393,8 @@ def test_predict_cli_prints_threshold_probabilities(monkeypatch, tmp_path, capsy
             str(bias_table),
             "--threshold-residuals",
             str(threshold_residuals),
+            "--threshold-recalibration-table",
+            str(threshold_recalibration),
             "--threshold-offsets",
             "0,2",
         ]
@@ -341,8 +403,8 @@ def test_predict_cli_prints_threshold_probabilities(monkeypatch, tmp_path, capsy
 
     assert exit_code == 0
     assert "Threshold probabilities:" in output.out
-    assert "P(high >= 73°F):  75.0%" in output.out
-    assert "P(high >= 75°F):  50.0%" in output.out
+    assert "P(high >= 73°F):  60.0% (raw 75.0%)" in output.out
+    assert "P(high >= 75°F):  40.0% (raw 50.0%)" in output.out
 
 
 def test_predict_cli_uses_model_run_dir(monkeypatch, tmp_path, capsys) -> None:
