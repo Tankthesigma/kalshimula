@@ -64,7 +64,15 @@ def _prediction_json_checks(payload: dict) -> list[dict]:
     predictions = prediction_json.get("predictions") or []
     errors = prediction_json.get("errors") or []
     model_gate = prediction_json.get("model_gate") or {}
-    required_prediction_fields = {"city", "forecast", "calibration", "threshold_probabilities"}
+    required_prediction_fields = {
+        "artifact_paths",
+        "calibration",
+        "city",
+        "forecast",
+        "selected_source",
+        "station",
+        "threshold_probabilities",
+    }
     missing_field_rows = []
     for index, prediction in enumerate(predictions):
         missing = sorted(required_prediction_fields - set(prediction))

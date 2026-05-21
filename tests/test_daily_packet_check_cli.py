@@ -8,9 +8,12 @@ def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
     predictions = (
         [
             {
+                "artifact_paths": {"model_run_dir": "run"},
                 "city": "denver",
                 "forecast": {"point_f": 70.0},
                 "calibration": {"corrected_point_f": 71.0},
+                "selected_source": "gfs_ens",
+                "station": {"name": "Denver", "nws_station": "KDEN"},
                 "threshold_probabilities": [],
             }
         ]
@@ -165,3 +168,20 @@ def test_daily_packet_check_cli_fails_prediction_json_missing_fields(
     assert code == 1
     assert "FAIL prediction_json:prediction_fields" in output
     assert "calibration" in output
+
+
+def test_daily_packet_check_cli_requires_dashboard_contract_fields(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0].pop("station")
+    payload["predictions"][0].pop("selected_source")
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:prediction_fields" in output
+    assert "selected_source" in output
+    assert "station" in output
