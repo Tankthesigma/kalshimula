@@ -28,7 +28,11 @@ def _prediction_payload(*, gate_passed=True, n_errors=0, n_predictions=1):
                 "calibration": {"corrected_point_f": 71.0},
                 "selected_source": "gfs_ens",
                 "selected_source_applied": True,
-                "station": {"name": "Denver", "nws_station": "KDEN"},
+                "station": {
+                    "lst_offset_hours": -7,
+                    "name": "Denver",
+                    "nws_station": "KDEN",
+                },
                 "threshold_probabilities": [
                     {"offset_f": -2, "threshold_f": 69, "predicted_probability": 0.9},
                     {"offset_f": 0, "threshold_f": 71, "predicted_probability": 0.5},
@@ -141,6 +145,7 @@ def test_daily_packet_check_cli_emits_json(tmp_path, capsys) -> None:
     assert payload["require_selected_source_applied"] is False
     assert payload["max_packet_age_hours"] is None
     assert any(check["name"] == "prediction_json:prediction_fields" for check in payload["checks"])
+    assert any(check["name"] == "prediction_json:station_metadata" for check in payload["checks"])
     assert any(check["name"] == "prediction_json:artifact_paths" for check in payload["checks"])
     assert any(check["name"] == "prediction_json:cities" for check in payload["checks"])
     assert any(
@@ -318,6 +323,25 @@ def test_daily_packet_check_cli_fails_top_artifact_run_dir_mismatch(
     assert code == 1
     assert "FAIL prediction_json:artifact_paths" in output
     assert "model_run_dir" in output
+
+
+def test_daily_packet_check_cli_fails_invalid_station_metadata(tmp_path, capsys) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["station"] = {
+        "name": "",
+        "nws_station": "BADSTATION",
+        "lst_offset_hours": "not-a-number",
+    }
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:station_metadata" in output
+    assert "missing station name" in output
+    assert "invalid nws_station" in output
+    assert "invalid lst_offset_hours" in output
 
 
 def test_daily_packet_check_cli_fails_missing_threshold_offset(
