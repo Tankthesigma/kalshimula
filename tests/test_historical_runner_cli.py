@@ -1,11 +1,23 @@
-﻿from datetime import date
+from datetime import date
 
 from src import historical_runner_cli
 from src.historical_runner import HistoricalRunResult
 
 
 def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> None:
-    def fake_run_historical_pipeline(*, cities, start, end, test_start, out_dir, cache_root, alpha):
+    def fake_run_historical_pipeline(
+        *,
+        cities,
+        start,
+        end,
+        test_start,
+        out_dir,
+        cache_root,
+        alpha,
+        progress,
+        workers,
+        chunk_days,
+    ):
         assert cities == ["denver", "chicago"]
         assert start == date(2025, 1, 1)
         assert end == date(2025, 1, 3)
@@ -13,13 +25,19 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
         assert out_dir == tmp_path / "run"
         assert cache_root == tmp_path / "cache"
         assert alpha == 0.2
+        assert progress is print
+        assert workers == 3
+        assert chunk_days == 5
         return HistoricalRunResult(
             rows_path=out_dir / "rows.csv",
             summary_path=out_dir / "summary.csv",
+            errors_path=out_dir / "errors.csv",
             report_dir=out_dir / "model_report",
             train_eval_dir=out_dir / "train_eval",
             n_rows=3,
             n_summary_rows=2,
+            n_errors=1,
+            n_skipped=4,
         )
 
     monkeypatch.setattr(
@@ -40,8 +58,14 @@ def test_historical_runner_cli_calls_pipeline(monkeypatch, tmp_path, capsys) -> 
             str(tmp_path / "run"),
             "--cache",
             str(tmp_path / "cache"),
+            "--workers",
+            "3",
+            "--chunk-days",
+            "5",
         ]
     )
 
     assert code == 0
-    assert "Wrote 3 rows" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Wrote 3 rows" in out
+    assert "4 skipped, 1 errors" in out

@@ -41,6 +41,7 @@ def collect_backtest_rows(
     station = get_station(city)
     cache = JsonCache(cache_root)
     rows: list[BacktestRow] = []
+    _prefetch_historical_openmeteo_points(cache, city, station, start, end)
 
     for target in date_range(start, end):
         actual = _cached_ncei_actual(cache, city, station, target)
@@ -110,6 +111,75 @@ def _historical_openmeteo_row(
         ),
         actual=actual_record,
     )
+
+
+def _prefetch_historical_openmeteo_points(cache: JsonCache, city: str, station, start: date, end: date) -> None:
+    targets = [
+        target
+        for target in date_range(start, end)
+        if target < date.today()
+        and not isinstance(cache.get("openmeteo_naive", _params(city, target, "openmeteo_naive")), dict)
+    ]
+    if not targets:
+        return
+
+    for use_historical, group in _group_contiguous_by_historical_mode(targets).items():
+        for range_start, range_end in group:
+            by_target: dict[date, list[openmeteo.ModelDailyHigh]] = {
+                target: [] for target in date_range(range_start, range_end)
+            }
+            for slug, *_ in openmeteo.SOURCES:
+                for forecast in openmeteo.fetch_source_range(
+                    slug,
+                    lat=station.lat,
+                    lon=station.lon,
+                    start=range_start,
+                    end=range_end,
+                    use_historical=use_historical,
+                ):
+                    if forecast.target_date in by_target:
+                        by_target[forecast.target_date].append(forecast)
+
+            for target, forecasts in by_target.items():
+                members = openmeteo.members_dataframe(forecasts)
+                point_f = None if members.empty else naive_forecast_from_members(members).point_f
+                cache.set(
+                    "openmeteo_naive",
+                    _params(city, target, "openmeteo_naive"),
+                    {
+                        "city": city,
+                        "target_date": target.isoformat(),
+                        "point_f": point_f,
+                    },
+                )
+
+
+def _group_contiguous_by_historical_mode(
+    targets: list[date],
+) -> dict[bool, list[tuple[date, date]]]:
+    grouped: dict[bool, list[tuple[date, date]]] = {True: [], False: []}
+    if not targets:
+        return grouped
+
+    sorted_targets = sorted(targets)
+    current_mode = _uses_historical_forecast(sorted_targets[0])
+    range_start = sorted_targets[0]
+    previous = sorted_targets[0]
+
+    for target in sorted_targets[1:]:
+        mode = _uses_historical_forecast(target)
+        if mode != current_mode or (target - previous).days != 1:
+            grouped[current_mode].append((range_start, previous))
+            range_start = target
+            current_mode = mode
+        previous = target
+
+    grouped[current_mode].append((range_start, previous))
+    return grouped
+
+
+def _uses_historical_forecast(target: date) -> bool:
+    return target < date.today() - timedelta(days=2)
 
 
 def _cached_nws_forecast(

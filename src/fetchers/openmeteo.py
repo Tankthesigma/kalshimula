@@ -17,24 +17,26 @@ that's fine — we only need today/tomorrow.
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
 from datetime import date, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Final
 
 import httpx
 import pandas as pd
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 ENSEMBLE_URL: Final = "https://ensemble-api.open-meteo.com/v1/ensemble"
 FORECAST_URL: Final = "https://api.open-meteo.com/v1/forecast"
 HISTORICAL_FORECAST_URL: Final = (
     "https://historical-forecast-api.open-meteo.com/v1/forecast"
 )
+MAX_ATTEMPTS: Final = 5
+MAX_RETRY_DELAY_SECONDS: Final = 300.0
+DEFAULT_RATE_LIMIT_DELAY_SECONDS: Final = 60.0
+REQUEST_SPACING_SECONDS: Final = 0.1
+HISTORICAL_REQUEST_SPACING_SECONDS: Final = 0.5
 
 # Each entry: (slug, open-meteo `models=` value, endpoint, kind)
 # kind ∈ {"ensemble", "deterministic"} controls how we parse the response.
@@ -47,6 +49,8 @@ SOURCES: Final[list[tuple[str, str, str, str]]] = [
     ("graphcast", "gfs_graphcast025", FORECAST_URL, "deterministic"),
     ("hrrr", "gfs_hrrr", FORECAST_URL, "deterministic"),
 ]
+_rate_limit_lock = threading.Lock()
+_next_request_at = 0.0
 
 
 @dataclass(frozen=True)
@@ -71,24 +75,109 @@ def _is_retryable(exc: BaseException) -> bool:
     return isinstance(exc, httpx.TransportError | httpx.TimeoutException)
 
 
-@retry(
-    retry=retry_if_exception_type((httpx.HTTPError,)),
-    stop=stop_after_attempt(4),
-    wait=wait_exponential(multiplier=1.0, min=1, max=30),
-    reraise=True,
-)
 def _get(url: str, params: dict) -> dict:
+    last_error: httpx.HTTPError | None = None
     with httpx.Client(timeout=30.0) as client:
-        r = client.get(url, params=params)
-        if not r.is_success and not _is_retryable(
-            httpx.HTTPStatusError("status", request=r.request, response=r)
-        ):
-            r.raise_for_status()
-        r.raise_for_status()
-        return r.json()
+        for attempt in range(MAX_ATTEMPTS):
+            _wait_for_request_slot(url)
+            try:
+                response = client.get(url, params=params)
+                if response.is_success:
+                    return response.json()
+                response.raise_for_status()
+            except httpx.HTTPError as error:
+                last_error = error
+                if (
+                    _is_daily_limit_error(error)
+                    or not _is_retryable(error)
+                    or attempt == MAX_ATTEMPTS - 1
+                ):
+                    raise
+                delay = _retry_delay_seconds(error, attempt)
+                if _is_rate_limit_error(error):
+                    _set_global_cooldown(delay)
+                _sleep(delay)
+        if last_error is not None:
+            raise last_error
+    raise RuntimeError("Open-Meteo request failed without an exception")
+
+
+def _wait_for_request_slot(url: str) -> None:
+    spacing = (
+        HISTORICAL_REQUEST_SPACING_SECONDS
+        if url == HISTORICAL_FORECAST_URL
+        else REQUEST_SPACING_SECONDS
+    )
+    with _rate_limit_lock:
+        global _next_request_at
+        now = _monotonic()
+        wait_seconds = max(_next_request_at - now, 0.0)
+        _next_request_at = max(now, _next_request_at) + spacing
+    if wait_seconds > 0:
+        _sleep(wait_seconds)
+
+
+def _set_global_cooldown(delay_seconds: float) -> None:
+    with _rate_limit_lock:
+        global _next_request_at
+        _next_request_at = max(_next_request_at, _monotonic() + delay_seconds)
+
+
+def _retry_delay_seconds(error: httpx.HTTPError, attempt: int) -> float:
+    if _is_rate_limit_error(error):
+        return _retry_after_seconds(error) or DEFAULT_RATE_LIMIT_DELAY_SECONDS
+    return min(2.0**attempt, 30.0)
+
+
+def _retry_after_seconds(error: httpx.HTTPError) -> float | None:
+    response = getattr(error, "response", None)
+    if response is None:
+        return None
+    raw_value = response.headers.get("retry-after")
+    if raw_value is None:
+        return None
+    try:
+        return min(max(float(raw_value), 0.0), MAX_RETRY_DELAY_SECONDS)
+    except ValueError:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(raw_value)
+    except (TypeError, ValueError):
+        return None
+    delay = retry_at.timestamp() - time.time()
+    return min(max(delay, 0.0), MAX_RETRY_DELAY_SECONDS)
+
+
+def _is_rate_limit_error(error: httpx.HTTPError) -> bool:
+    response = getattr(error, "response", None)
+    return getattr(response, "status_code", None) == 429
+
+
+def _is_daily_limit_error(error: httpx.HTTPError) -> bool:
+    response = getattr(error, "response", None)
+    if getattr(response, "status_code", None) != 429:
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return False
+    reason = str(payload.get("reason", "")).lower()
+    return "daily api request limit exceeded" in reason
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+def _monotonic() -> float:
+    return time.monotonic()
 
 
 def _common_params(lat: float, lon: float, target: date) -> dict:
+    return _range_params(lat, lon, start=target, end=target)
+
+
+def _range_params(lat: float, lon: float, *, start: date, end: date) -> dict:
     return {
         "latitude": lat,
         "longitude": lon,
@@ -96,8 +185,8 @@ def _common_params(lat: float, lon: float, target: date) -> dict:
         "temperature_unit": "fahrenheit",
         "wind_speed_unit": "mph",
         "timezone": "auto",
-        "start_date": target.isoformat(),
-        "end_date": target.isoformat(),
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
     }
 
 
@@ -124,6 +213,25 @@ def _parse_ensemble(
     return ModelDailyHigh(source=source, target_date=target, members_f=members)
 
 
+def _parse_ensemble_range(payload: dict, source: str) -> list[ModelDailyHigh]:
+    daily = payload.get("daily", {})
+    times = daily.get("time", [])
+    rows = []
+    for idx, raw_time in enumerate(times):
+        target = date.fromisoformat(raw_time)
+        members: list[float] = []
+        base = daily.get("temperature_2m_max")
+        if base is not None and idx < len(base) and base[idx] is not None:
+            members.append(float(base[idx]))
+        for key, values in daily.items():
+            if key.startswith("temperature_2m_max_member") and idx < len(values):
+                value = values[idx]
+                if value is not None:
+                    members.append(float(value))
+        rows.append(ModelDailyHigh(source=source, target_date=target, members_f=members))
+    return rows
+
+
 def _parse_deterministic(
     payload: dict, target: date, source: str
 ) -> ModelDailyHigh:
@@ -139,6 +247,19 @@ def _parse_deterministic(
     v = values[idx]
     members = [float(v)] if v is not None else []
     return ModelDailyHigh(source=source, target_date=target, members_f=members)
+
+
+def _parse_deterministic_range(payload: dict, source: str) -> list[ModelDailyHigh]:
+    daily = payload.get("daily", {})
+    times = daily.get("time", [])
+    values = daily.get("temperature_2m_max", [])
+    rows = []
+    for idx, raw_time in enumerate(times):
+        target = date.fromisoformat(raw_time)
+        value = values[idx] if idx < len(values) else None
+        members = [float(value)] if value is not None else []
+        rows.append(ModelDailyHigh(source=source, target_date=target, members_f=members))
+    return rows
 
 
 def fetch_source(
@@ -175,6 +296,38 @@ def fetch_source(
     return _parse_deterministic(payload, target, source_slug)
 
 
+def fetch_source_range(
+    source_slug: str,
+    *,
+    lat: float,
+    lon: float,
+    start: date,
+    end: date,
+    use_historical: bool = False,
+) -> list[ModelDailyHigh]:
+    """Fetch one model's daily-high forecasts for a date range."""
+    entry = next((s for s in SOURCES if s[0] == source_slug), None)
+    if entry is None:
+        raise ValueError(f"Unknown source {source_slug!r}")
+    _, model_param, default_url, kind = entry
+
+    url = HISTORICAL_FORECAST_URL if use_historical else default_url
+    params = _range_params(lat, lon, start=start, end=end) | {"models": model_param}
+    try:
+        payload = _get(url, params)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code in (400, 404):
+            return [
+                ModelDailyHigh(source=source_slug, target_date=target, members_f=[])
+                for target in _date_range(start, end)
+            ]
+        raise
+
+    if kind == "ensemble":
+        return _parse_ensemble_range(payload, source_slug)
+    return _parse_deterministic_range(payload, source_slug)
+
+
 def fetch_all_sources(
     *, lat: float, lon: float, target: date
 ) -> list[ModelDailyHigh]:
@@ -206,3 +359,10 @@ def members_dataframe(sources: list[ModelDailyHigh]) -> pd.DataFrame:
                 {"source": s.source, "target_date": s.target_date, "temp_f": v}
             )
     return pd.DataFrame(rows, columns=["source", "target_date", "temp_f"])
+
+
+def _date_range(start: date, end: date) -> list[date]:
+    days = (end - start).days
+    if days < 0:
+        return []
+    return [start + timedelta(days=offset) for offset in range(days + 1)]

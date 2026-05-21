@@ -1,4 +1,4 @@
-﻿"""CLI for running the historical collection/report pipeline."""
+"""CLI for running the historical collection/report pipeline."""
 
 from __future__ import annotations
 
@@ -32,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--cache", default=Path(".cache/weather"), type=Path)
     parser.add_argument("--alpha", default=0.2, type=float)
+    parser.add_argument("--workers", default=1, type=int)
+    parser.add_argument("--chunk-days", default=1, type=int)
     args = parser.parse_args(argv)
 
     result = run_historical_pipeline(
@@ -42,9 +44,13 @@ def main(argv: list[str] | None = None) -> int:
         out_dir=args.out_dir,
         cache_root=args.cache,
         alpha=args.alpha,
+        progress=print,
+        workers=args.workers,
+        chunk_days=args.chunk_days,
     )
     print(
         f"Wrote {result.n_rows} rows and {result.n_summary_rows} summary rows "
+        f"({result.n_skipped} skipped, {result.n_errors} errors) "
         f"under {args.out_dir}"
     )
     return 0
