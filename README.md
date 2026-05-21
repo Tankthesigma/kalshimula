@@ -73,6 +73,7 @@ existing run:
 
 ```powershell
 python -m src.bias_policy_cli --input data\runs\<run>\rows.csv --train-eval-dir data\runs\<run>\train_eval --recommended-sources data\runs\<run>\source_selection\recommended_sources.csv --out-dir data\runs\<run>\model_policy --validation-start 2025-11-01 --test-start 2026-02-01 --recent-days 90,180,365 --alphas 0.2,0.13
+python -m src.interval_policy_cli --input data\runs\<run>\rows.csv --recommended-sources data\runs\<run>\source_selection\recommended_sources.csv --out-dir data\runs\<run>\model_policy --validation-start 2025-11-01 --test-start 2026-02-01 --alphas 0.2,0.13,0.1,0.05
 ```
 
 Summarize collected rows:
