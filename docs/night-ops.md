@@ -192,10 +192,11 @@ To re-check the current bias recency and interval-alpha choice for the
 recommended source:
 
 ```bash
-python -m src.validation_grid_cli \
+python -m src.bias_policy_cli \
   --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
-  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/validation_grid_gfs_ens \
-  --policy-out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy \
+  --train-eval-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/train_eval \
+  --recommended-sources data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_selection/recommended_sources.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_policy \
   --validation-start 2025-11-01 \
   --test-start 2026-02-01 \
   --recent-days 90,180,365 \
