@@ -10,10 +10,9 @@ If NWS changes the period field names, casing, or structure, these tests
 fail at PR-gate time instead of a week later via the scheduled live
 smoke workflow.
 
-To refresh: re-run the throwaway capture script that lived next to this
-file during development (it computes ``expected_high_f`` from the
-captured payload and embeds it). Refresh requires nothing more than
-running the script — values self-update on each capture.
+To refresh: run ``python -m scripts.refresh_source_fixtures`` from repo root.
+It computes ``expected_high_f`` from the captured payload and embeds it, so
+values self-update on each capture.
 """
 
 from __future__ import annotations
