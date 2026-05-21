@@ -90,6 +90,33 @@ def _write_artifacts(run_dir):
         run_dir / "probability_calibration" / "threshold_calibration_summary.csv",
         index=False,
     )
+    pd.DataFrame(
+        [
+            {
+                "split": "test",
+                "city": "denver",
+                "source": "gfs_ens",
+                "n_events": 700,
+                "brier_score": 0.07,
+                "expected_calibration_error": 0.03,
+                "mean_predicted_probability": 0.5,
+                "observed_frequency": 0.52,
+            },
+            {
+                "split": "test",
+                "city": "boston",
+                "source": "gfs_ens",
+                "n_events": 650,
+                "brier_score": 0.08,
+                "expected_calibration_error": 0.05,
+                "mean_predicted_probability": 0.49,
+                "observed_frequency": 0.55,
+            },
+        ]
+    ).to_csv(
+        run_dir / "probability_calibration" / "threshold_test_group_summary.csv",
+        index=False,
+    )
 
 
 def test_build_model_policy_report_summarizes_artifacts(tmp_path) -> None:
@@ -105,6 +132,7 @@ def test_build_model_policy_report_summarizes_artifacts(tmp_path) -> None:
     assert "Bias policy metrics: validation MAE=0.990F, test MAE=1.010F" in report
     assert "Interval policy metrics: per_city_alpha alpha=selected" in report
     assert "test: events=6,230, brier=0.061, ece=0.024" in report
+    assert "worst test group: boston/gfs_ens brier=0.080, ece=0.050" in report
 
 
 def test_build_model_policy_report_handles_missing_artifacts(tmp_path) -> None:

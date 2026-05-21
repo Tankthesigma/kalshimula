@@ -232,6 +232,10 @@ python -m src.threshold_calibration_cli \
   --buckets 10
 ```
 
+This writes overall calibration plus per-city/source summaries. Check
+`threshold_test_group_summary.csv` before trusting a clean overall score; on
+the completed two-year run, NYC was the weakest threshold-probability group.
+
 Live prediction should then point at the completed model run. The predictor
 uses `source_selection/recommended_sources.csv` when it exists, and prefers
 `model_policy/` bias/interval tables over older `train_eval/` tables:

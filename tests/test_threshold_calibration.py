@@ -69,6 +69,9 @@ def test_evaluate_threshold_calibration_writes_events_and_summary() -> None:
     assert result.summary["split"].tolist() == ["validation", "test"]
     assert "expected_calibration_error" in result.summary.columns
     assert not result.test_calibration.empty
+    assert result.validation_group_summary["city"].tolist() == ["denver"]
+    assert result.test_group_summary["source"].tolist() == ["gfs_ens"]
+    assert result.test_group_summary.iloc[0]["n_events"] == 4
 
 
 def test_write_threshold_calibration_outputs(tmp_path) -> None:
@@ -98,3 +101,5 @@ def test_write_threshold_calibration_outputs(tmp_path) -> None:
     assert (output_dir / "threshold_validation_calibration.csv").exists()
     assert (output_dir / "threshold_test_calibration.csv").exists()
     assert (output_dir / "threshold_calibration_summary.csv").exists()
+    assert (output_dir / "threshold_validation_group_summary.csv").exists()
+    assert (output_dir / "threshold_test_group_summary.csv").exists()

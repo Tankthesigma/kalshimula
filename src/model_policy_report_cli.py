@@ -108,7 +108,7 @@ def _interval_policy_lines(comparison: pd.DataFrame) -> list[str]:
     ]
 
 
-def _threshold_lines(summary: pd.DataFrame) -> list[str]:
+def _threshold_lines(summary: pd.DataFrame, test_group_summary: pd.DataFrame) -> list[str]:
     if summary.empty:
         return ["Threshold probabilities: missing probability_calibration/threshold_calibration_summary.csv"]
     required = {"split", "n_events", "brier_score", "expected_calibration_error"}
@@ -124,6 +124,19 @@ def _threshold_lines(summary: pd.DataFrame) -> list[str]:
             f"ece={_fmt_number(row['expected_calibration_error'])}, "
             f"pred={_fmt_percent(row.get('mean_predicted_probability', pd.NA))}, "
             f"obs={_fmt_percent(row.get('observed_frequency', pd.NA))}"
+        )
+    if not test_group_summary.empty and "expected_calibration_error" in test_group_summary.columns:
+        worst = test_group_summary.sort_values(
+            ["expected_calibration_error", "brier_score"],
+            ascending=[False, False],
+            na_position="last",
+        ).iloc[0]
+        lines.append(
+            "  worst test group: "
+            f"{worst.get('city', 'n/a')}/{worst.get('source', 'n/a')} "
+            f"brier={_fmt_number(worst.get('brier_score'))}, "
+            f"ece={_fmt_number(worst.get('expected_calibration_error'))}, "
+            f"events={int(worst.get('n_events', 0)):,}"
         )
     return lines
 
@@ -155,6 +168,9 @@ def build_model_policy_report(run_dir: Path) -> str:
     threshold_summary = _read_csv_if_exists(
         run_dir / "probability_calibration" / "threshold_calibration_summary.csv"
     )
+    threshold_test_group_summary = _read_csv_if_exists(
+        run_dir / "probability_calibration" / "threshold_test_group_summary.csv"
+    )
 
     lines = [f"Run: {run_dir}"]
     lines.extend(_data_lines(rows))
@@ -162,7 +178,7 @@ def build_model_policy_report(run_dir: Path) -> str:
     lines.extend(_model_policy_lines(model_policy))
     lines.extend(_bias_policy_lines(bias_comparison))
     lines.extend(_interval_policy_lines(interval_comparison))
-    lines.extend(_threshold_lines(threshold_summary))
+    lines.extend(_threshold_lines(threshold_summary, threshold_test_group_summary))
     return "\n".join(lines)
 
 

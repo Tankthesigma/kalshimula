@@ -37,6 +37,16 @@ SUMMARY_COLUMNS = [
     "mean_predicted_probability",
     "observed_frequency",
 ]
+GROUP_SUMMARY_COLUMNS = [
+    "split",
+    "city",
+    "source",
+    "n_events",
+    "brier_score",
+    "expected_calibration_error",
+    "mean_predicted_probability",
+    "observed_frequency",
+]
 
 
 @dataclass(frozen=True)
@@ -49,6 +59,8 @@ class ThresholdCalibrationResult:
     validation_calibration: pd.DataFrame
     test_calibration: pd.DataFrame
     summary: pd.DataFrame
+    validation_group_summary: pd.DataFrame
+    test_group_summary: pd.DataFrame
 
 
 def evaluate_threshold_calibration(
@@ -99,6 +111,10 @@ def evaluate_threshold_calibration(
         ],
         columns=SUMMARY_COLUMNS,
     )
+    validation_group_summary = _group_summary(
+        "validation", validation_events, n_buckets=n_buckets
+    )
+    test_group_summary = _group_summary("test", test_events, n_buckets=n_buckets)
     return ThresholdCalibrationResult(
         validation_events=validation_events,
         test_events=test_events,
@@ -106,6 +122,8 @@ def evaluate_threshold_calibration(
         validation_calibration=validation_calibration,
         test_calibration=test_calibration,
         summary=summary,
+        validation_group_summary=validation_group_summary,
+        test_group_summary=test_group_summary,
     )
 
 
@@ -142,6 +160,12 @@ def write_threshold_calibration_outputs(
     )
     result.test_calibration.to_csv(output_dir / "threshold_test_calibration.csv", index=False)
     result.summary.to_csv(output_dir / "threshold_calibration_summary.csv", index=False)
+    result.validation_group_summary.to_csv(
+        output_dir / "threshold_validation_group_summary.csv", index=False
+    )
+    result.test_group_summary.to_csv(
+        output_dir / "threshold_test_group_summary.csv", index=False
+    )
     return result
 
 
@@ -248,6 +272,28 @@ def _summary_row(split: str, events: pd.DataFrame, buckets: pd.DataFrame) -> dic
         "mean_predicted_probability": float(probabilities.mean()),
         "observed_frequency": float(outcomes.mean()),
     }
+
+
+def _group_summary(split: str, events: pd.DataFrame, *, n_buckets: int) -> pd.DataFrame:
+    if events.empty:
+        return pd.DataFrame(columns=GROUP_SUMMARY_COLUMNS)
+    rows = []
+    for (city, source), group in events.groupby(["city", "source"], sort=True):
+        buckets = _calibration(group, n_buckets=n_buckets)
+        row = _summary_row(split, group, buckets)
+        rows.append(
+            {
+                "split": split,
+                "city": city,
+                "source": source,
+                "n_events": row["n_events"],
+                "brier_score": row["brier_score"],
+                "expected_calibration_error": row["expected_calibration_error"],
+                "mean_predicted_probability": row["mean_predicted_probability"],
+                "observed_frequency": row["observed_frequency"],
+            }
+        )
+    return pd.DataFrame(rows, columns=GROUP_SUMMARY_COLUMNS)
 
 
 def _expected_calibration_error(buckets: pd.DataFrame) -> float:
