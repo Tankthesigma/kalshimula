@@ -9,6 +9,24 @@ def _write_gate_artifacts(run_dir, *, mae=0.99, brier=0.056, ece=0.009) -> None:
     (run_dir / "probability_calibration").mkdir(parents=True)
     pd.DataFrame(
         [
+            {
+                "city": "denver",
+                "source": "gfs_ens",
+                "target_date": "2025-01-01",
+                "point_f": 70,
+                "actual_high_f": 71,
+            },
+            {
+                "city": "boston",
+                "source": "ecmwf_ens",
+                "target_date": "2025-01-02",
+                "point_f": 40,
+                "actual_high_f": 39,
+            },
+        ]
+    ).to_csv(run_dir / "rows.csv", index=False)
+    pd.DataFrame(
+        [
             {"city": "denver", "selected_source": "gfs_ens"},
             {"city": "boston", "selected_source": "gfs_ens"},
         ]
@@ -52,15 +70,34 @@ def _write_gate_artifacts(run_dir, *, mae=0.99, brier=0.056, ece=0.009) -> None:
     )
 
 
+def _gate_args(run_dir) -> list[str]:
+    return [
+        "--run-dir",
+        str(run_dir),
+        "--min-rows",
+        "2",
+        "--min-cities",
+        "2",
+        "--min-sources",
+        "2",
+        "--min-target-dates",
+        "2",
+    ]
+
+
 def test_model_gate_cli_passes_ready_artifacts(tmp_path, capsys) -> None:
     run_dir = tmp_path / "run"
     _write_gate_artifacts(run_dir)
 
-    code = model_gate_cli.main(["--run-dir", str(run_dir)])
+    code = model_gate_cli.main(_gate_args(run_dir))
 
     output = capsys.readouterr().out
     assert code == 0
     assert "Outcome: PASS" in output
+    assert "PASS row_count" in output
+    assert "PASS city_count" in output
+    assert "PASS source_count" in output
+    assert "PASS target_date_count" in output
     assert "PASS test_mae_corrected" in output
 
 
@@ -68,11 +105,23 @@ def test_model_gate_cli_fails_metric_threshold(tmp_path, capsys) -> None:
     run_dir = tmp_path / "run"
     _write_gate_artifacts(run_dir, mae=1.4)
 
-    code = model_gate_cli.main(["--run-dir", str(run_dir)])
+    code = model_gate_cli.main(_gate_args(run_dir))
 
     output = capsys.readouterr().out
     assert code == 1
     assert "FAIL test_mae_corrected" in output
+    assert "Outcome: FAIL" in output
+
+
+def test_model_gate_cli_fails_data_coverage_threshold(tmp_path, capsys) -> None:
+    run_dir = tmp_path / "run"
+    _write_gate_artifacts(run_dir)
+
+    code = model_gate_cli.main([*_gate_args(run_dir), "--min-rows", "3"])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL row_count" in output
     assert "Outcome: FAIL" in output
 
 

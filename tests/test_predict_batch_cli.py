@@ -13,6 +13,12 @@ def _write_gate_artifacts(run_dir, *, mae=0.99) -> None:
     (run_dir / "probability_calibration").mkdir(parents=True)
     pd.DataFrame(
         [
+            {"city": "denver", "source": "gfs_ens", "target_date": "2025-01-01"},
+            {"city": "boston", "source": "ecmwf_ens", "target_date": "2025-01-02"},
+        ]
+    ).to_csv(run_dir / "rows.csv", index=False)
+    pd.DataFrame(
+        [
             {"city": "denver", "selected_source": "gfs_ens"},
             {"city": "boston", "selected_source": "gfs_ens"},
         ]
@@ -54,6 +60,13 @@ def _write_gate_artifacts(run_dir, *, mae=0.99) -> None:
         run_dir / "probability_calibration" / "threshold_recalibration_comparison.csv",
         index=False,
     )
+
+
+def _relax_gate_coverage(monkeypatch) -> None:
+    monkeypatch.setattr("src.model_gate_cli.DEFAULT_MIN_ROWS", 2)
+    monkeypatch.setattr("src.model_gate_cli.DEFAULT_MIN_CITIES", 2)
+    monkeypatch.setattr("src.model_gate_cli.DEFAULT_MIN_SOURCES", 2)
+    monkeypatch.setattr("src.model_gate_cli.DEFAULT_MIN_TARGET_DATES", 2)
 
 
 def test_predict_batch_cli_writes_json(monkeypatch, tmp_path, capsys) -> None:
@@ -234,6 +247,7 @@ def test_predict_batch_cli_require_gate_embeds_passing_gate(
 ) -> None:
     run_dir = tmp_path / "run"
     _write_gate_artifacts(run_dir)
+    _relax_gate_coverage(monkeypatch)
 
     monkeypatch.setattr(
         "src.predict._fetch_all_parallel",
@@ -260,6 +274,7 @@ def test_predict_batch_cli_require_gate_embeds_passing_gate(
     assert payload["model_gate"]["required"] is True
     assert payload["model_gate"]["passed"] is True
     assert {check["name"] for check in payload["model_gate"]["checks"]} >= {
+        "row_count",
         "source_policy",
         "test_mae_corrected",
         "recalibrated_ece",
@@ -271,6 +286,7 @@ def test_predict_batch_cli_require_gate_stops_failed_gate(
 ) -> None:
     run_dir = tmp_path / "run"
     _write_gate_artifacts(run_dir, mae=1.4)
+    _relax_gate_coverage(monkeypatch)
 
     def fail_fetch(*args, **kwargs):
         raise AssertionError("gate failure should stop before fetching forecasts")

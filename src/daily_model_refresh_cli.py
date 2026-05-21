@@ -70,6 +70,10 @@ def _write_gate_report(*, run_dir: Path, out_path: Path) -> int:
     try:
         checks = model_gate_cli.build_gate_checks(
             run_dir=run_dir,
+            min_rows=model_gate_cli.DEFAULT_MIN_ROWS,
+            min_cities=model_gate_cli.DEFAULT_MIN_CITIES,
+            min_sources=model_gate_cli.DEFAULT_MIN_SOURCES,
+            min_target_dates=model_gate_cli.DEFAULT_MIN_TARGET_DATES,
             max_test_mae=model_gate_cli.DEFAULT_MAX_TEST_MAE,
             min_interval_coverage=model_gate_cli.DEFAULT_MIN_INTERVAL_COVERAGE,
             max_interval_width=model_gate_cli.DEFAULT_MAX_INTERVAL_WIDTH,

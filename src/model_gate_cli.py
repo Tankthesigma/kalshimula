@@ -26,6 +26,10 @@ DEFAULT_MAX_RECALIBRATED_ECE = 0.012
 DEFAULT_MIN_BRIER_IMPROVEMENT = 0.002
 DEFAULT_MIN_ECE_IMPROVEMENT = 0.010
 DEFAULT_EXPECTED_SOURCE = "gfs_ens"
+DEFAULT_MIN_ROWS = 50_000
+DEFAULT_MIN_CITIES = 10
+DEFAULT_MIN_SOURCES = 8
+DEFAULT_MIN_TARGET_DATES = 700
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -57,6 +61,10 @@ def _policy_row(table: pd.DataFrame, policy: str) -> pd.Series:
 def build_gate_checks(
     *,
     run_dir: Path,
+    min_rows: int,
+    min_cities: int,
+    min_sources: int,
+    min_target_dates: int,
     max_test_mae: float,
     min_interval_coverage: float,
     max_interval_width: float,
@@ -67,6 +75,7 @@ def build_gate_checks(
     expected_source: str | None = "gfs_ens",
 ) -> list[GateCheck]:
     """Build research-readiness checks for selected final model artifacts."""
+    rows = _read_csv(run_dir / "rows.csv")
     source_policy = _read_csv(run_dir / "source_selection" / "recommended_sources.csv")
     bias_policy = _read_csv(run_dir / "model_policy" / "bias_policy_comparison.csv")
     interval_policy = _read_csv(run_dir / "model_policy" / "interval_policy_comparison.csv")
@@ -75,6 +84,47 @@ def build_gate_checks(
     )
 
     checks: list[GateCheck] = []
+    required_rows = {"city", "source", "target_date"}
+    missing_rows = required_rows - set(rows.columns)
+    if missing_rows:
+        raise ValueError(f"rows.csv missing columns: {sorted(missing_rows)}")
+    row_count = len(rows)
+    city_count = rows["city"].astype(str).nunique()
+    source_count = rows["source"].astype(str).nunique()
+    target_date_count = rows["target_date"].astype(str).nunique()
+    checks.extend(
+        [
+            GateCheck(
+                name="row_count",
+                value=float(row_count),
+                threshold=float(min_rows),
+                passed=row_count >= min_rows,
+                detail="historical rows available for the selected run",
+            ),
+            GateCheck(
+                name="city_count",
+                value=float(city_count),
+                threshold=float(min_cities),
+                passed=city_count >= min_cities,
+                detail="unique cities represented in rows.csv",
+            ),
+            GateCheck(
+                name="source_count",
+                value=float(source_count),
+                threshold=float(min_sources),
+                passed=source_count >= min_sources,
+                detail="unique forecast sources represented in rows.csv",
+            ),
+            GateCheck(
+                name="target_date_count",
+                value=float(target_date_count),
+                threshold=float(min_target_dates),
+                passed=target_date_count >= min_target_dates,
+                detail="unique target dates represented in rows.csv",
+            ),
+        ]
+    )
+
     if expected_source is not None:
         if "selected_source" not in source_policy.columns:
             raise ValueError("recommended_sources.csv missing selected_source column")
@@ -189,6 +239,12 @@ def main(argv: list[str] | None = None) -> int:
         description="Fail if selected model artifacts miss research-readiness thresholds.",
     )
     parser.add_argument("--run-dir", required=True, type=Path)
+    parser.add_argument("--min-rows", default=DEFAULT_MIN_ROWS, type=int)
+    parser.add_argument("--min-cities", default=DEFAULT_MIN_CITIES, type=int)
+    parser.add_argument("--min-sources", default=DEFAULT_MIN_SOURCES, type=int)
+    parser.add_argument(
+        "--min-target-dates", default=DEFAULT_MIN_TARGET_DATES, type=int
+    )
     parser.add_argument("--max-test-mae", default=DEFAULT_MAX_TEST_MAE, type=float)
     parser.add_argument(
         "--min-interval-coverage", default=DEFAULT_MIN_INTERVAL_COVERAGE, type=float
@@ -212,6 +268,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         checks = build_gate_checks(
             run_dir=args.run_dir,
+            min_rows=args.min_rows,
+            min_cities=args.min_cities,
+            min_sources=args.min_sources,
+            min_target_dates=args.min_target_dates,
             max_test_mae=args.max_test_mae,
             min_interval_coverage=args.min_interval_coverage,
             max_interval_width=args.max_interval_width,
