@@ -9,6 +9,7 @@ import pandas as pd
 
 from src.models.baseline_training import evaluate_corrected_predictions
 from src.models.bias import apply_bias_correction, fit_bias_table
+from src.models.diagnostics import build_residual_diagnostics
 from src.models.intervals import apply_empirical_intervals, fit_empirical_intervals
 
 
@@ -22,6 +23,8 @@ class TrainEvalResult:
     interval_table: pd.DataFrame
     corrected_test_rows: pd.DataFrame
     evaluation: pd.DataFrame
+    source_residuals: pd.DataFrame
+    monthly_residuals: pd.DataFrame
 
 
 def split_rows_by_date(
@@ -53,6 +56,7 @@ def train_eval_split(
     corrected = apply_bias_correction(test, bias_table)
     corrected = apply_empirical_intervals(corrected, interval_table)
     evaluation = evaluate_corrected_predictions(corrected)
+    residuals = build_residual_diagnostics(corrected)
     return TrainEvalResult(
         train_rows=train,
         test_rows=test,
@@ -60,6 +64,8 @@ def train_eval_split(
         interval_table=interval_table,
         corrected_test_rows=corrected,
         evaluation=evaluation,
+        source_residuals=residuals.source_summary,
+        monthly_residuals=residuals.monthly_summary,
     )
 
 
@@ -76,4 +82,6 @@ def write_train_eval_outputs(
     result.interval_table.to_csv(output_dir / "interval_table.csv", index=False)
     result.corrected_test_rows.to_csv(output_dir / "corrected_test_rows.csv", index=False)
     result.evaluation.to_csv(output_dir / "evaluation.csv", index=False)
+    result.source_residuals.to_csv(output_dir / "source_residuals.csv", index=False)
+    result.monthly_residuals.to_csv(output_dir / "monthly_residuals.csv", index=False)
     return result
