@@ -40,6 +40,16 @@ Naive forecast for a future date:
 python -m src.predict --city denver --date tomorrow
 ```
 
+Use validation-selected Open-Meteo sources in live prediction:
+
+```powershell
+python -m src.predict --city denver --date tomorrow --selected-sources data\runs\<run>\source_selection\selected_sources.csv
+```
+
+If the selected source for a city is `openmeteo_naive`, prediction keeps the
+pooled Open-Meteo baseline. If an individual selected source is unavailable for
+the requested date, prediction warns and falls back to the pooled members.
+
 Collect one city/date range into backtest rows:
 
 ```powershell

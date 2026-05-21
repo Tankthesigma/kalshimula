@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import csv
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import pandas as pd
 
 from src.config import Station, get_station, load_stations
 from src.fetchers.openmeteo import (
@@ -73,6 +77,40 @@ def _fetch_all_parallel(
     return results
 
 
+def _load_selected_source(path: Path, city: str) -> str | None:
+    """Return the selected source for a city from source_selection output."""
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = set(reader.fieldnames or [])
+        missing = {"city", "selected_source"} - fieldnames
+        if missing:
+            raise ValueError(f"selected sources CSV missing columns: {sorted(missing)}")
+
+        city_key = city.strip().lower()
+        for row in reader:
+            if row.get("city", "").strip().lower() == city_key:
+                selected = row.get("selected_source", "").strip()
+                return selected or None
+    return None
+
+
+def _members_for_selected_source(
+    members: pd.DataFrame, selected_source: str | None
+) -> tuple[pd.DataFrame, bool]:
+    """Filter members to one selected source when possible.
+
+    ``openmeteo_naive`` is the historical pooled baseline, so live prediction
+    represents it by keeping all member rows.
+    """
+    if not selected_source or selected_source == "openmeteo_naive":
+        return members, False
+
+    selected = members[members["source"] == selected_source]
+    if selected.empty:
+        return members, False
+    return selected, True
+
+
 def _render_ascii_histogram(fc: NaiveForecast, width: int = 32) -> str:
     if not fc.bin_probs:
         return "  (no bins)"
@@ -120,6 +158,15 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="YYYY-MM-DD, or `today`/`tomorrow`/`yesterday`.",
     )
+    parser.add_argument(
+        "--selected-sources",
+        type=Path,
+        help=(
+            "Optional source_selection/selected_sources.csv. When the city "
+            "has an individual selected Open-Meteo source, predict from that "
+            "source's members; openmeteo_naive keeps the pooled baseline."
+        ),
+    )
     args = parser.parse_args(argv)
 
     station = get_station(args.city)
@@ -134,6 +181,33 @@ def main(argv: list[str] | None = None) -> int:
     if members.empty:
         print("ERROR: every Open-Meteo source returned empty.", file=sys.stderr)
         return 1
+
+    if args.selected_sources:
+        try:
+            selected_source = _load_selected_source(args.selected_sources, args.city)
+        except (OSError, ValueError) as error:
+            print(f"ERROR: could not read selected sources: {error}", file=sys.stderr)
+            return 1
+
+        members, applied = _members_for_selected_source(members, selected_source)
+        if selected_source is None:
+            print(
+                f"  ! no selected source for {args.city}; using pooled members",
+                file=sys.stderr,
+            )
+        elif applied:
+            print(f"  = using selected source: {selected_source}", file=sys.stderr)
+        elif selected_source == "openmeteo_naive":
+            print(
+                "  = selected source is openmeteo_naive; using pooled members",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"  ! selected source {selected_source!r} returned no members; "
+                "using pooled members",
+                file=sys.stderr,
+            )
 
     fc = naive_forecast_from_members(members)
     print(_render(station, target, fc))
