@@ -102,12 +102,17 @@ def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
     run_dir = tmp_path / "run"
     recommended_sources = run_dir / "source_selection" / "recommended_sources.csv"
     selected_sources = run_dir / "source_selection" / "selected_sources.csv"
-    bias_table = run_dir / "train_eval" / "bias_table.csv"
+    policy_bias_table = run_dir / "model_policy" / "bias_table.csv"
+    policy_interval_table = run_dir / "model_policy" / "interval_table.csv"
+    train_eval_bias_table = run_dir / "train_eval" / "bias_table.csv"
     recommended_sources.parent.mkdir(parents=True)
-    bias_table.parent.mkdir(parents=True)
+    policy_bias_table.parent.mkdir(parents=True)
+    train_eval_bias_table.parent.mkdir(parents=True)
     recommended_sources.write_text("city,selected_source\n", encoding="utf-8")
     selected_sources.write_text("city,selected_source\n", encoding="utf-8")
-    bias_table.write_text("city,source,bias_correction_f\n", encoding="utf-8")
+    policy_bias_table.write_text("city,source,bias_correction_f\n", encoding="utf-8")
+    policy_interval_table.write_text("city,source,lower_error_f,upper_error_f\n", encoding="utf-8")
+    train_eval_bias_table.write_text("city,source,bias_correction_f\n", encoding="utf-8")
 
     resolved = predict._resolve_model_artifacts(
         model_run_dir=run_dir,
@@ -116,7 +121,7 @@ def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
         interval_table=None,
     )
 
-    assert resolved == (recommended_sources, bias_table, None)
+    assert resolved == (recommended_sources, policy_bias_table, policy_interval_table)
 
 
 def test_resolve_model_artifacts_falls_back_to_selected_sources(tmp_path) -> None:

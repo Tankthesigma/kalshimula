@@ -89,3 +89,29 @@ def test_write_recency_alpha_grid_outputs_filters_source(tmp_path) -> None:
     assert (output_dir / "test_grid.csv").exists()
     assert (output_dir / "selected_config.csv").exists()
     assert result.validation_grid["n_rows"].tolist() == [2, 2]
+
+
+def test_write_recency_alpha_grid_outputs_can_write_policy_artifacts(tmp_path) -> None:
+    input_path = tmp_path / "rows.csv"
+    output_dir = tmp_path / "grid"
+    policy_dir = tmp_path / "model_policy"
+    _rows().to_csv(input_path, index=False)
+
+    write_recency_alpha_grid_outputs(
+        input_path=input_path,
+        output_dir=output_dir,
+        policy_out_dir=policy_dir,
+        validation_start="2025-01-05",
+        test_start="2025-01-07",
+        recent_days=(2,),
+        alphas=(0.2,),
+        source="gfs_ens",
+    )
+
+    policy = pd.read_csv(policy_dir / "model_policy.csv")
+    bias_table = pd.read_csv(policy_dir / "bias_table.csv")
+    interval_table = pd.read_csv(policy_dir / "interval_table.csv")
+    assert policy.iloc[0]["source"] == "gfs_ens"
+    assert policy.iloc[0]["bias_recent_days"] == 2
+    assert bias_table.iloc[0]["bias_correction_f"] == pytest.approx(2.0)
+    assert interval_table.iloc[0]["alpha"] == pytest.approx(0.2)
