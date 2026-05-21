@@ -11,9 +11,11 @@ Defaults:
 - Writes with LF newlines explicitly (Windows captures don't drift to CRLF).
 - Targets three representative cities per source — denver / nyc / miami —
   matching the existing fixture set.
-- Picks dates appropriate to each source's publication latency: today for
-  NWS (forecast only), 1 day ago for NCEI (≤3-day lag), 10 days ago for
-  POWER (~3-5 day lag).
+- Replaces the current dated NWS/POWER fixture pool instead of appending a
+  new set every time it runs.
+- Uses the canonical NCEI historical dates already asserted by the NCEI
+  fixture tests; NWS uses today (forecast only), and POWER uses 10 days ago
+  (~3-5 day lag).
 
 Run from repo root::
 
@@ -55,9 +57,12 @@ FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 
 # Representative spread — cold winter, mild, tropical.
 CITIES = ("denver", "nyc", "miami")
-# Mirror the chicago negative-temperature edge case for NCEI on a fixed
-# winter day so the parser keeps proving it handles negative Celsius.
-NCEI_EXTRAS: tuple[tuple[str, date], ...] = (
+NCEI_CASES: tuple[tuple[str, date], ...] = (
+    ("nyc", date(2025, 1, 1)),
+    ("denver", date(2025, 7, 15)),
+    ("miami", date(2025, 1, 1)),
+    # Mirror the chicago negative-temperature edge case for NCEI on a fixed
+    # winter day so the parser keeps proving it handles negative Celsius.
     ("chicago", date(2025, 1, 15)),
     # Empty-result fixture: a far-future date NCEI has no data for.
     ("nyc", date(2030, 1, 1)),
@@ -80,17 +85,15 @@ def _ncei_filename(slug: str, target: date, empty: bool = False) -> str:
     return f"{stem}_empty.json" if empty else f"{stem}.json"
 
 
-def _refresh_ncei(client: httpx.Client) -> None:
-    today_minus_one = date.today() - timedelta(days=1)
-    cases: list[tuple[str, date, str]] = [
-        (slug, today_minus_one, _ncei_filename(slug, today_minus_one))
-        for slug in CITIES
-    ]
-    for slug, target in NCEI_EXTRAS:
-        is_empty = (slug, target) == ("nyc", date(2030, 1, 1))
-        cases.append((slug, target, _ncei_filename(slug, target, empty=is_empty)))
+def _clear_fixtures(pattern: str) -> None:
+    for path in FIXTURES_DIR.glob(pattern):
+        path.unlink()
 
-    for slug, target, name in cases:
+
+def _refresh_ncei(client: httpx.Client) -> None:
+    for slug, target in NCEI_CASES:
+        is_empty = (slug, target) == ("nyc", date(2030, 1, 1))
+        name = _ncei_filename(slug, target, empty=is_empty)
         station = get_station(slug)
         params = {
             "dataset": "daily-summaries",
@@ -112,6 +115,7 @@ def _refresh_ncei(client: httpx.Client) -> None:
 
 def _refresh_nws(client: httpx.Client) -> None:
     today = date.today()
+    _clear_fixtures("nws_*.json")
     headers = {
         "User-Agent": "weather-predictor-fixtures/1.0 (refresh)",
         "Accept": "application/geo+json",
@@ -158,6 +162,7 @@ def _refresh_nws(client: httpx.Client) -> None:
 
 def _refresh_power(client: httpx.Client) -> None:
     target = date.today() - timedelta(days=10)
+    _clear_fixtures("power_*.json")
     for slug in CITIES:
         station = get_station(slug)
         params = {
@@ -186,17 +191,14 @@ def _refresh_power(client: httpx.Client) -> None:
 
 
 def _confirm_parser_round_trip() -> None:
-    """Quick parse on every refreshed NCEI fixture so we exit non-zero if
-    a freshly-written fixture doesn't survive the parser. Cheap safety net
-    against pushing a fixture that the existing test wouldn't accept.
-    """
-    for path in sorted(FIXTURES_DIR.glob("ncei_*.json")):
+    """Quick parse on each refreshed NCEI fixture with its real target/station."""
+    for slug, target in NCEI_CASES:
+        station = get_station(slug)
+        is_empty = (slug, target) == ("nyc", date(2030, 1, 1))
+        path = FIXTURES_DIR / _ncei_filename(slug, target, empty=is_empty)
         payload = json.loads(path.read_text(encoding="utf-8"))
-        # NCEI fixtures are bare list; parse_ncei expects target + station.
-        # We just want to know the call doesn't blow up — value asserted
-        # in the per-fixture test.
         if isinstance(payload, list):
-            parse_ncei(payload, date(2025, 1, 1), "USW00094728")
+            parse_ncei(payload, target, station.ghcnd_bare)
 
 
 def main() -> int:
