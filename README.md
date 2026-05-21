@@ -44,6 +44,7 @@ Use recommended Open-Meteo sources and trained model artifacts in live predictio
 
 ```powershell
 python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run>
+python -m src.predict --city denver --date tomorrow --model-run-dir data\runs\<run> --threshold-offsets=-2,0,2
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -55,6 +56,8 @@ warns and falls back to the pooled members. Bias and interval artifacts are
 optional; when supplied, the CLI prints the corrected point and empirical
 interval next to the raw ensemble output. You can also pass artifact paths
 explicitly with `--selected-sources`, `--bias-table`, and `--interval-table`.
+When `probability_calibration/threshold_residuals.csv` exists, `--threshold-offsets`
+prints offline threshold probabilities around the rounded corrected point.
 
 Collect one city/date range into backtest rows:
 

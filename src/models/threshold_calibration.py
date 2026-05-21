@@ -23,6 +23,12 @@ EVENT_COLUMNS = [
     "actual_high_f",
     "corrected_point_f",
 ]
+RESIDUAL_COLUMNS = [
+    "city",
+    "source",
+    "target_date",
+    "residual_f",
+]
 SUMMARY_COLUMNS = [
     "split",
     "n_events",
@@ -39,6 +45,7 @@ class ThresholdCalibrationResult:
 
     validation_events: pd.DataFrame
     test_events: pd.DataFrame
+    threshold_residuals: pd.DataFrame
     validation_calibration: pd.DataFrame
     test_calibration: pd.DataFrame
     summary: pd.DataFrame
@@ -82,6 +89,7 @@ def evaluate_threshold_calibration(
 
     validation_events = _event_rows(train_rows=train_fit, eval_rows=validation, offsets=offsets)
     test_events = _event_rows(train_rows=full_train, eval_rows=test, offsets=offsets)
+    threshold_residuals = _residual_rows(full_train)
     validation_calibration = _calibration(validation_events, n_buckets=n_buckets)
     test_calibration = _calibration(test_events, n_buckets=n_buckets)
     summary = pd.DataFrame(
@@ -94,6 +102,7 @@ def evaluate_threshold_calibration(
     return ThresholdCalibrationResult(
         validation_events=validation_events,
         test_events=test_events,
+        threshold_residuals=threshold_residuals,
         validation_calibration=validation_calibration,
         test_calibration=test_calibration,
         summary=summary,
@@ -127,6 +136,7 @@ def write_threshold_calibration_outputs(
     output_dir.mkdir(parents=True, exist_ok=True)
     result.validation_events.to_csv(output_dir / "threshold_validation_events.csv", index=False)
     result.test_events.to_csv(output_dir / "threshold_test_events.csv", index=False)
+    result.threshold_residuals.to_csv(output_dir / "threshold_residuals.csv", index=False)
     result.validation_calibration.to_csv(
         output_dir / "threshold_validation_calibration.csv", index=False
     )
@@ -198,6 +208,16 @@ def _residuals_by_group(rows: pd.DataFrame) -> dict[tuple[str, str], pd.Series]:
         (str(city), str(source)): group["residual_f"].astype(float)
         for (city, source), group in df.groupby(["city", "source"], sort=True)
     }
+
+
+def _residual_rows(rows: pd.DataFrame) -> pd.DataFrame:
+    required = {"city", "source", "target_date", "actual_high_f", "corrected_point_f"}
+    missing = required - set(rows.columns)
+    if missing:
+        raise ValueError(f"missing required columns: {sorted(missing)}")
+    out = rows.copy()
+    out["residual_f"] = out["actual_high_f"].astype(float) - out["corrected_point_f"].astype(float)
+    return out[RESIDUAL_COLUMNS].copy()
 
 
 def _calibration(events: pd.DataFrame, *, n_buckets: int) -> pd.DataFrame:

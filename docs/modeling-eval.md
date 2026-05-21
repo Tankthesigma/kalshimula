@@ -384,6 +384,21 @@ Brier score 0.0609 and expected calibration error 0.0241. The extreme
 probability buckets are well calibrated; the middle buckets are noisier and are
 the next probability-calibration target.
 
+After the residual artifact exists, live prediction can print threshold
+probabilities without any market integration:
+
+```bash
+python -m src.predict \
+  --city denver \
+  --date tomorrow \
+  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr \
+  --threshold-offsets=-2,0,2
+```
+
+The offsets are applied around the rounded corrected point. For example, if the
+corrected point is 47°F, `--threshold-offsets=-2,0,2` prints
+`P(high >= 45°F)`, `P(high >= 47°F)`, and `P(high >= 49°F)`.
+
 ## Known limitations and next steps
 
 - **Recommended source is global, not city-specific.** The best completed
