@@ -30,6 +30,10 @@ ProgressLogger = Callable[[str], None]
 Chunk = tuple[str, date]
 
 
+class _RateLimitStop(Exception):
+    """Internal signal to stop collection and preserve resumable artifacts."""
+
+
 @dataclass(frozen=True)
 class HistoricalRunResult:
     """Paths and row counts produced by a historical run."""
@@ -90,34 +94,38 @@ def run_historical_pipeline(
     if chunk_days < 1:
         raise ValueError("chunk_days must be at least 1")
 
-    if workers == 1 and chunk_days == 1:
-        for city, target in pending:
-            rows, errors = _collect_and_write_chunk(
-                city=city,
-                target=target,
-                cache_root=cache_root,
-                rows=rows,
-                completed=completed,
-                errors=errors,
-                rows_path=rows_path,
-                errors_path=errors_path,
-                progress=progress,
-            )
-    elif workers == 1:
-        for city, range_start, range_end in _pending_ranges(pending, chunk_days):
-            rows, errors = _collect_and_write_range(
-                city=city,
-                start=range_start,
-                end=range_end,
-                cache_root=cache_root,
-                rows=rows,
-                completed=completed,
-                errors=errors,
-                rows_path=rows_path,
-                errors_path=errors_path,
-                progress=progress,
-            )
-    else:
+    try:
+        if workers == 1 and chunk_days == 1:
+            for city, target in pending:
+                rows, errors = _collect_and_write_chunk(
+                    city=city,
+                    target=target,
+                    cache_root=cache_root,
+                    rows=rows,
+                    completed=completed,
+                    errors=errors,
+                    rows_path=rows_path,
+                    errors_path=errors_path,
+                    progress=progress,
+                )
+        elif workers == 1:
+            for city, range_start, range_end in _pending_ranges(pending, chunk_days):
+                rows, errors = _collect_and_write_range(
+                    city=city,
+                    start=range_start,
+                    end=range_end,
+                    cache_root=cache_root,
+                    rows=rows,
+                    completed=completed,
+                    errors=errors,
+                    rows_path=rows_path,
+                    errors_path=errors_path,
+                    progress=progress,
+                )
+    except _RateLimitStop:
+        _log(progress, "rate limit detected; stopping run for later resume")
+
+    if workers > 1:
         executor = ThreadPoolExecutor(max_workers=workers)
         futures = {
             executor.submit(_collect_chunk, city, target, cache_root): (city, target)
@@ -224,6 +232,8 @@ def _collect_and_write_chunk(
             progress,
             f"failed {city} {target.isoformat()}: {type(error).__name__}: {error}",
         )
+        if _is_rate_limit_error(error):
+            raise _RateLimitStop from error
         return rows, errors
 
     new_errors = _drop_chunk_errors(errors, city, target)
@@ -306,6 +316,8 @@ def _collect_and_write_range(
             progress,
             f"failed {city} {start.isoformat()}..{end.isoformat()}: {type(error).__name__}: {error}",
         )
+        if _is_rate_limit_error(error):
+            raise _RateLimitStop from error
         return rows, errors
 
     if not chunk.empty:
