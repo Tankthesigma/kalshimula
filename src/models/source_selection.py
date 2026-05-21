@@ -21,6 +21,11 @@ SOURCE_SELECTION_COLUMNS = [
     "source_validation_mae",
     "source_selection_fallback",
 ]
+RECOMMENDED_SOURCE_COLUMNS = [
+    "city",
+    "selected_source",
+    "recommended_policy",
+]
 SUMMARY_COLUMNS = [
     "n_cities",
     "mae_raw",
@@ -41,6 +46,7 @@ class SourceSelectionResult:
     """Artifacts from validation-based source selection."""
 
     selected_sources: pd.DataFrame
+    recommended_sources: pd.DataFrame
     selected_evaluation: pd.DataFrame
     summary: pd.DataFrame
     policy_comparison: pd.DataFrame
@@ -170,6 +176,39 @@ def compare_source_policies(
     return pd.DataFrame(rows, columns=POLICY_COMPARISON_COLUMNS)
 
 
+def recommend_sources(
+    selected_sources: pd.DataFrame, policy_comparison: pd.DataFrame
+) -> pd.DataFrame:
+    """Create the production source map from the comparison artifact.
+
+    ``selected_sources.csv`` remains the diagnostic per-city selector. This
+    artifact maps every city to the validation-selected global source so
+    ``--model-run-dir`` can default to the simpler regularized policy.
+    """
+    if selected_sources.empty or policy_comparison.empty:
+        return pd.DataFrame(columns=RECOMMENDED_SOURCE_COLUMNS)
+
+    policy_rows = policy_comparison[
+        policy_comparison["policy"] == "best_global_validation_source"
+    ]
+    if policy_rows.empty:
+        return pd.DataFrame(columns=RECOMMENDED_SOURCE_COLUMNS)
+
+    source = str(policy_rows.iloc[0]["selected_source"]).strip()
+    if not source:
+        return pd.DataFrame(columns=RECOMMENDED_SOURCE_COLUMNS)
+
+    rows = [
+        {
+            "city": city,
+            "selected_source": source,
+            "recommended_policy": "best_global_validation_source",
+        }
+        for city in sorted(selected_sources["city"].astype(str).unique())
+    ]
+    return pd.DataFrame(rows, columns=RECOMMENDED_SOURCE_COLUMNS)
+
+
 def write_source_selection_outputs(
     *, validation_scores_path: Path, evaluation_path: Path, output_dir: Path
 ) -> SourceSelectionResult:
@@ -185,9 +224,11 @@ def write_source_selection_outputs(
         selected_sources=selected_sources,
         selected_summary=summary,
     )
+    recommended_sources = recommend_sources(selected_sources, policy_comparison)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     selected_sources.to_csv(output_dir / "selected_sources.csv", index=False)
+    recommended_sources.to_csv(output_dir / "recommended_sources.csv", index=False)
     selected_evaluation.to_csv(
         output_dir / "selected_source_evaluation.csv", index=False
     )
@@ -195,6 +236,7 @@ def write_source_selection_outputs(
     policy_comparison.to_csv(output_dir / "source_policy_comparison.csv", index=False)
     return SourceSelectionResult(
         selected_sources=selected_sources,
+        recommended_sources=recommended_sources,
         selected_evaluation=selected_evaluation,
         summary=summary,
         policy_comparison=policy_comparison,

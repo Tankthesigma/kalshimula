@@ -187,6 +187,9 @@ def _resolve_model_artifacts(
         return selected_sources, bias_table, interval_table
     return (
         selected_sources
+        or _existing_artifact(
+            model_run_dir / "source_selection" / "recommended_sources.csv"
+        )
         or _existing_artifact(model_run_dir / "source_selection" / "selected_sources.csv"),
         bias_table or _existing_artifact(model_run_dir / "train_eval" / "bias_table.csv"),
         interval_table
@@ -270,7 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help=(
             "Optional historical run directory. Defaults artifact paths to "
-            "<run>/source_selection/selected_sources.csv and train_eval model tables."
+            "<run>/source_selection/recommended_sources.csv when present "
+            "(falling back to selected_sources.csv) and train_eval model tables."
         ),
     )
     parser.add_argument(

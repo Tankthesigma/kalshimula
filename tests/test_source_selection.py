@@ -4,6 +4,7 @@ import pytest
 from src.models.source_selection import (
     compare_source_policies,
     evaluate_selected_sources,
+    recommend_sources,
     select_sources_by_validation,
     summarize_selected_sources,
     write_source_selection_outputs,
@@ -207,6 +208,36 @@ def test_compare_source_policies_adds_best_global_source() -> None:
     assert global_policy["mae_corrected"] == pytest.approx(0.7)
 
 
+def test_recommend_sources_maps_all_cities_to_best_global_policy() -> None:
+    selected_sources = pd.DataFrame(
+        [
+            {"city": "denver", "selected_source": "gfs_ens"},
+            {"city": "nyc", "selected_source": "openmeteo_naive"},
+        ]
+    )
+    policy_comparison = pd.DataFrame(
+        [
+            {
+                "policy": "per_city_validation",
+                "selected_source": "per_city",
+            },
+            {
+                "policy": "best_global_validation_source",
+                "selected_source": "gfs_ens",
+            },
+        ]
+    )
+
+    recommended = recommend_sources(selected_sources, policy_comparison)
+
+    assert recommended["city"].tolist() == ["denver", "nyc"]
+    assert recommended["selected_source"].tolist() == ["gfs_ens", "gfs_ens"]
+    assert recommended["recommended_policy"].tolist() == [
+        "best_global_validation_source",
+        "best_global_validation_source",
+    ]
+
+
 def test_write_source_selection_outputs(tmp_path) -> None:
     validation_scores_path = tmp_path / "validation_scores.csv"
     evaluation_path = tmp_path / "evaluation.csv"
@@ -241,7 +272,9 @@ def test_write_source_selection_outputs(tmp_path) -> None:
     )
 
     assert len(result.selected_sources) == 1
+    assert len(result.recommended_sources) == 1
     assert (output_dir / "selected_sources.csv").exists()
+    assert (output_dir / "recommended_sources.csv").exists()
     assert (output_dir / "selected_source_evaluation.csv").exists()
     assert (output_dir / "selected_source_summary.csv").exists()
     assert (output_dir / "source_policy_comparison.csv").exists()
