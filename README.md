@@ -40,6 +40,19 @@ Naive forecast for a future date:
 python -m src.predict --city denver --date tomorrow
 ```
 
+Use validation-selected Open-Meteo sources and trained model artifacts in live
+prediction:
+
+```powershell
+python -m src.predict --city denver --date tomorrow --selected-sources data\runs\<run>\source_selection\selected_sources.csv --bias-table data\runs\<run>\train_eval\bias_table.csv --interval-table data\runs\<run>\train_eval\interval_table.csv
+```
+
+If the selected source for a city is `openmeteo_naive`, prediction keeps the
+pooled Open-Meteo baseline. If an individual selected source is unavailable for
+the requested date, prediction warns and falls back to the pooled members. Bias
+and interval artifacts are optional; when supplied, the CLI prints the corrected
+point and empirical interval next to the raw ensemble output.
+
 Collect one city/date range into backtest rows:
 
 ```powershell
