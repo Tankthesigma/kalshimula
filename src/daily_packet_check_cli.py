@@ -70,6 +70,7 @@ def _prediction_json_checks(payload: dict) -> list[dict]:
         "city",
         "forecast",
         "selected_source",
+        "selected_source_applied",
         "station",
         "threshold_probabilities",
     }
