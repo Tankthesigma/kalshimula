@@ -242,6 +242,17 @@ its 30-40% probability bucket was the largest miss.
 Also check `threshold_recalibration_comparison.csv`; the completed run improved
 from raw Brier/ECE 0.0609/0.0241 to recalibrated Brier/ECE 0.0569/0.0096.
 
+Finally, run the model readiness gate:
+
+```bash
+python -m src.model_gate_cli \
+  --run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
+```
+
+The completed two-year run should print `Outcome: PASS`. A failure means the
+current artifacts should be treated as a diagnostic model, not the recommended
+research baseline.
+
 Live prediction should then point at the completed model run. The predictor
 uses `source_selection/recommended_sources.csv` when it exists, and prefers
 `model_policy/` bias/interval tables over older `train_eval/` tables:
