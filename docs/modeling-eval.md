@@ -378,11 +378,13 @@ python -m src.threshold_calibration_cli \
 ```
 
 The CLI estimates `P(actual_high_f >= threshold_f)` from empirical corrected
-residuals and writes event rows plus bucketed reliability tables. On the
-completed run, the held-out threshold diagnostic produced 6,230 events with
-Brier score 0.0609 and expected calibration error 0.0241. The extreme
-probability buckets are well calibrated; the middle buckets are noisier and are
-the next probability-calibration target.
+residuals and writes event rows, bucketed reliability tables, and per-city/source
+group summaries. On the completed run, the held-out threshold diagnostic
+produced 6,230 events with Brier score 0.0609 and expected calibration error
+0.0241. The worst held-out city group was NYC at Brier 0.085 and ECE 0.081 over
+623 threshold events, which makes NYC the first target for probability
+calibration work. The extreme probability buckets are well calibrated; the
+middle buckets are noisier and are the next probability-calibration target.
 
 After the residual artifact exists, live prediction can print threshold
 probabilities without any market integration:
