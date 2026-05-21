@@ -56,6 +56,7 @@ def run_historical_pipeline(
     start: date,
     end: date,
     test_start: date,
+    validation_start: date | None = None,
     out_dir: Path,
     cache_root: Path,
     alpha: float = 0.2,
@@ -184,6 +185,9 @@ def run_historical_pipeline(
             alpha=alpha,
             bias_strategy=bias_strategy,
             bias_recent_days=bias_recent_days,
+            validation_start=(
+                validation_start.isoformat() if validation_start is not None else None
+            ),
         )
 
     return HistoricalRunResult(

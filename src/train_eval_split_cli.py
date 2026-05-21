@@ -15,6 +15,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--test-start")
+    parser.add_argument(
+        "--validation-start",
+        help="Optional train-validation split start for per-city bias method selection.",
+    )
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--alpha", default=0.2, type=float)
     parser.add_argument(
@@ -50,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         test_fraction=args.test_fraction,
         bias_strategy=args.bias_strategy,
         bias_recent_days=args.bias_recent_days,
+        validation_start=args.validation_start,
     )
     print(
         f"Wrote train/test evaluation to {args.out_dir}: "

@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--start", required=True, type=_parse_date)
     parser.add_argument("--end", required=True, type=_parse_date)
     parser.add_argument("--test-start", required=True, type=_parse_date)
+    parser.add_argument("--validation-start", type=_parse_date)
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--cache", default=Path(".cache/weather"), type=Path)
     parser.add_argument("--alpha", default=0.2, type=float)
@@ -63,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         start=args.start,
         end=args.end,
         test_start=args.test_start,
+        validation_start=args.validation_start,
         out_dir=args.out_dir,
         cache_root=args.cache,
         alpha=args.alpha,
