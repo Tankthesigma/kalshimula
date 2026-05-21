@@ -445,11 +445,13 @@ also validates the prediction JSON gate status, error count, prediction count,
 manifest city list, target date, generated timestamp, and required per-city
 prediction fields needed by a dashboard: selected source, whether that source
 was applied, station metadata, forecast, calibration, threshold probabilities,
-and artifact paths. It also verifies that top-level and per-city artifact paths
-match the manifest run directory and each other. Every prediction must have
-exactly the requested threshold offsets, valid probabilities, and threshold
-values centered on the rounded corrected point. It fails stale packets when the
-manifest has `max_packet_age_hours`. When the manifest sets
+and artifact paths. Station metadata must include a nonempty name, valid
+four-character `nws_station`, and numeric `lst_offset_hours`. It also verifies
+that top-level and per-city artifact paths match the manifest run directory and
+each other. Every prediction must have exactly the requested threshold offsets,
+valid probabilities, and threshold values centered on the rounded corrected
+point. It fails stale packets when the manifest has `max_packet_age_hours`. When
+the manifest sets
 `require_selected_source_applied`, the checker also fails any prediction where
 the selected source could not be applied.
 Use `--json` on the checker when a CI job or dashboard needs the verification

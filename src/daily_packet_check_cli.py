@@ -229,6 +229,35 @@ def _artifact_traceability_check(manifest: dict, prediction_json: dict) -> dict:
     }
 
 
+def _station_metadata_check(prediction_json: dict) -> dict:
+    problems = []
+    for index, prediction in enumerate(prediction_json.get("predictions") or []):
+        city = str(prediction.get("city", index))
+        station = prediction.get("station") or {}
+        name = str(station.get("name", "")).strip()
+        nws_station = str(station.get("nws_station", "")).strip()
+        if not name:
+            problems.append(f"{city}: missing station name")
+        if not nws_station:
+            problems.append(f"{city}: missing nws_station")
+        elif len(nws_station) != 4 or not nws_station.isalnum():
+            problems.append(f"{city}: invalid nws_station {nws_station}")
+
+        try:
+            offset = float(station["lst_offset_hours"])
+        except (KeyError, TypeError, ValueError):
+            problems.append(f"{city}: missing or invalid lst_offset_hours")
+        else:
+            if not -12 <= offset <= 14:
+                problems.append(f"{city}: lst_offset_hours out of range")
+
+    return {
+        "name": "prediction_json:station_metadata",
+        "passed": not problems,
+        "detail": "ok" if not problems else "; ".join(problems),
+    }
+
+
 def _prediction_consistency_checks(manifest: dict, prediction_json: dict) -> list[dict]:
     predictions = prediction_json.get("predictions") or []
     generated_at = prediction_json.get("generated_at")
@@ -378,6 +407,7 @@ def _prediction_json_checks(
             "detail": "ok" if not missing_field_rows else "; ".join(missing_field_rows),
         },
     ]
+    checks.append(_station_metadata_check(prediction_json))
     checks.append(_artifact_traceability_check(payload, prediction_json))
     checks.append(_threshold_contract_check(payload, prediction_json))
     checks.extend(_prediction_consistency_checks(payload, prediction_json))
