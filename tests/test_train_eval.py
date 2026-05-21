@@ -83,6 +83,18 @@ def test_train_eval_split_supports_month_stratified_strategy() -> None:
     assert set(result.bias_table["month"].dropna().astype(int)) == {1, 2}
 
 
+def test_train_eval_split_rejects_month_stratified_without_test_rows() -> None:
+    rows = pd.DataFrame(
+        [
+            {"city": "denver", "target_date": "2025-01-01", "source": "openmeteo", "point_f": 70, "actual_high_f": 68},
+            {"city": "denver", "target_date": "2025-02-01", "source": "openmeteo", "point_f": 40, "actual_high_f": 43},
+        ]
+    )
+
+    with pytest.raises(ValueError, match="test split is empty"):
+        train_eval_split(rows, split_strategy="month-stratified")
+
+
 def test_train_eval_split_rejects_empty_train_or_test() -> None:
     with pytest.raises(ValueError):
         train_eval_split(_rows(), test_start="2025-01-01")
