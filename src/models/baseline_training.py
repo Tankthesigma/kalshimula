@@ -1,4 +1,4 @@
-﻿"""Dependency-free baseline training and evaluation."""
+"""Dependency-free baseline training and evaluation."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pandas as pd
 from src.models.backtest import summarize_backtest
 from src.models.baselines import mean_absolute_error, root_mean_squared_error
 from src.models.bias import apply_bias_correction, fit_bias_table
-from src.models.scoring import bias
+from src.models.scoring import bias, interval_coverage
 
 EVALUATION_COLUMNS = [
     "city",
@@ -22,6 +22,10 @@ EVALUATION_COLUMNS = [
     "mae_corrected",
     "rmse_corrected",
     "bias_corrected",
+    "interval_coverage_raw",
+    "interval_width_raw",
+    "interval_coverage_corrected",
+    "interval_width_corrected",
 ]
 
 
@@ -42,7 +46,12 @@ def train_bias_baseline(rows: pd.DataFrame) -> BaselineTrainingResult:
 
 
 def evaluate_corrected_predictions(rows: pd.DataFrame) -> pd.DataFrame:
-    """Evaluate raw point forecasts against corrected point forecasts."""
+    """Evaluate raw point forecasts against corrected point forecasts.
+
+    Interval coverage/width columns are populated only when the corresponding
+    interval columns are present. This keeps bias-only baseline training usable
+    while making train/eval interval calibration visible in the same summary.
+    """
     required = {"city", "source", "actual_high_f", "point_f", "corrected_point_f"}
     missing = required - set(rows.columns)
     if missing:
@@ -55,6 +64,20 @@ def evaluate_corrected_predictions(rows: pd.DataFrame) -> pd.DataFrame:
         actual = group["actual_high_f"].astype(float).tolist()
         raw = group["point_f"].astype(float).tolist()
         corrected = group["corrected_point_f"].astype(float).tolist()
+        raw_interval = _interval_metrics(
+            group,
+            lower_col="interval_lower_raw_f"
+            if "interval_lower_raw_f" in group.columns
+            else "interval_lower_f",
+            upper_col="interval_upper_raw_f"
+            if "interval_upper_raw_f" in group.columns
+            else "interval_upper_f",
+        )
+        corrected_interval = _interval_metrics(
+            group,
+            lower_col="interval_lower_corrected_f",
+            upper_col="interval_upper_corrected_f",
+        )
         records.append(
             {
                 "city": city,
@@ -66,6 +89,10 @@ def evaluate_corrected_predictions(rows: pd.DataFrame) -> pd.DataFrame:
                 "mae_corrected": mean_absolute_error(actual, corrected),
                 "rmse_corrected": root_mean_squared_error(actual, corrected),
                 "bias_corrected": bias(actual, corrected),
+                "interval_coverage_raw": raw_interval["coverage"],
+                "interval_width_raw": raw_interval["width"],
+                "interval_coverage_corrected": corrected_interval["coverage"],
+                "interval_width_corrected": corrected_interval["width"],
             }
         )
     return pd.DataFrame(records, columns=EVALUATION_COLUMNS)
@@ -94,3 +121,20 @@ def _read_rows(path: Path) -> pd.DataFrame:
     parse_dates = ["target_date"] if "target_date" in columns else None
     return pd.read_csv(path, parse_dates=parse_dates)
 
+
+def _interval_metrics(group: pd.DataFrame, *, lower_col: str, upper_col: str) -> dict[str, object]:
+    if lower_col not in group.columns or upper_col not in group.columns:
+        return {"coverage": pd.NA, "width": pd.NA}
+
+    interval_rows = group[["actual_high_f", lower_col, upper_col]].dropna()
+    if interval_rows.empty:
+        return {"coverage": 0.0, "width": 0.0}
+
+    actual = interval_rows["actual_high_f"].astype(float).tolist()
+    lower = interval_rows[lower_col].astype(float).tolist()
+    upper = interval_rows[upper_col].astype(float).tolist()
+    width = (interval_rows[upper_col].astype(float) - interval_rows[lower_col].astype(float)).mean()
+    return {
+        "coverage": interval_coverage(actual, lower, upper),
+        "width": float(width),
+    }
