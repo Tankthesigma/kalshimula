@@ -105,7 +105,8 @@ passed and whether the packet is already settled, partially settled, or still
 unsettled.
 Use `src.forward_test_actuals_template_cli --packet <packet.json> --out
 daily_actuals.csv` to generate the exact `city,target_date,actual_high_f`
-template before filling offline actuals.
+template before filling offline actuals; reruns preserve existing filled values
+unless `--no-preserve-existing` is passed.
 After actual highs are known, use `src.forward_test_settle_cli` to score the
 packet. By default it fetches observed highs through the existing NCEI/ASOS
 source layer; pass `--actuals-csv` with `city,target_date,actual_high_f` to run
