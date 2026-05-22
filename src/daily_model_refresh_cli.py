@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src import (
     daily_packet_check_cli,
+    forward_test_actuals_template_cli,
     forward_test_gate_cli,
     forward_test_settle_cli,
     model_gate_cli,
@@ -124,8 +125,10 @@ def _write_manifest(
     review_code: int,
     gate_code: int,
     check_code: int | None = None,
+    actuals_template_code: int | None = None,
     settlement_code: int | None = None,
     forward_test_gate_code: int | None = None,
+    actuals_template_artifacts: dict[str, str] | None = None,
     settlement_artifacts: dict[str, str] | None = None,
     forward_test_gate_artifacts: dict[str, str] | None = None,
 ) -> int:
@@ -137,6 +140,7 @@ def _write_manifest(
                 review_code,
                 gate_code,
                 check_code,
+                actuals_template_code,
                 settlement_code,
                 forward_test_gate_code,
             )
@@ -153,6 +157,8 @@ def _write_manifest(
     }
     if check_code is not None:
         steps["packet_check"] = {"exit_code": check_code}
+    if actuals_template_code is not None:
+        steps["actuals_template"] = {"exit_code": actuals_template_code}
     if settlement_code is not None:
         steps["forward_test_settlement"] = {"exit_code": settlement_code}
     if forward_test_gate_code is not None:
@@ -167,6 +173,8 @@ def _write_manifest(
         "manifest": str(paths.manifest_out),
         "packet_check": str(paths.check_out),
     }
+    if actuals_template_artifacts:
+        artifacts.update(actuals_template_artifacts)
     if settlement_artifacts:
         artifacts.update(settlement_artifacts)
     if forward_test_gate_artifacts:
@@ -220,6 +228,15 @@ def _settlement_artifacts(
             settlement_report_out or history.with_name("report.json")
         )
     return artifacts
+
+
+def _run_actuals_template(
+    *, packet_path: Path, out_path: Path, no_preserve_existing: bool
+) -> int:
+    args = ["--packet", str(packet_path), "--out", str(out_path)]
+    if no_preserve_existing:
+        args.append("--no-preserve-existing")
+    return forward_test_actuals_template_cli.main(args)
 
 
 def _run_settlement(
@@ -350,6 +367,21 @@ def main(argv: list[str] | None = None) -> int:
         help="After packet check, settle the packet and write forward-test artifacts.",
     )
     parser.add_argument(
+        "--write-actuals-template",
+        action="store_true",
+        help="Write an offline actuals CSV template for the generated prediction packet.",
+    )
+    parser.add_argument(
+        "--actuals-template-out",
+        type=Path,
+        help="Actuals template output path. Defaults to <out>/daily_actuals_template.csv.",
+    )
+    parser.add_argument(
+        "--actuals-template-no-preserve-existing",
+        action="store_true",
+        help="Do not preserve filled actual values in an existing actuals template.",
+    )
+    parser.add_argument(
         "--settle-target-date",
         help="Target date to settle. Defaults to the packet target_date.",
     )
@@ -462,6 +494,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote model gate report: {paths.gate_out}")
     print(f"Wrote model gate JSON: {paths.gate_json_out}")
     print(f"Wrote model policy report: {paths.policy_out}")
+    actuals_template_code: int | None = None
+    actuals_template_artifacts: dict[str, str] | None = None
+    if args.write_actuals_template:
+        actuals_template_out = args.actuals_template_out or (
+            (args.out_dir or args.model_run_dir) / "daily_actuals_template.csv"
+        )
+        actuals_template_code = _run_actuals_template(
+            packet_path=paths.json_out,
+            out_path=actuals_template_out,
+            no_preserve_existing=args.actuals_template_no_preserve_existing,
+        )
+        actuals_template_artifacts = {"actuals_template": str(actuals_template_out)}
+        print(f"Wrote actuals template: {actuals_template_out}")
     _write_manifest(
         out_path=paths.manifest_out,
         model_run_dir=args.model_run_dir,
@@ -477,6 +522,8 @@ def main(argv: list[str] | None = None) -> int:
         batch_code=batch_code,
         review_code=review_code,
         gate_code=gate_code,
+        actuals_template_code=actuals_template_code,
+        actuals_template_artifacts=actuals_template_artifacts,
     )
     print(f"Wrote packet manifest: {paths.manifest_out}")
     check_code = _run_packet_check(paths)
@@ -556,8 +603,10 @@ def main(argv: list[str] | None = None) -> int:
         review_code=review_code,
         gate_code=gate_code,
         check_code=check_code,
+        actuals_template_code=actuals_template_code,
         settlement_code=settlement_code,
         forward_test_gate_code=forward_test_gate_code,
+        actuals_template_artifacts=actuals_template_artifacts,
         settlement_artifacts=settlement_artifacts,
         forward_test_gate_artifacts=forward_test_gate_artifacts,
     )
@@ -580,8 +629,10 @@ def main(argv: list[str] | None = None) -> int:
             review_code=review_code,
             gate_code=gate_code,
             check_code=final_check_code,
+            actuals_template_code=actuals_template_code,
             settlement_code=settlement_code,
             forward_test_gate_code=forward_test_gate_code,
+            actuals_template_artifacts=actuals_template_artifacts,
             settlement_artifacts=settlement_artifacts,
             forward_test_gate_artifacts=forward_test_gate_artifacts,
         )

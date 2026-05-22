@@ -291,6 +291,118 @@ def test_daily_model_refresh_cli_can_omit_packet_age_limit(monkeypatch, tmp_path
     assert manifest["max_packet_age_hours"] is None
 
 
+def test_daily_model_refresh_cli_can_write_actuals_template(
+    monkeypatch, tmp_path
+) -> None:
+    calls = []
+
+    def fake_template_main(argv):
+        calls.append(argv)
+        out_path = Path(argv[argv.index("--out") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            "city,target_date,actual_high_f,actual_source\n"
+            "denver,2026-05-22,,\n",
+            encoding="utf-8",
+        )
+        return 0
+
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr(
+        "src.forward_test_actuals_template_cli.main",
+        fake_template_main,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--prefix",
+            "packet",
+            "--write-actuals-template",
+        ]
+    )
+
+    assert code == 0
+    assert calls == [
+        [
+            "--packet",
+            str(tmp_path / "out" / "packet.json"),
+            "--out",
+            str(tmp_path / "out" / "daily_actuals_template.csv"),
+        ]
+    ]
+    manifest = json.loads((tmp_path / "out" / "packet_manifest.json").read_text())
+    assert manifest["steps"]["actuals_template"]["exit_code"] == 0
+    assert manifest["artifacts"]["actuals_template"] == str(
+        tmp_path / "out" / "daily_actuals_template.csv"
+    )
+
+
+def test_daily_model_refresh_cli_can_reset_actuals_template(
+    monkeypatch, tmp_path
+) -> None:
+    captured = {}
+
+    def fake_template_main(argv):
+        captured["argv"] = argv
+        out_path = Path(argv[argv.index("--out") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            "city,target_date,actual_high_f,actual_source\n",
+            encoding="utf-8",
+        )
+        return 0
+
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr(
+        "src.forward_test_actuals_template_cli.main",
+        fake_template_main,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--write-actuals-template",
+            "--actuals-template-out",
+            str(tmp_path / "actuals.csv"),
+            "--actuals-template-no-preserve-existing",
+        ]
+    )
+
+    assert code == 0
+    assert captured["argv"] == [
+        "--packet",
+        str(tmp_path / "run" / "latest_predictions.json"),
+        "--out",
+        str(tmp_path / "actuals.csv"),
+        "--no-preserve-existing",
+    ]
+
+
 def test_daily_model_refresh_cli_returns_check_failure(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
     monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
