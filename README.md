@@ -89,7 +89,9 @@ indexes the packet paths and exit codes and a packet-check JSON that verifies
 the packet. Add `--write-actuals-template` when the refresh should also create
 or update the offline `city,target_date,actual_high_f` template for later
 settlement; existing filled values are preserved unless
-`--actuals-template-no-preserve-existing` is passed.
+`--actuals-template-no-preserve-existing` is passed. Add
+`--write-pending-status` when the refresh should also write a forward-test
+status JSON with the current wait/fill/settle next action.
 Use `src.daily_packet_check_cli` to verify the manifest exit codes and artifact
 existence before a dashboard or downstream script consumes the packet. The
 checker also validates the prediction JSON gate status, prediction/error counts,

@@ -13,6 +13,7 @@ from src import (
     daily_packet_check_cli,
     forward_test_actuals_template_cli,
     forward_test_gate_cli,
+    forward_test_pending_cli,
     forward_test_settle_cli,
     model_gate_cli,
     model_policy_report_cli,
@@ -33,6 +34,7 @@ class RefreshPaths:
     policy_out: Path
     manifest_out: Path
     check_out: Path
+    pending_status_out: Path
 
 
 def build_refresh_paths(
@@ -51,6 +53,7 @@ def build_refresh_paths(
         policy_out=directory / f"{prefix}_model_policy.txt",
         manifest_out=directory / f"{prefix}_manifest.json",
         check_out=directory / f"{prefix}_check.json",
+        pending_status_out=directory / f"{prefix}_pending_status.json",
     )
 
 
@@ -126,9 +129,11 @@ def _write_manifest(
     gate_code: int,
     check_code: int | None = None,
     actuals_template_code: int | None = None,
+    pending_status_code: int | None = None,
     settlement_code: int | None = None,
     forward_test_gate_code: int | None = None,
     actuals_template_artifacts: dict[str, str] | None = None,
+    pending_status_artifacts: dict[str, str] | None = None,
     settlement_artifacts: dict[str, str] | None = None,
     forward_test_gate_artifacts: dict[str, str] | None = None,
 ) -> int:
@@ -141,6 +146,7 @@ def _write_manifest(
                 gate_code,
                 check_code,
                 actuals_template_code,
+                pending_status_code,
                 settlement_code,
                 forward_test_gate_code,
             )
@@ -159,6 +165,8 @@ def _write_manifest(
         steps["packet_check"] = {"exit_code": check_code}
     if actuals_template_code is not None:
         steps["actuals_template"] = {"exit_code": actuals_template_code}
+    if pending_status_code is not None:
+        steps["forward_test_pending_status"] = {"exit_code": pending_status_code}
     if settlement_code is not None:
         steps["forward_test_settlement"] = {"exit_code": settlement_code}
     if forward_test_gate_code is not None:
@@ -175,6 +183,8 @@ def _write_manifest(
     }
     if actuals_template_artifacts:
         artifacts.update(actuals_template_artifacts)
+    if pending_status_artifacts:
+        artifacts.update(pending_status_artifacts)
     if settlement_artifacts:
         artifacts.update(settlement_artifacts)
     if forward_test_gate_artifacts:
@@ -237,6 +247,23 @@ def _run_actuals_template(
     if no_preserve_existing:
         args.append("--no-preserve-existing")
     return forward_test_actuals_template_cli.main(args)
+
+
+def _write_pending_status(
+    *,
+    packet_path: Path,
+    history_path: Path,
+    actuals_csv: Path | None,
+    out_path: Path,
+) -> int:
+    payload = forward_test_pending_cli.build_pending_status(
+        packet_path=packet_path,
+        history_path=history_path,
+        actuals_csv=actuals_csv,
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return 0
 
 
 def _run_settlement(
@@ -404,6 +431,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Pass --no-report through to forward_test_settle.",
     )
     parser.add_argument(
+        "--write-pending-status",
+        action="store_true",
+        help="Write forward-test pending status JSON for the generated packet.",
+    )
+    parser.add_argument(
+        "--pending-status-out",
+        type=Path,
+        help="Pending status JSON path. Defaults to <out>/<prefix>_pending_status.json.",
+    )
+    parser.add_argument(
+        "--pending-history",
+        type=Path,
+        help="History CSV used for pending status. Defaults to settlement history.",
+    )
+    parser.add_argument(
+        "--pending-actuals-csv",
+        type=Path,
+        help=(
+            "Actuals CSV used for pending status. Defaults to the generated actuals "
+            "template when --write-actuals-template is used, else --settle-actuals-csv."
+        ),
+    )
+    parser.add_argument(
         "--forward-test-gate",
         action="store_true",
         help="Run forward_test_gate after packet check and optional settlement.",
@@ -496,6 +546,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote model policy report: {paths.policy_out}")
     actuals_template_code: int | None = None
     actuals_template_artifacts: dict[str, str] | None = None
+    actuals_template_out: Path | None = None
     if args.write_actuals_template:
         actuals_template_out = args.actuals_template_out or (
             (args.out_dir or args.model_run_dir) / "daily_actuals_template.csv"
@@ -507,6 +558,29 @@ def main(argv: list[str] | None = None) -> int:
         )
         actuals_template_artifacts = {"actuals_template": str(actuals_template_out)}
         print(f"Wrote actuals template: {actuals_template_out}")
+    pending_status_code: int | None = None
+    pending_status_artifacts: dict[str, str] | None = None
+    settlement_out_dir = args.settlement_out_dir or (
+        (args.out_dir or args.model_run_dir) / "forward_test"
+    )
+    if args.write_pending_status:
+        pending_out = args.pending_status_out or paths.pending_status_out
+        pending_history = args.pending_history or args.settlement_history or (
+            settlement_out_dir / "history.csv"
+        )
+        pending_actuals = (
+            args.pending_actuals_csv
+            or actuals_template_out
+            or args.settle_actuals_csv
+        )
+        pending_status_code = _write_pending_status(
+            packet_path=paths.json_out,
+            history_path=pending_history,
+            actuals_csv=pending_actuals,
+            out_path=pending_out,
+        )
+        pending_status_artifacts = {"forward_test_pending_status": str(pending_out)}
+        print(f"Wrote forward-test pending status: {pending_out}")
     _write_manifest(
         out_path=paths.manifest_out,
         model_run_dir=args.model_run_dir,
@@ -523,7 +597,9 @@ def main(argv: list[str] | None = None) -> int:
         review_code=review_code,
         gate_code=gate_code,
         actuals_template_code=actuals_template_code,
+        pending_status_code=pending_status_code,
         actuals_template_artifacts=actuals_template_artifacts,
+        pending_status_artifacts=pending_status_artifacts,
     )
     print(f"Wrote packet manifest: {paths.manifest_out}")
     check_code = _run_packet_check(paths)
@@ -532,9 +608,6 @@ def main(argv: list[str] | None = None) -> int:
     settlement_artifacts: dict[str, str] | None = None
     forward_test_gate_code: int | None = None
     forward_test_gate_artifacts: dict[str, str] | None = None
-    settlement_out_dir = args.settlement_out_dir or (
-        (args.out_dir or args.model_run_dir) / "forward_test"
-    )
     if args.settle:
         try:
             settlement_target_date = args.settle_target_date or _packet_target_date(
@@ -604,9 +677,11 @@ def main(argv: list[str] | None = None) -> int:
         gate_code=gate_code,
         check_code=check_code,
         actuals_template_code=actuals_template_code,
+        pending_status_code=pending_status_code,
         settlement_code=settlement_code,
         forward_test_gate_code=forward_test_gate_code,
         actuals_template_artifacts=actuals_template_artifacts,
+        pending_status_artifacts=pending_status_artifacts,
         settlement_artifacts=settlement_artifacts,
         forward_test_gate_artifacts=forward_test_gate_artifacts,
     )
@@ -630,9 +705,11 @@ def main(argv: list[str] | None = None) -> int:
             gate_code=gate_code,
             check_code=final_check_code,
             actuals_template_code=actuals_template_code,
+            pending_status_code=pending_status_code,
             settlement_code=settlement_code,
             forward_test_gate_code=forward_test_gate_code,
             actuals_template_artifacts=actuals_template_artifacts,
+            pending_status_artifacts=pending_status_artifacts,
             settlement_artifacts=settlement_artifacts,
             forward_test_gate_artifacts=forward_test_gate_artifacts,
         )
