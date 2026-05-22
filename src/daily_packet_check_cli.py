@@ -74,6 +74,13 @@ def _parse_iso_datetime(value: Any) -> datetime | None:
     return parsed
 
 
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _packet_freshness_check(
     prediction_json: dict, *, max_age_hours: float, now: datetime
 ) -> dict:
@@ -478,6 +485,114 @@ def _prediction_json_checks(
     return checks
 
 
+def _settlement_json_checks(payload: dict) -> list[dict]:
+    artifacts = payload.get("artifacts") or {}
+    if "settlement_json" not in artifacts:
+        return []
+    settlement_json, detail = _load_json_artifact(artifacts, "settlement_json")
+    if settlement_json is None:
+        return [
+            {
+                "name": "settlement_json:readable",
+                "passed": False,
+                "detail": detail,
+            }
+        ]
+
+    rows = settlement_json.get("rows") or []
+    errors = settlement_json.get("errors") or []
+    n_errors = _int_or_none(settlement_json.get("n_errors", len(errors)))
+    n_rows = _int_or_none(settlement_json.get("n_rows", -1))
+    summary = settlement_json.get("summary") or {}
+    return [
+        {
+            "name": "settlement_json:schema_version",
+            "passed": settlement_json.get("schema_version") == "1.0",
+            "detail": f"schema_version={settlement_json.get('schema_version', 'missing')}",
+        },
+        {
+            "name": "settlement_json:error_count",
+            "passed": n_errors == 0 and not errors,
+            "detail": (
+                f"n_errors={settlement_json.get('n_errors', 'missing')} "
+                f"errors={len(errors)}"
+            ),
+        },
+        {
+            "name": "settlement_json:row_count",
+            "passed": n_rows == len(rows) and len(rows) > 0,
+            "detail": (
+                f"n_rows={settlement_json.get('n_rows', 'missing')} "
+                f"rows={len(rows)}"
+            ),
+        },
+        {
+            "name": "settlement_json:summary",
+            "passed": summary.get("mae_corrected_f") is not None
+            and summary.get("threshold_brier_score") is not None,
+            "detail": (
+                f"mae_corrected_f={summary.get('mae_corrected_f', 'missing')} "
+                f"threshold_brier_score={summary.get('threshold_brier_score', 'missing')}"
+            ),
+        },
+    ]
+
+
+def _settlement_report_checks(payload: dict) -> list[dict]:
+    artifacts = payload.get("artifacts") or {}
+    if "settlement_report" not in artifacts:
+        return []
+    report_json, detail = _load_json_artifact(artifacts, "settlement_report")
+    if report_json is None:
+        return [
+            {
+                "name": "settlement_report:readable",
+                "passed": False,
+                "detail": detail,
+            }
+        ]
+
+    summary = report_json.get("summary") or {}
+    n_predictions = _int_or_none(summary.get("n_predictions"))
+    n_threshold_events = _int_or_none(summary.get("n_threshold_events"))
+    required_metrics = {
+        "bias_corrected_f",
+        "mae_corrected_f",
+        "threshold_brier_score",
+    }
+    missing_metrics = sorted(
+        metric for metric in required_metrics if summary.get(metric) is None
+    )
+    optional_metrics = {
+        "interval_coverage": summary.get("interval_coverage"),
+        "threshold_ece": summary.get("threshold_ece"),
+    }
+    return [
+        {
+            "name": "settlement_report:schema_version",
+            "passed": report_json.get("schema_version") == "1.0",
+            "detail": f"schema_version={report_json.get('schema_version', 'missing')}",
+        },
+        {
+            "name": "settlement_report:prediction_count",
+            "passed": n_predictions is not None and n_predictions > 0,
+            "detail": f"n_predictions={summary.get('n_predictions', 'missing')}",
+        },
+        {
+            "name": "settlement_report:threshold_count",
+            "passed": n_threshold_events is not None and n_threshold_events > 0,
+            "detail": f"n_threshold_events={summary.get('n_threshold_events', 'missing')}",
+        },
+        {
+            "name": "settlement_report:metrics",
+            "passed": not missing_metrics,
+            "detail": (
+                f"required_missing={missing_metrics} optional={optional_metrics}"
+            ),
+        },
+    ]
+
+
 def build_packet_checks(
     manifest_path: Path,
     *,
@@ -519,6 +634,8 @@ def build_packet_checks(
             now=now,
         )
     )
+    checks.extend(_settlement_json_checks(payload))
+    checks.extend(_settlement_report_checks(payload))
     return payload, checks
 
 

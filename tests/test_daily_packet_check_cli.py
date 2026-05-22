@@ -147,6 +147,60 @@ def _write_packet(
     return manifest
 
 
+def _add_settlement_artifacts(tmp_path, manifest, *, report_summary=None) -> None:
+    settlement_json = tmp_path / "forward_test" / "2026-05-22_settlement.json"
+    settlement_history = tmp_path / "forward_test" / "history.csv"
+    settlement_report = tmp_path / "forward_test" / "report.json"
+    settlement_json.parent.mkdir(parents=True, exist_ok=True)
+    settlement_json.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "n_rows": 1,
+                "n_errors": 0,
+                "summary": {
+                    "mae_corrected_f": 1.0,
+                    "threshold_brier_score": 0.25,
+                },
+                "rows": [{"city": "denver"}],
+                "errors": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    settlement_history.write_text("city,target_date\nDenver,2026-05-22\n", encoding="utf-8")
+    settlement_report.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "summary": report_summary
+                or {
+                    "n_predictions": 1,
+                    "n_threshold_events": 3,
+                    "mae_corrected_f": 1.0,
+                    "bias_corrected_f": -1.0,
+                    "interval_coverage": 1.0,
+                    "threshold_brier_score": 0.25,
+                    "threshold_ece": 0.1,
+                },
+                "daily": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["steps"]["forward_test_settlement"] = {"exit_code": 0}
+    payload["artifacts"].update(
+        {
+            "settlement_json": str(settlement_json),
+            "settlement_history": str(settlement_history),
+            "settlement_report": str(settlement_report),
+        }
+    )
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_build_packet_checks_passes_complete_packet(tmp_path) -> None:
     manifest = _write_packet(tmp_path)
 
@@ -162,6 +216,50 @@ def test_build_packet_checks_passes_complete_packet(tmp_path) -> None:
         "prediction_json:prediction_fields",
         "artifact:prediction_review",
     }
+
+
+def test_build_packet_checks_validates_settlement_artifacts(tmp_path) -> None:
+    manifest = _write_packet(tmp_path)
+    _add_settlement_artifacts(tmp_path, manifest)
+
+    _, checks = daily_packet_check_cli.build_packet_checks(manifest)
+
+    assert all(check["passed"] for check in checks)
+    assert {check["name"] for check in checks} >= {
+        "artifact:settlement_json",
+        "artifact:settlement_history",
+        "artifact:settlement_report",
+        "step:forward_test_settlement",
+        "settlement_json:schema_version",
+        "settlement_json:error_count",
+        "settlement_json:row_count",
+        "settlement_json:summary",
+        "settlement_report:schema_version",
+        "settlement_report:prediction_count",
+        "settlement_report:threshold_count",
+        "settlement_report:metrics",
+    }
+
+
+def test_build_packet_checks_fails_bad_settlement_report_metrics(tmp_path) -> None:
+    manifest = _write_packet(tmp_path)
+    _add_settlement_artifacts(
+        tmp_path,
+        manifest,
+        report_summary={
+            "n_predictions": 1,
+            "n_threshold_events": 3,
+            "mae_corrected_f": None,
+            "bias_corrected_f": -1.0,
+            "threshold_brier_score": 0.25,
+        },
+    )
+
+    _, checks = daily_packet_check_cli.build_packet_checks(manifest)
+
+    metrics = next(check for check in checks if check["name"] == "settlement_report:metrics")
+    assert metrics["passed"] is False
+    assert "mae_corrected_f" in metrics["detail"]
 
 
 def test_daily_packet_check_cli_writes_report(tmp_path, capsys) -> None:
