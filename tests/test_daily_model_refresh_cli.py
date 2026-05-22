@@ -450,6 +450,137 @@ def test_daily_model_refresh_cli_returns_settlement_failure(monkeypatch, tmp_pat
     assert manifest["steps"]["forward_test_settlement"]["exit_code"] == 1
 
 
+def test_daily_model_refresh_cli_can_run_forward_test_gate_after_settlement(
+    monkeypatch, tmp_path
+) -> None:
+    calls = []
+
+    def fake_settle_main(argv):
+        calls.append(("settle", argv))
+        return 0
+
+    def fake_forward_gate_main(argv):
+        calls.append(("forward_gate", argv))
+        return 0
+
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.forward_test_settle_cli.main", fake_settle_main)
+    monkeypatch.setattr("src.forward_test_gate_cli.main", fake_forward_gate_main)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--prefix",
+            "packet",
+            "--settle",
+            "--settle-target-date",
+            "2026-05-22",
+            "--settle-actuals-csv",
+            str(tmp_path / "actuals.csv"),
+            "--forward-test-gate",
+            "--forward-test-min-target-dates",
+            "1",
+            "--forward-test-min-predictions",
+            "10",
+            "--forward-test-min-threshold-events",
+            "30",
+        ]
+    )
+
+    assert code == 0
+    gate_call = next(argv for name, argv in calls if name == "forward_gate")
+    assert gate_call == [
+        "--report",
+        str(tmp_path / "out" / "forward_test" / "report.json"),
+        "--out",
+        str(tmp_path / "out" / "forward_test" / "forward_test_gate.json"),
+        "--min-target-dates",
+        "1",
+        "--min-predictions",
+        "10",
+        "--min-threshold-events",
+        "30",
+        "--max-mae",
+        "1.5",
+        "--max-abs-bias",
+        "0.75",
+        "--min-interval-coverage",
+        "0.75",
+        "--max-threshold-brier",
+        "0.12",
+        "--max-threshold-ece",
+        "0.2",
+    ]
+    manifest = json.loads((tmp_path / "out" / "packet_manifest.json").read_text())
+    assert manifest["steps"]["forward_test_gate"]["exit_code"] == 0
+    assert manifest["artifacts"]["forward_test_gate_json"] == str(
+        tmp_path / "out" / "forward_test" / "forward_test_gate.json"
+    )
+
+
+def test_daily_model_refresh_cli_can_gate_existing_forward_test_report(
+    monkeypatch, tmp_path
+) -> None:
+    captured = {}
+
+    def fake_forward_gate_main(argv):
+        captured["gate"] = argv
+        return 1
+
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.forward_test_gate_cli.main", fake_forward_gate_main)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--forward-test-gate",
+            "--forward-test-gate-report",
+            str(tmp_path / "forward" / "report.json"),
+            "--forward-test-gate-out",
+            str(tmp_path / "forward" / "gate.json"),
+        ]
+    )
+
+    assert code == 1
+    assert captured["gate"][:4] == [
+        "--report",
+        str(tmp_path / "forward" / "report.json"),
+        "--out",
+        str(tmp_path / "forward" / "gate.json"),
+    ]
+    manifest = json.loads(
+        (tmp_path / "run" / "latest_predictions_manifest.json").read_text()
+    )
+    assert manifest["steps"]["forward_test_gate"]["exit_code"] == 1
+    assert manifest["artifacts"]["forward_test_gate_json"] == str(
+        tmp_path / "forward" / "gate.json"
+    )
+
+
 def test_write_gate_report_writes_failure_for_missing_artifacts(tmp_path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()

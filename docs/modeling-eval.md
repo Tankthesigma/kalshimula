@@ -485,7 +485,9 @@ are needed.
 Use `src.forward_test_gate_cli` on `report.json` when the accumulated live
 forward-test surface should block a dashboard or alert an operator. It gates
 sample counts plus corrected MAE, absolute bias, interval coverage, threshold
-Brier, and threshold ECE.
+Brier, and threshold ECE. `src.daily_model_refresh_cli --forward-test-gate`
+runs the same gate as part of the daily workflow and records the gate JSON plus
+exit code in the packet manifest.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

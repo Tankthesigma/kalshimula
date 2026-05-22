@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src import (
     daily_packet_check_cli,
+    forward_test_gate_cli,
     forward_test_settle_cli,
     model_gate_cli,
     model_policy_report_cli,
@@ -124,7 +125,9 @@ def _write_manifest(
     gate_code: int,
     check_code: int | None = None,
     settlement_code: int | None = None,
+    forward_test_gate_code: int | None = None,
     settlement_artifacts: dict[str, str] | None = None,
+    forward_test_gate_artifacts: dict[str, str] | None = None,
 ) -> int:
     exit_code = next(
         (
@@ -135,6 +138,7 @@ def _write_manifest(
                 gate_code,
                 check_code,
                 settlement_code,
+                forward_test_gate_code,
             )
             if code not in {None, 0}
         ),
@@ -151,6 +155,8 @@ def _write_manifest(
         steps["packet_check"] = {"exit_code": check_code}
     if settlement_code is not None:
         steps["forward_test_settlement"] = {"exit_code": settlement_code}
+    if forward_test_gate_code is not None:
+        steps["forward_test_gate"] = {"exit_code": forward_test_gate_code}
 
     artifacts = {
         "prediction_json": str(paths.json_out),
@@ -163,6 +169,8 @@ def _write_manifest(
     }
     if settlement_artifacts:
         artifacts.update(settlement_artifacts)
+    if forward_test_gate_artifacts:
+        artifacts.update(forward_test_gate_artifacts)
 
     payload = {
         "schema_version": "1.0",
@@ -246,6 +254,45 @@ def _run_settlement(
     return forward_test_settle_cli.main(args)
 
 
+def _run_forward_test_gate(
+    *,
+    report_path: Path,
+    out_path: Path,
+    min_target_dates: int,
+    min_predictions: int,
+    min_threshold_events: int,
+    max_mae: float,
+    max_abs_bias: float,
+    min_interval_coverage: float,
+    max_threshold_brier: float,
+    max_threshold_ece: float,
+) -> int:
+    return forward_test_gate_cli.main(
+        [
+            "--report",
+            str(report_path),
+            "--out",
+            str(out_path),
+            "--min-target-dates",
+            str(min_target_dates),
+            "--min-predictions",
+            str(min_predictions),
+            "--min-threshold-events",
+            str(min_threshold_events),
+            "--max-mae",
+            str(max_mae),
+            "--max-abs-bias",
+            str(max_abs_bias),
+            "--min-interval-coverage",
+            str(min_interval_coverage),
+            "--max-threshold-brier",
+            str(max_threshold_brier),
+            "--max-threshold-ece",
+            str(max_threshold_ece),
+        ]
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="daily_model_refresh",
@@ -312,6 +359,61 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Pass --no-report through to forward_test_settle.",
     )
+    parser.add_argument(
+        "--forward-test-gate",
+        action="store_true",
+        help="Run forward_test_gate after packet check and optional settlement.",
+    )
+    parser.add_argument(
+        "--forward-test-gate-report",
+        type=Path,
+        help="Forward-test report JSON to gate. Defaults to the settlement report path.",
+    )
+    parser.add_argument(
+        "--forward-test-gate-out",
+        type=Path,
+        help="Forward-test gate JSON output path.",
+    )
+    parser.add_argument(
+        "--forward-test-min-target-dates",
+        default=forward_test_gate_cli.DEFAULT_MIN_TARGET_DATES,
+        type=int,
+    )
+    parser.add_argument(
+        "--forward-test-min-predictions",
+        default=forward_test_gate_cli.DEFAULT_MIN_PREDICTIONS,
+        type=int,
+    )
+    parser.add_argument(
+        "--forward-test-min-threshold-events",
+        default=forward_test_gate_cli.DEFAULT_MIN_THRESHOLD_EVENTS,
+        type=int,
+    )
+    parser.add_argument(
+        "--forward-test-max-mae",
+        default=forward_test_gate_cli.DEFAULT_MAX_MAE,
+        type=float,
+    )
+    parser.add_argument(
+        "--forward-test-max-abs-bias",
+        default=forward_test_gate_cli.DEFAULT_MAX_ABS_BIAS,
+        type=float,
+    )
+    parser.add_argument(
+        "--forward-test-min-interval-coverage",
+        default=forward_test_gate_cli.DEFAULT_MIN_INTERVAL_COVERAGE,
+        type=float,
+    )
+    parser.add_argument(
+        "--forward-test-max-threshold-brier",
+        default=forward_test_gate_cli.DEFAULT_MAX_THRESHOLD_BRIER,
+        type=float,
+    )
+    parser.add_argument(
+        "--forward-test-max-threshold-ece",
+        default=forward_test_gate_cli.DEFAULT_MAX_THRESHOLD_ECE,
+        type=float,
+    )
     args = parser.parse_args(_normalize_threshold_offsets(list(argv or sys.argv[1:])))
 
     paths = build_refresh_paths(
@@ -377,14 +479,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote packet check: {paths.check_out}")
     settlement_code: int | None = None
     settlement_artifacts: dict[str, str] | None = None
+    forward_test_gate_code: int | None = None
+    forward_test_gate_artifacts: dict[str, str] | None = None
+    settlement_out_dir = args.settlement_out_dir or (
+        (args.out_dir or args.model_run_dir) / "forward_test"
+    )
     if args.settle:
         try:
             settlement_target_date = args.settle_target_date or _packet_target_date(
                 paths.json_out
-            )
-            settlement_out_dir = (
-                args.settlement_out_dir
-                or (args.out_dir or args.model_run_dir) / "forward_test"
             )
             settlement_artifacts = _settlement_artifacts(
                 out_dir=settlement_out_dir,
@@ -409,6 +512,30 @@ def main(argv: list[str] | None = None) -> int:
             settlement_code = 1
             print(f"Forward-test settlement failed: {error}")
 
+    if args.forward_test_gate:
+        gate_report_path = (
+            args.forward_test_gate_report
+            or args.settlement_report_out
+            or settlement_out_dir / "report.json"
+        )
+        gate_out_path = (
+            args.forward_test_gate_out or settlement_out_dir / "forward_test_gate.json"
+        )
+        forward_test_gate_artifacts = {"forward_test_gate_json": str(gate_out_path)}
+        forward_test_gate_code = _run_forward_test_gate(
+            report_path=gate_report_path,
+            out_path=gate_out_path,
+            min_target_dates=args.forward_test_min_target_dates,
+            min_predictions=args.forward_test_min_predictions,
+            min_threshold_events=args.forward_test_min_threshold_events,
+            max_mae=args.forward_test_max_mae,
+            max_abs_bias=args.forward_test_max_abs_bias,
+            min_interval_coverage=args.forward_test_min_interval_coverage,
+            max_threshold_brier=args.forward_test_max_threshold_brier,
+            max_threshold_ece=args.forward_test_max_threshold_ece,
+        )
+        print(f"Wrote forward-test gate JSON: {gate_out_path}")
+
     final_code = _write_manifest(
         out_path=paths.manifest_out,
         model_run_dir=args.model_run_dir,
@@ -426,7 +553,9 @@ def main(argv: list[str] | None = None) -> int:
         gate_code=gate_code,
         check_code=check_code,
         settlement_code=settlement_code,
+        forward_test_gate_code=forward_test_gate_code,
         settlement_artifacts=settlement_artifacts,
+        forward_test_gate_artifacts=forward_test_gate_artifacts,
     )
     return final_code
 
