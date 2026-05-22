@@ -1,3 +1,4 @@
+import csv
 import json
 from datetime import UTC, date, datetime
 
@@ -192,6 +193,58 @@ def test_forward_test_settle_cli_writes_json_and_history(monkeypatch, tmp_path) 
     assert "city,target_date" not in history
     assert "denver" in history
     assert "0.8" in history
+
+
+def test_append_history_atomic_replaces_existing_city_date_offset(tmp_path) -> None:
+    history_path = tmp_path / "history.csv"
+    old_row = {key: None for key in forward_test_settle_cli.HISTORY_COLUMNS}
+    old_row.update(
+        {
+            "settled_at": "2026-05-23T00:00:00+00:00",
+            "target_date": "2026-05-22",
+            "city": "denver",
+            "actual_source": "asos",
+            "offset_f": "0",
+            "threshold_f": "72",
+            "predicted_probability": "0.5",
+            "outcome": "True",
+            "brier": "0.25",
+        }
+    )
+    new_row = {key: None for key in forward_test_settle_cli.HISTORY_COLUMNS}
+    new_row.update(
+        {
+            "settled_at": "2026-05-24T00:00:00+00:00",
+            "target_date": "2026-05-22",
+            "city": "denver",
+            "actual_source": "ncei",
+            "offset_f": "0",
+            "threshold_f": "72",
+            "predicted_probability": "0.5",
+            "outcome": "False",
+            "brier": "0.25",
+        }
+    )
+    other_offset = {
+        **new_row,
+        "actual_source": "asos",
+        "offset_f": "2",
+        "threshold_f": "74",
+    }
+
+    forward_test_settle_cli.append_history_atomic(history_path, [old_row, other_offset])
+    forward_test_settle_cli.append_history_atomic(history_path, [new_row])
+
+    with history_path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 2
+    assert {(row["city"], row["offset_f"]) for row in rows} == {
+        ("denver", "0"),
+        ("denver", "2"),
+    }
+    replaced = next(row for row in rows if row["offset_f"] == "0")
+    assert replaced["actual_source"] == "ncei"
+    assert replaced["settled_at"] == "2026-05-24T00:00:00+00:00"
 
 
 def test_forward_test_settle_cli_can_use_actuals_csv_without_fetching(
