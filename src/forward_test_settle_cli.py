@@ -15,6 +15,7 @@ from typing import Any
 
 from src.config import Station, get_station
 from src.fetchers import asos, ncei
+from src.forward_test_report_cli import build_forward_test_report, write_report_payload
 
 SETTLEMENT_SCHEMA_VERSION = "1.0"
 DEFAULT_OUT_DIR = Path("outputs") / "forward_test"
@@ -367,6 +368,12 @@ def write_settlement_payload(payload: dict[str, Any], path: Path) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def write_forward_test_report(history_path: Path, report_path: Path) -> None:
+    """Write the accumulated forward-test report for a settlement history file."""
+    report = build_forward_test_report(history_path)
+    write_report_payload(report, report_path)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="forward_test_settle",
@@ -385,6 +392,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--history", type=Path)
+    parser.add_argument(
+        "--report-out",
+        type=Path,
+        help="Optional accumulated forward-test report JSON path.",
+    )
+    parser.add_argument(
+        "--no-report",
+        action="store_true",
+        help="Do not write the accumulated forward-test report JSON.",
+    )
     args = parser.parse_args(argv)
 
     actuals = _read_actuals_csv(args.actuals_csv, args.target_date) if args.actuals_csv else None
@@ -399,6 +416,14 @@ def main(argv: list[str] | None = None) -> int:
     append_history_atomic(history_path, settlement_history_rows(payload))
     print(f"Wrote settlement JSON: {out_path}")
     print(f"Appended settlement history: {history_path}")
+    if not args.no_report:
+        report_path = args.report_out or history_path.with_name("report.json")
+        try:
+            write_forward_test_report(history_path, report_path)
+        except ValueError as error:
+            print(f"Skipped forward test report: {error}")
+            return 1
+        print(f"Wrote forward test report: {report_path}")
     return exit_code
 
 

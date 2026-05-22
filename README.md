@@ -102,7 +102,9 @@ and per-city settlement rows without touching Kalshi.
 Use `src.forward_test_report_cli --history <forward_test>/history.csv` to
 summarize accumulated live/forward-test performance. The report separates
 unique city/date prediction MAE from threshold-event Brier score and supports
-`--json --out <path>` for dashboards or agent checks.
+`--json --out <path>` for dashboards or agent checks. The settlement CLI writes
+`report.json` next to `history.csv` by default; use `--no-report` to skip it or
+`--report-out <path>` to choose another location.
 
 Collect one city/date range into backtest rows:
 
