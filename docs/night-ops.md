@@ -378,6 +378,18 @@ errors, and per-city rows. Use `--actuals-csv` when you want source validation
 separate from forward-test scoring; omit it when NCEI/ASOS settlement fetching
 is appropriate.
 
+Summarize accumulated forward-test history after settlement:
+
+```bash
+python -m src.forward_test_report_cli \
+  --history data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/forward_test/history.csv \
+  --out data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/forward_test/report.json
+```
+
+The report keeps prediction MAE/bias separate from threshold-event Brier score,
+so reruns and multiple threshold offsets do not inflate the point-forecast
+metric.
+
 ## Bridge health
 
 The Discord bridge runs in a WSL tmux session (`bridge`) and forwards

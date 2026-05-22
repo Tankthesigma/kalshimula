@@ -99,6 +99,10 @@ packet. By default it fetches observed highs through the existing NCEI/ASOS
 source layer; pass `--actuals-csv` with `city,target_date,actual_high_f` to run
 the settlement offline. It reports corrected MAE, threshold Brier score, errors,
 and per-city settlement rows without touching Kalshi.
+Use `src.forward_test_report_cli --history <forward_test>/history.csv` to
+summarize accumulated live/forward-test performance. The report separates
+unique city/date prediction MAE from threshold-event Brier score and supports
+`--json --out <path>` for dashboards or agent checks.
 
 Collect one city/date range into backtest rows:
 

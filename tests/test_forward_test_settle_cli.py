@@ -195,6 +195,12 @@ def test_forward_test_settle_cli_writes_json_and_history(monkeypatch, tmp_path) 
     assert "0.8" in history
 
 
+def test_history_columns_are_unique() -> None:
+    assert len(forward_test_settle_cli.HISTORY_COLUMNS) == len(
+        set(forward_test_settle_cli.HISTORY_COLUMNS)
+    )
+
+
 def test_append_history_atomic_replaces_existing_city_date_offset(tmp_path) -> None:
     history_path = tmp_path / "history.csv"
     old_row = {key: None for key in forward_test_settle_cli.HISTORY_COLUMNS}
