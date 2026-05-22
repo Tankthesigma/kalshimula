@@ -435,9 +435,10 @@ future dashboard consumes the same JSON.
 For the normal all-city refresh, use `src.daily_model_refresh_cli`; it runs the
 gated batch prediction and review rendering together, then writes
 `latest_predictions.json`, `latest_predictions.txt`, `latest_predictions_gate.txt`,
-`latest_predictions_model_policy.txt`, and `latest_predictions_manifest.json`
-under the run directory. It also writes `latest_predictions_check.json`, the
-machine-readable verification result for that packet. The normal refresh also
+`latest_predictions_gate.json`, `latest_predictions_model_policy.txt`, and
+`latest_predictions_manifest.json` under the run directory. It also writes
+`latest_predictions_check.json`, the machine-readable verification result for
+that packet. The normal refresh also
 requires every city to apply the selected source policy; use
 `--allow-source-fallback` only for diagnostics when a source outage makes a
 partial fallback packet useful. It also writes `max_packet_age_hours=24` into
