@@ -473,6 +473,10 @@ python -m src.model_gate_cli \
   --run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
 ```
 
+Use `--json --out <path>` when an agent, CI job, or dashboard needs the gate as
+structured data. The JSON payload includes `passed`,
+`summary.failed_check_names`, and all per-check values/thresholds.
+
 The default gate checks that the run has at least 50,000 rows, 10 cities, 8
 forecast sources, and 700 unique target dates. It then checks that the selected
 source is `gfs_ens`, held-out MAE is at most 1.05°F, interval coverage is at
