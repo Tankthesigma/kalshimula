@@ -400,6 +400,18 @@ Then fill in `actual_high_f` and optionally `actual_source` before settlement.
 Rerunning the template command preserves any filled values in the existing CSV;
 add `--no-preserve-existing` only when you intentionally want to reset it.
 
+Preflight the filled CSV before settlement:
+
+```bash
+python -m src.forward_test_actuals_check_cli \
+  --packet data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.json \
+  --actuals-csv data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/daily_actuals.csv
+```
+
+The check fails on missing cities, blank or non-numeric highs, duplicate
+city/date rows, and extra cities for the packet date. Add `--json` when an
+agent or dashboard needs the result as structured data.
+
 Then settle the packet offline:
 
 ```bash
