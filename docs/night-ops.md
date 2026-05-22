@@ -397,6 +397,8 @@ python -m src.forward_test_actuals_template_cli \
 ```
 
 Then fill in `actual_high_f` and optionally `actual_source` before settlement.
+Rerunning the template command preserves any filled values in the existing CSV;
+add `--no-preserve-existing` only when you intentionally want to reset it.
 
 Then settle the packet offline:
 
