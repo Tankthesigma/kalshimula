@@ -60,6 +60,7 @@ def test_evaluate_threshold_calibration_writes_events_and_summary() -> None:
         test_start="2025-01-07",
         offsets=(0, 2),
         n_buckets=5,
+        probability_gap_min_events=1,
     )
 
     assert len(result.validation_events) == 4
@@ -82,6 +83,8 @@ def test_evaluate_threshold_calibration_writes_events_and_summary() -> None:
         "raw_empirical_residual",
         "validation_bucket_recalibrated",
     ]
+    assert not result.probability_gap_report.empty
+    assert "abs_recalibrated_calibration_gap" in result.probability_gap_report.columns
 
 
 def test_write_threshold_calibration_outputs(tmp_path) -> None:
@@ -121,6 +124,7 @@ def test_write_threshold_calibration_outputs(tmp_path) -> None:
     assert (output_dir / "threshold_test_recalibrated_group_summary.csv").exists()
     assert (output_dir / "threshold_test_recalibrated_group_calibration.csv").exists()
     assert (output_dir / "threshold_recalibration_comparison.csv").exists()
+    assert (output_dir / "threshold_probability_gap_report.csv").exists()
 
 
 def test_recalibration_table_adds_global_fallback_for_sparse_city_buckets() -> None:
@@ -163,3 +167,72 @@ def test_recalibration_table_adds_global_fallback_for_sparse_city_buckets() -> N
         "global",
     ]
     assert recalibrated["recalibrated_probability"].tolist() == [0.75, 0.75, 0.75, 0.75]
+
+
+def test_probability_gap_report_ranks_remaining_mid_probability_gaps() -> None:
+    events = pd.DataFrame(
+        [
+            {
+                "city": "nyc",
+                "source": "gfs_ens",
+                "raw_predicted_probability": 0.35,
+                "predicted_probability": 0.35,
+                "recalibrated_probability": 0.40,
+                "outcome": True,
+                "recalibration_scope": "city_source",
+            },
+            {
+                "city": "nyc",
+                "source": "gfs_ens",
+                "raw_predicted_probability": 0.36,
+                "predicted_probability": 0.36,
+                "recalibrated_probability": 0.40,
+                "outcome": True,
+                "recalibration_scope": "city_source",
+            },
+            {
+                "city": "denver",
+                "source": "gfs_ens",
+                "raw_predicted_probability": 0.55,
+                "predicted_probability": 0.55,
+                "recalibrated_probability": 0.52,
+                "outcome": False,
+                "recalibration_scope": "global",
+            },
+            {
+                "city": "denver",
+                "source": "gfs_ens",
+                "raw_predicted_probability": 0.56,
+                "predicted_probability": 0.56,
+                "recalibrated_probability": 0.52,
+                "outcome": True,
+                "recalibration_scope": "global",
+            },
+            {
+                "city": "miami",
+                "source": "gfs_ens",
+                "raw_predicted_probability": 0.95,
+                "predicted_probability": 0.95,
+                "recalibrated_probability": 0.90,
+                "outcome": True,
+                "recalibration_scope": "none",
+            },
+        ]
+    )
+
+    report = threshold_calibration._probability_gap_report(
+        events,
+        n_buckets=10,
+        min_events=2,
+        probability_min=0.2,
+        probability_max=0.8,
+    )
+
+    assert report["city"].tolist() == ["nyc", "denver"]
+    assert report.iloc[0]["bucket_index"] == 3
+    assert report.iloc[0]["n"] == 2
+    assert report.iloc[0]["observed_frequency"] == 1.0
+    assert report.iloc[0]["raw_calibration_gap"] == -0.645
+    assert report.iloc[0]["recalibrated_calibration_gap"] == -0.6
+    assert report.iloc[0]["city_source_recalibrated_events"] == 2
+    assert report.iloc[1]["global_recalibrated_events"] == 2
