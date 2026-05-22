@@ -66,10 +66,11 @@ When `probability_calibration/threshold_residuals.csv` exists, `--threshold-offs
 prints offline threshold probabilities around the rounded corrected point. When
 `probability_calibration/threshold_recalibration_table.csv` also exists, those
 probabilities are adjusted by the validation-fitted bucket recalibration table
-and the raw probability is shown in parentheses. Use `--json` when a script,
-dashboard, or review tool needs machine-readable forecast, calibration, and
-threshold-probability fields. Use `src.predict_batch_cli` for multi-city JSON
-payloads; it continues after individual city failures and records them in the
+and the raw probability is shown in parentheses. Sparse city/source buckets
+fall back to pooled global validation buckets when available. Use `--json` when
+a script, dashboard, or review tool needs machine-readable forecast,
+calibration, and threshold-probability fields. Use `src.predict_batch_cli` for
+multi-city JSON payloads; it continues after individual city failures and records them in the
 `errors` array. JSON outputs include `schema_version`, `generated_at`, and
 `artifact_paths` so downstream tools can verify which model artifacts produced
 the numbers. Add `--require-gate` to batch prediction when the payload will feed

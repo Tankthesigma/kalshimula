@@ -390,9 +390,11 @@ Brier 0.085 and ECE 0.081 over 623 threshold events. The worst bucket was NYC's
 probability calibration work.
 
 The same command also fits a validation-only city/source bucket recalibration
-table and applies it to the held-out test events. On the completed run, that
-reduced test Brier from 0.0609 to 0.0569 and expected calibration error from
-0.0241 to 0.0096. `predict --model-run-dir` automatically uses
+table and applies it to the held-out test events. Sparse city/source buckets
+fall back to pooled global validation buckets when the global bucket has enough
+events. On the completed run, that reduced test Brier from 0.0609 to about
+0.0568 and expected calibration error from 0.0241 to about 0.0095.
+`predict --model-run-dir` automatically uses
 `probability_calibration/threshold_recalibration_table.csv` when it exists and
 prints the raw probability beside the recalibrated one.
 
@@ -491,8 +493,10 @@ by at least 0.002/0.010. The completed two-year run passes all of those gates.
   selection on the held-out test window, so it is the recommended live bias
   policy until a stronger per-city selector is validated.
 - **Probability calibration.** Threshold probabilities now have offline
-  reliability artifacts. The next probability slice is calibrating the
-  mid-probability buckets; do not treat these diagnostics as trade signals.
+  reliability artifacts, and sparse city/source recalibration buckets fall back
+  to pooled global validation buckets. The next probability slice is deeper
+  mid-probability calibration analysis; do not treat these diagnostics as trade
+  signals.
 - **Test sample size.** 89 days/city is enough for an MAE estimate; tight
   for coverage estimation. NYC's 51.7% reading at n=89 has a ~5%-point
   standard error — the real coverage is probably 47–57%, still well below

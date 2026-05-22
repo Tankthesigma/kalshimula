@@ -74,6 +74,7 @@ RECALIBRATION_TABLE_COLUMNS = [
     "used",
 ]
 RECALIBRATION_COMPARISON_COLUMNS = ["policy", *SUMMARY_COLUMNS]
+GLOBAL_RECALIBRATION_KEY = "__global__"
 
 
 @dataclass(frozen=True)
@@ -472,7 +473,9 @@ def _recalibration_table(
     prior_strength: float,
     min_events: int,
 ) -> pd.DataFrame:
-    buckets = _group_calibration("validation", validation_events, n_buckets=n_buckets)
+    group_buckets = _group_calibration("validation", validation_events, n_buckets=n_buckets)
+    global_buckets = _global_calibration_rows(validation_events, n_buckets=n_buckets)
+    buckets = pd.concat([group_buckets, global_buckets], ignore_index=True)
     if buckets.empty:
         return pd.DataFrame(columns=RECALIBRATION_TABLE_COLUMNS)
     out = buckets.drop(columns=["split", "calibration_gap"]).copy()
@@ -488,6 +491,34 @@ def _recalibration_table(
     return out[RECALIBRATION_TABLE_COLUMNS].copy()
 
 
+def _global_calibration_rows(
+    validation_events: pd.DataFrame, *, n_buckets: int
+) -> pd.DataFrame:
+    if validation_events.empty:
+        return pd.DataFrame(columns=GROUP_CALIBRATION_COLUMNS)
+    buckets = _calibration(validation_events, n_buckets=n_buckets)
+    rows = []
+    for bucket in buckets.itertuples(index=False):
+        rows.append(
+            {
+                "split": "validation",
+                "city": GLOBAL_RECALIBRATION_KEY,
+                "source": GLOBAL_RECALIBRATION_KEY,
+                "bucket_index": int(bucket.bucket_start * n_buckets),
+                "bucket_start": bucket.bucket_start,
+                "bucket_end": bucket.bucket_end,
+                "n": bucket.n,
+                "mean_predicted_probability": bucket.mean_predicted_probability,
+                "observed_frequency": bucket.observed_frequency,
+                "calibration_gap": (
+                    float(bucket.mean_predicted_probability)
+                    - float(bucket.observed_frequency)
+                ),
+            }
+        )
+    return pd.DataFrame(rows, columns=GROUP_CALIBRATION_COLUMNS)
+
+
 def _apply_recalibration(
     events: pd.DataFrame,
     *,
@@ -501,17 +532,69 @@ def _apply_recalibration(
         out["recalibrated_probability"] = out["raw_predicted_probability"]
         out["recalibration_n"] = pd.NA
         out["recalibration_used"] = False
+        out["recalibration_scope"] = "none"
         return out
 
-    lookup = recalibration_table[
+    exact_lookup = recalibration_table[
         ["city", "source", "bucket_index", "n", "recalibrated_probability", "used"]
-    ].rename(columns={"n": "recalibration_n", "used": "recalibration_used"})
-    out = out.merge(lookup, how="left", on=["city", "source", "bucket_index"])
-    out["recalibration_used"] = out["recalibration_used"].fillna(False).astype(bool)
-    out["recalibrated_probability"] = out["recalibrated_probability"].where(
-        out["recalibration_used"], out["raw_predicted_probability"]
+    ].rename(
+        columns={
+            "n": "exact_recalibration_n",
+            "recalibrated_probability": "exact_recalibrated_probability",
+            "used": "exact_recalibration_used",
+        }
     )
+    out = out.merge(exact_lookup, how="left", on=["city", "source", "bucket_index"])
+    out["exact_recalibration_used"] = (
+        out["exact_recalibration_used"].fillna(False).astype(bool)
+    )
+
+    global_lookup = recalibration_table[
+        (recalibration_table["city"].astype(str) == GLOBAL_RECALIBRATION_KEY)
+        & (recalibration_table["source"].astype(str) == GLOBAL_RECALIBRATION_KEY)
+    ][["bucket_index", "n", "recalibrated_probability", "used"]].rename(
+        columns={
+            "n": "global_recalibration_n",
+            "recalibrated_probability": "global_recalibrated_probability",
+            "used": "global_recalibration_used",
+        }
+    )
+    out = out.merge(global_lookup, how="left", on="bucket_index")
+    out["global_recalibration_used"] = (
+        out["global_recalibration_used"].fillna(False).astype(bool)
+    )
+
+    out["recalibration_scope"] = "none"
+    out["recalibration_n"] = pd.NA
+    exact_mask = out["exact_recalibration_used"]
+    global_mask = ~exact_mask & out["global_recalibration_used"]
+    out["recalibrated_probability"] = out["raw_predicted_probability"]
+    out.loc[exact_mask, "recalibrated_probability"] = out.loc[
+        exact_mask, "exact_recalibrated_probability"
+    ]
+    out.loc[exact_mask, "recalibration_n"] = out.loc[
+        exact_mask, "exact_recalibration_n"
+    ]
+    out.loc[exact_mask, "recalibration_scope"] = "city_source"
+    out.loc[global_mask, "recalibrated_probability"] = out.loc[
+        global_mask, "global_recalibrated_probability"
+    ]
+    out.loc[global_mask, "recalibration_n"] = out.loc[
+        global_mask, "global_recalibration_n"
+    ]
+    out.loc[global_mask, "recalibration_scope"] = "global"
+    out["recalibration_used"] = exact_mask | global_mask
     out["recalibrated_probability"] = out["recalibrated_probability"].astype(float).clip(0.0, 1.0)
+    out = out.drop(
+        columns=[
+            "exact_recalibration_n",
+            "exact_recalibrated_probability",
+            "exact_recalibration_used",
+            "global_recalibration_n",
+            "global_recalibrated_probability",
+            "global_recalibration_used",
+        ]
+    )
     return out
 
 

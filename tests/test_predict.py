@@ -133,6 +133,14 @@ def test_threshold_probability_rows_apply_recalibration_table() -> None:
     recalibration_table = pd.DataFrame(
         [
             {
+                "city": "__global__",
+                "source": "__global__",
+                "bucket_start": 0.7,
+                "bucket_end": 0.8,
+                "recalibrated_probability": 0.65,
+                "used": True,
+            },
+            {
                 "city": "denver",
                 "source": "gfs_ens",
                 "bucket_start": 0.7,
@@ -153,6 +161,62 @@ def test_threshold_probability_rows_apply_recalibration_table() -> None:
     assert rows["predicted_probability"].tolist() == [0.6, 0.5]
     assert rows["raw_predicted_probability"].tolist() == [0.75, 0.5]
     assert rows["recalibration_used"].tolist() == [True, False]
+
+
+def test_threshold_probability_rows_use_global_recalibration_fallback() -> None:
+    calibration = pd.Series(
+        {
+            "city": "denver",
+            "source": "gfs_ens",
+            "point_f": 70.0,
+            "corrected_point_f": 72.0,
+        }
+    )
+    residuals = pd.Series([-2.0, 0.0, 2.0, 4.0])
+    recalibration_table = pd.DataFrame(
+        [
+            {
+                "city": "__global__",
+                "source": "__global__",
+                "bucket_start": 0.7,
+                "bucket_end": 0.8,
+                "recalibrated_probability": 0.65,
+                "used": True,
+            }
+        ]
+    )
+
+    rows = predict._threshold_probability_rows(
+        calibration=calibration,
+        residuals=residuals,
+        offsets=(0, 2),
+        recalibration_table=recalibration_table,
+    )
+
+    assert rows["predicted_probability"].tolist() == [0.65, 0.5]
+    assert rows["raw_predicted_probability"].tolist() == [0.75, 0.5]
+    assert rows["recalibration_used"].tolist() == [True, False]
+
+
+def test_load_threshold_recalibration_table_keeps_global_fallback(tmp_path) -> None:
+    path = tmp_path / "threshold_recalibration_table.csv"
+    path.write_text(
+        "city,source,bucket_start,bucket_end,recalibrated_probability,used\n"
+        "denver,gfs_ens,0.7,0.8,0.6,True\n"
+        "__global__,__global__,0.5,0.6,0.55,True\n"
+        "boston,gfs_ens,0.7,0.8,0.7,True\n"
+        "denver,gfs_ens,0.2,0.3,0.25,False\n",
+        encoding="utf-8",
+    )
+
+    table = predict._load_threshold_recalibration_table(
+        path,
+        city="denver",
+        source="gfs_ens",
+    )
+
+    assert table["city"].tolist() == ["denver", "__global__"]
+    assert table["recalibrated_probability"].tolist() == [0.6, 0.55]
 
 
 def test_resolve_model_artifacts_defaults_from_run_dir(tmp_path) -> None:
