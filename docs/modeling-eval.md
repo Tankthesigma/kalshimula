@@ -473,7 +473,10 @@ errors, per-city rows, and a flattened history CSV for forward testing.
 Use `src.forward_test_report_cli` on that history CSV to monitor accumulated
 forward-test quality. It deduplicates rerun rows by latest
 `(target_date, city, offset_f)`, computes corrected MAE/bias on unique
-city/date predictions, and computes threshold Brier on threshold events.
+city/date predictions, and computes threshold Brier on threshold events. The
+settlement CLI writes this accumulated report automatically as `report.json`
+beside `history.csv`; pass `--no-report` when only the raw settlement artifacts
+are needed.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

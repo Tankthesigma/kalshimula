@@ -376,7 +376,8 @@ python -m src.forward_test_settle_cli \
 The settlement output reports corrected MAE, threshold Brier score, settlement
 errors, and per-city rows. Use `--actuals-csv` when you want source validation
 separate from forward-test scoring; omit it when NCEI/ASOS settlement fetching
-is appropriate.
+is appropriate. It also writes an accumulated `report.json` beside
+`history.csv` by default.
 
 Summarize accumulated forward-test history after settlement:
 

@@ -187,12 +187,16 @@ def test_forward_test_settle_cli_writes_json_and_history(monkeypatch, tmp_path) 
 
     out_path = tmp_path / "forward" / "2026-05-22_settlement.json"
     history_path = tmp_path / "forward" / "history.csv"
+    report_path = tmp_path / "forward" / "report.json"
     assert code == 0
     assert json.loads(out_path.read_text(encoding="utf-8"))["n_rows"] == 1
     history = history_path.read_text(encoding="utf-8")
     assert "city,target_date" not in history
     assert "denver" in history
     assert "0.8" in history
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["summary"]["n_predictions"] == 1
+    assert report["summary"]["n_threshold_events"] == 2
 
 
 def test_history_columns_are_unique() -> None:
@@ -251,6 +255,64 @@ def test_append_history_atomic_replaces_existing_city_date_offset(tmp_path) -> N
     replaced = next(row for row in rows if row["offset_f"] == "0")
     assert replaced["actual_source"] == "ncei"
     assert replaced["settled_at"] == "2026-05-24T00:00:00+00:00"
+
+
+def test_forward_test_settle_cli_can_skip_report(monkeypatch, tmp_path) -> None:
+    packet_path = tmp_path / "packet.json"
+    packet_path.write_text(json.dumps(_packet()), encoding="utf-8")
+    monkeypatch.setattr(
+        "src.forward_test_settle_cli._fetch_observed_high",
+        lambda station, target: forward_test_settle_cli.ObservedHigh(
+            high_f=71.0,
+            source="ncei",
+        ),
+    )
+
+    code = forward_test_settle_cli.main(
+        [
+            "--packet",
+            str(packet_path),
+            "--target-date",
+            "2026-05-22",
+            "--out-dir",
+            str(tmp_path / "forward"),
+            "--no-report",
+        ]
+    )
+
+    assert code == 0
+    assert not (tmp_path / "forward" / "report.json").exists()
+
+
+def test_forward_test_settle_cli_writes_custom_report_path(monkeypatch, tmp_path) -> None:
+    packet_path = tmp_path / "packet.json"
+    report_path = tmp_path / "reports" / "forward_report.json"
+    packet_path.write_text(json.dumps(_packet()), encoding="utf-8")
+    monkeypatch.setattr(
+        "src.forward_test_settle_cli._fetch_observed_high",
+        lambda station, target: forward_test_settle_cli.ObservedHigh(
+            high_f=71.0,
+            source="ncei",
+        ),
+    )
+
+    code = forward_test_settle_cli.main(
+        [
+            "--packet",
+            str(packet_path),
+            "--target-date",
+            "2026-05-22",
+            "--out-dir",
+            str(tmp_path / "forward"),
+            "--report-out",
+            str(report_path),
+        ]
+    )
+
+    assert code == 0
+    assert json.loads(report_path.read_text(encoding="utf-8"))["summary"][
+        "n_predictions"
+    ] == 1
 
 
 def test_forward_test_settle_cli_can_use_actuals_csv_without_fetching(
