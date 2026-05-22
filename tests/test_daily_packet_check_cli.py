@@ -201,6 +201,15 @@ def _add_settlement_artifacts(tmp_path, manifest, *, report_summary=None) -> Non
     manifest.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _add_actuals_template_artifact(tmp_path, manifest, text: str) -> None:
+    actuals_template = tmp_path / "daily_actuals_template.csv"
+    actuals_template.write_text(text, encoding="utf-8")
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["steps"]["actuals_template"] = {"exit_code": 0}
+    payload["artifacts"]["actuals_template"] = str(actuals_template)
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_build_packet_checks_passes_complete_packet(tmp_path) -> None:
     manifest = _write_packet(tmp_path)
 
@@ -216,6 +225,80 @@ def test_build_packet_checks_passes_complete_packet(tmp_path) -> None:
         "prediction_json:prediction_fields",
         "artifact:prediction_review",
     }
+
+
+def test_build_packet_checks_validates_actuals_template_artifact(tmp_path) -> None:
+    manifest = _write_packet(tmp_path)
+    _add_actuals_template_artifact(
+        tmp_path,
+        manifest,
+        "city,target_date,actual_high_f,actual_source\n"
+        "denver,2026-05-22,,\n",
+    )
+
+    _, checks = daily_packet_check_cli.build_packet_checks(manifest)
+
+    template_check = next(
+        check for check in checks if check["name"] == "actuals_template:matches_packet"
+    )
+    assert template_check["passed"] is True
+    assert "target_date=2026-05-22" in template_check["detail"]
+
+
+def test_build_packet_checks_fails_actuals_template_city_mismatch(tmp_path) -> None:
+    manifest = _write_packet(tmp_path)
+    _add_actuals_template_artifact(
+        tmp_path,
+        manifest,
+        "city,target_date,actual_high_f,actual_source\n"
+        "boston,2026-05-22,,\n",
+    )
+
+    _, checks = daily_packet_check_cli.build_packet_checks(manifest)
+
+    template_check = next(
+        check for check in checks if check["name"] == "actuals_template:matches_packet"
+    )
+    assert template_check["passed"] is False
+    assert "missing=['denver']" in template_check["detail"]
+    assert "extra=['boston']" in template_check["detail"]
+
+
+def test_build_packet_checks_fails_actuals_template_wrong_date(tmp_path) -> None:
+    manifest = _write_packet(tmp_path)
+    _add_actuals_template_artifact(
+        tmp_path,
+        manifest,
+        "city,target_date,actual_high_f,actual_source\n"
+        "denver,2026-05-23,,\n",
+    )
+
+    _, checks = daily_packet_check_cli.build_packet_checks(manifest)
+
+    template_check = next(
+        check for check in checks if check["name"] == "actuals_template:matches_packet"
+    )
+    assert template_check["passed"] is False
+    assert "wrong target_date rows" in template_check["detail"]
+    assert "missing=['denver']" in template_check["detail"]
+
+
+def test_build_packet_checks_fails_actuals_template_missing_columns(tmp_path) -> None:
+    manifest = _write_packet(tmp_path)
+    _add_actuals_template_artifact(
+        tmp_path,
+        manifest,
+        "city,target_date\n"
+        "denver,2026-05-22\n",
+    )
+
+    _, checks = daily_packet_check_cli.build_packet_checks(manifest)
+
+    template_check = next(
+        check for check in checks if check["name"] == "actuals_template:matches_packet"
+    )
+    assert template_check["passed"] is False
+    assert "actual_high_f" in template_check["detail"]
 
 
 def test_build_packet_checks_validates_settlement_artifacts(tmp_path) -> None:
