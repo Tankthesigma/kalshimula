@@ -1,5 +1,6 @@
 import pandas as pd
 
+from src.models import threshold_calibration
 from src.models.threshold_calibration import (
     evaluate_threshold_calibration,
     write_threshold_calibration_outputs,
@@ -120,3 +121,45 @@ def test_write_threshold_calibration_outputs(tmp_path) -> None:
     assert (output_dir / "threshold_test_recalibrated_group_summary.csv").exists()
     assert (output_dir / "threshold_test_recalibrated_group_calibration.csv").exists()
     assert (output_dir / "threshold_recalibration_comparison.csv").exists()
+
+
+def test_recalibration_table_adds_global_fallback_for_sparse_city_buckets() -> None:
+    events = pd.DataFrame(
+        [
+            {"city": "denver", "source": "gfs_ens", "predicted_probability": 0.55, "outcome": True},
+            {"city": "denver", "source": "gfs_ens", "predicted_probability": 0.58, "outcome": False},
+            {"city": "boston", "source": "gfs_ens", "predicted_probability": 0.54, "outcome": True},
+            {"city": "boston", "source": "gfs_ens", "predicted_probability": 0.57, "outcome": True},
+        ]
+    )
+
+    table = threshold_calibration._recalibration_table(
+        events,
+        n_buckets=2,
+        prior_strength=0.0,
+        min_events=3,
+    )
+
+    global_row = table[
+        table["city"] == threshold_calibration.GLOBAL_RECALIBRATION_KEY
+    ].iloc[0]
+    denver_row = table[table["city"] == "denver"].iloc[0]
+    assert int(global_row["n"]) == 4
+    assert bool(global_row["used"]) is True
+    assert int(denver_row["n"]) == 2
+    assert bool(denver_row["used"]) is False
+
+    recalibrated = threshold_calibration._apply_recalibration(
+        events,
+        recalibration_table=table,
+        n_buckets=2,
+    )
+
+    assert recalibrated["recalibration_used"].tolist() == [True, True, True, True]
+    assert recalibrated["recalibration_scope"].tolist() == [
+        "global",
+        "global",
+        "global",
+        "global",
+    ]
+    assert recalibrated["recalibrated_probability"].tolist() == [0.75, 0.75, 0.75, 0.75]

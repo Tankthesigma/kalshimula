@@ -35,7 +35,10 @@ def main(argv: list[str] | None = None) -> int:
         "--min-recalibration-events",
         default=20,
         type=int,
-        help="Minimum validation events required to apply a city/source bucket mapping.",
+        help=(
+            "Minimum validation events required to apply a city/source bucket "
+            "mapping before falling back to a pooled global bucket."
+        ),
     )
     args = parser.parse_args(argv)
 

@@ -240,7 +240,9 @@ tables. Check `threshold_test_group_summary.csv` and
 the completed two-year run, NYC was the weakest threshold-probability group, and
 its 30-40% probability bucket was the largest miss.
 Also check `threshold_recalibration_comparison.csv`; the completed run improved
-from raw Brier/ECE 0.0609/0.0241 to recalibrated Brier/ECE 0.0569/0.0096.
+from raw Brier/ECE 0.0609/0.0241 to recalibrated Brier/ECE about
+0.0568/0.0095. Sparse city/source buckets fall back to pooled global validation
+buckets when the global bucket has enough events.
 
 Finally, run the model readiness gate:
 

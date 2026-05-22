@@ -29,6 +29,7 @@ from src.fetchers.openmeteo import (
 from src.models.bias import apply_bias_correction
 from src.models.ensemble import NaiveForecast, naive_forecast_from_members
 from src.models.intervals import apply_empirical_intervals
+from src.models.threshold_calibration import GLOBAL_RECALIBRATION_KEY
 
 PREDICTION_JSON_SCHEMA_VERSION = "1.0"
 
@@ -205,10 +206,14 @@ def _load_threshold_recalibration_table(
     missing = required - set(table.columns)
     if missing:
         raise ValueError(f"threshold recalibration CSV missing columns: {sorted(missing)}")
+    exact = (table["city"].astype(str).str.lower() == city.lower()) & (
+        table["source"].astype(str) == source
+    )
+    global_fallback = (table["city"].astype(str) == GLOBAL_RECALIBRATION_KEY) & (
+        table["source"].astype(str) == GLOBAL_RECALIBRATION_KEY
+    )
     selected = table[
-        (table["city"].astype(str).str.lower() == city.lower())
-        & (table["source"].astype(str) == source)
-        & (table["used"].astype(str).str.lower() == "true")
+        (exact | global_fallback) & (table["used"].astype(str).str.lower() == "true")
     ]
     return selected.copy()
 
@@ -267,6 +272,11 @@ def _apply_threshold_probability_recalibration(
         ]
         if matches.empty:
             continue
+        matches = matches.assign(
+            _global_rank=(
+                matches["city"].astype(str) == GLOBAL_RECALIBRATION_KEY
+            ).astype(int)
+        ).sort_values("_global_rank")
         recalibrated = float(matches.iloc[0]["recalibrated_probability"])
         out.at[index, "predicted_probability"] = min(max(recalibrated, 0.0), 1.0)
         out.at[index, "recalibration_used"] = True
