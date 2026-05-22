@@ -113,7 +113,9 @@ unique city/date prediction MAE from threshold-event Brier score and supports
 Use `src.forward_test_gate_cli --report <forward_test>/report.json` to fail a
 live-monitor check when accumulated forward-test MAE, bias, interval coverage,
 threshold Brier, threshold ECE, or sample counts drift outside configured
-thresholds.
+thresholds. Add `--forward-test-gate` to `src.daily_model_refresh_cli` when the
+same refresh command should write a forward-test gate JSON artifact after
+settlement or against an existing report.
 
 Collect one city/date range into backtest rows:
 

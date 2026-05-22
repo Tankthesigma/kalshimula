@@ -412,6 +412,9 @@ python -m src.forward_test_gate_cli \
 The gate fails on insufficient sample count, high corrected MAE, high absolute
 bias, low interval coverage, high threshold Brier, or high threshold ECE. Tighten
 or loosen thresholds with the CLI flags once enough live days have accumulated.
+When running the combined refresh command, add `--forward-test-gate` to run this
+check automatically after settlement and record `forward_test_gate_json` in the
+manifest.
 
 ## Bridge health
 
