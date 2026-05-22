@@ -310,7 +310,9 @@ prediction fields include city, selected source, whether that source was
 applied, station metadata, forecast, calibration, threshold probabilities, and
 artifact paths.
 For automation, add `--json --out latest_predictions_check.json` so scripts can
-read the check result without scraping the text report.
+read the check result without scraping the text report. The JSON includes a
+compact `summary` object with `total_checks`, `passed_checks`, `failed_checks`,
+and `failed_check_names` for dashboard status cards or alerts.
 
 For a one-off city check, use the lower-level predictor:
 

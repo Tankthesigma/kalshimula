@@ -187,6 +187,9 @@ def test_daily_packet_check_cli_emits_json(tmp_path, capsys) -> None:
     assert payload["schema_version"] == "1.0"
     assert payload["manifest"] == str(manifest)
     assert payload["passed"] is True
+    assert payload["summary"]["total_checks"] == len(payload["checks"])
+    assert payload["summary"]["failed_checks"] == 0
+    assert payload["summary"]["failed_check_names"] == []
     assert payload["require_selected_source_applied"] is False
     assert payload["max_packet_age_hours"] is None
     assert any(check["name"] == "prediction_json:prediction_fields" for check in payload["checks"])
@@ -212,6 +215,22 @@ def test_daily_packet_check_cli_writes_json_report(tmp_path, capsys) -> None:
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["passed"] is True
     assert payload["target_date"] == "tomorrow"
+
+
+def test_daily_packet_check_cli_json_summary_lists_failures(tmp_path, capsys) -> None:
+    manifest = _write_packet(tmp_path, exit_code=1)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert payload["passed"] is False
+    assert payload["summary"]["total_checks"] == len(payload["checks"])
+    assert payload["summary"]["failed_checks"] == 2
+    assert payload["summary"]["failed_check_names"] == [
+        "manifest:exit_code",
+        "step:batch_predictions",
+    ]
 
 
 def test_daily_packet_check_cli_fails_nonzero_step(tmp_path, capsys) -> None:
