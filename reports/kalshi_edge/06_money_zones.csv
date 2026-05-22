@@ -1,0 +1,18 @@
+category,subgroup,n,wins,win_rate,net_pnl,verdict,reason,confidence
+city,nyc,34,22,0.6470588235294118,3.79673975,trade,"positive net $3.80, win_rate 65%",high
+city,chicago,43,27,0.627906976744186,-0.9241135000000001,avoid,"negative net $-0.92, win_rate 63%",high
+city,miami,40,29,0.725,8.342535,trade,"positive net $8.34, win_rate 72%",high
+city,la,36,27,0.75,6.681496500000001,trade,"positive net $6.68, win_rate 75%",high
+city,denver,36,24,0.6666666666666666,0.62584825,trade,"positive net $0.63, win_rate 67%",high
+city,philadelphia,34,28,0.8235294117647058,7.6260667500000014,trade,"positive net $7.63, win_rate 82%",high
+city,phoenix,30,18,0.6,1.815007000000001,trade,"positive net $1.82, win_rate 60%",high
+city,boston,36,26,0.7222222222222222,7.592408749999999,trade,"positive net $7.59, win_rate 72%",high
+city,austin,34,23,0.6764705882352942,4.050630500000001,trade,"positive net $4.05, win_rate 68%",high
+contract_type,bin_between,289,196,0.6782006920415224,27.86804049999998,trade,"positive net $27.87, win_rate 68%",high
+contract_type,threshold_less,20,16,0.8,5.658166,trade,"positive net $5.66, win_rate 80%",medium
+contract_type,threshold_greater,14,12,0.8571428571428571,6.0804124999999996,trade,"positive net $6.08, win_rate 86%",low
+price_bucket,0.30-0.45,93,69,0.7419354838709677,15.290006249999998,trade,"positive net $15.29, win_rate 74%",high
+price_bucket,0.15-0.30,129,105,0.813953488372093,23.4390995,trade,"positive net $23.44, win_rate 81%",high
+price_bucket,0.45-0.55,60,32,0.5333333333333333,0.7087677500000005,trade,"positive net $0.71, win_rate 53%",high
+price_bucket,0.55-0.70,37,15,0.40540540540540543,-0.32096675000000063,needs more data,"negative net $-0.32, win_rate 41%",high
+price_bucket,0.70-0.85,4,3,0.75,0.4897122499999999,needs more data,only 4 trades,low
