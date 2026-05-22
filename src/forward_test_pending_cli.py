@@ -9,6 +9,8 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+from src.forward_test_actuals_check_cli import build_actuals_check
+
 
 def _parse_date(value: str) -> date:
     return datetime.strptime(value, "%Y-%m-%d").date()
@@ -95,6 +97,7 @@ def build_pending_status(
     *,
     packet_path: Path,
     history_path: Path | None = None,
+    actuals_csv: Path | None = None,
     as_of_date: date | None = None,
 ) -> dict[str, Any]:
     """Build a machine-readable packet settlement status payload."""
@@ -117,18 +120,27 @@ def build_pending_status(
     else:
         settlement_status = "settled"
 
-    ready_to_settle = target < as_of and settlement_status != "settled"
+    actuals_check = (
+        build_actuals_check(packet_path=packet_path, actuals_csv=actuals_csv)
+        if actuals_csv is not None
+        else None
+    )
+    actuals_ready = actuals_check is None or actuals_check["passed"]
+    ready_to_settle = target < as_of and settlement_status != "settled" and actuals_ready
     if settlement_status == "settled":
         next_action = "already_settled"
     elif target >= as_of:
         next_action = "wait_for_target_date_to_pass"
+    elif not actuals_ready:
+        next_action = "fill_actuals_csv"
     else:
         next_action = "run_forward_test_settle"
 
-    return {
+    payload = {
         "schema_version": "1.0",
         "packet_path": str(packet_path),
         "history_path": str(history_path) if history_path is not None else None,
+        "actuals_csv": str(actuals_csv) if actuals_csv is not None else None,
         "target_date": target.isoformat(),
         "as_of_date": as_of.isoformat(),
         "packet_generated_at": packet.get("generated_at"),
@@ -140,6 +152,9 @@ def build_pending_status(
         "next_action": next_action,
         "missing_city_offsets": missing,
     }
+    if actuals_check is not None:
+        payload["actuals_check"] = actuals_check
+    return payload
 
 
 def render_pending_status(payload: dict[str, Any]) -> str:
@@ -155,6 +170,14 @@ def render_pending_status(payload: dict[str, Any]) -> str:
         f"Ready to settle: {str(payload['ready_to_settle']).lower()}",
         f"Next action: {payload['next_action']}",
     ]
+    actuals_check = payload.get("actuals_check")
+    if actuals_check is not None:
+        lines.append(
+            "Actuals CSV: "
+            f"{'PASS' if actuals_check['passed'] else 'FAIL'} "
+            f"({actuals_check['n_valid_actuals']}/"
+            f"{actuals_check['n_expected_cities']} cities)"
+        )
     missing = payload.get("missing_city_offsets") or {}
     if missing:
         missing_bits = [
@@ -171,6 +194,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--packet", required=True, type=Path)
     parser.add_argument("--history", type=Path)
+    parser.add_argument(
+        "--actuals-csv",
+        type=Path,
+        help="Optional offline actuals CSV to include in readiness status.",
+    )
     parser.add_argument("--as-of-date", type=_parse_date)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -178,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = build_pending_status(
         packet_path=args.packet,
         history_path=args.history,
+        actuals_csv=args.actuals_csv,
         as_of_date=args.as_of_date,
     )
     if args.json:
