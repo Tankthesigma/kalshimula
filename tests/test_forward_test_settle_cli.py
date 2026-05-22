@@ -15,8 +15,12 @@ def _packet(target_date: str = "2026-05-22") -> dict:
             {
                 "city": "denver",
                 "target_date": target_date,
-                "forecast": {"point_f": 70.0},
-                "calibration": {"corrected_point_f": 72.0},
+                "forecast": {"point_f": 70.0, "p10_f": 68.0, "p90_f": 74.0},
+                "calibration": {
+                    "corrected_point_f": 72.0,
+                    "interval_lower_f": 69.0,
+                    "interval_upper_f": 76.0,
+                },
                 "threshold_probabilities": [
                     {
                         "offset_f": -2,
@@ -67,12 +71,17 @@ def test_build_settlement_payload_prefers_ncei(monkeypatch, tmp_path) -> None:
     assert payload["summary"]["n_settled"] == 1
     assert payload["summary"]["n_errors"] == 0
     assert payload["summary"]["mae_corrected_f"] == 3.0
+    assert payload["summary"]["interval_coverage"] == 1.0
     assert payload["summary"]["actual_sources"] == ["ncei"]
     row = payload["rows"][0]
     assert row["actual_source"] == "ncei"
     assert row["observed_high_f"] == 75.0
     assert row["predicted_point_f"] == 70.0
     assert row["predicted_corrected_point_f"] == 72.0
+    assert row["p10_f"] == 68.0
+    assert row["p90_f"] == 74.0
+    assert row["interval_lower_f"] == 69.0
+    assert row["interval_upper_f"] == 76.0
     assert row["error_f"] == -3.0
     assert row["absolute_error_f"] == 3.0
     assert row["threshold_outcomes"][0]["outcome"] is True
@@ -193,6 +202,8 @@ def test_forward_test_settle_cli_writes_json_and_history(monkeypatch, tmp_path) 
     history = history_path.read_text(encoding="utf-8")
     assert "city,target_date" not in history
     assert "denver" in history
+    assert "69.0" in history
+    assert "76.0" in history
     assert "0.8" in history
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["summary"]["n_predictions"] == 1
@@ -313,6 +324,40 @@ def test_forward_test_settle_cli_writes_custom_report_path(monkeypatch, tmp_path
     assert json.loads(report_path.read_text(encoding="utf-8"))["summary"][
         "n_predictions"
     ] == 1
+
+
+def test_forward_test_settle_cli_report_failure_does_not_override_settle_success(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    packet_path = tmp_path / "packet.json"
+    packet_path.write_text(json.dumps(_packet()), encoding="utf-8")
+    monkeypatch.setattr(
+        "src.forward_test_settle_cli._fetch_observed_high",
+        lambda station, target: forward_test_settle_cli.ObservedHigh(
+            high_f=71.0,
+            source="ncei",
+        ),
+    )
+    monkeypatch.setattr(
+        "src.forward_test_settle_cli.write_forward_test_report",
+        lambda history_path, report_path: (_ for _ in ()).throw(
+            ValueError("report failed")
+        ),
+    )
+
+    code = forward_test_settle_cli.main(
+        [
+            "--packet",
+            str(packet_path),
+            "--target-date",
+            "2026-05-22",
+            "--out-dir",
+            str(tmp_path / "forward"),
+        ]
+    )
+
+    assert code == 0
+    assert "Skipped forward test report: report failed" in capsys.readouterr().out
 
 
 def test_forward_test_settle_cli_can_use_actuals_csv_without_fetching(

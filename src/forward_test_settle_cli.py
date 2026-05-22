@@ -155,6 +155,8 @@ def _settle_prediction(
 
     point_f = _json_float(forecast.get("point_f"))
     corrected_point_f = _json_float(calibration.get("corrected_point_f"))
+    interval_lower_f = _json_float(calibration.get("interval_lower_f"))
+    interval_upper_f = _json_float(calibration.get("interval_upper_f"))
     if point_f is None and corrected_point_f is None:
         raise ValueError("prediction missing point forecast")
     if corrected_point_f is None:
@@ -168,6 +170,10 @@ def _settle_prediction(
         "observed_high_f": observed.high_f,
         "predicted_point_f": point_f,
         "predicted_corrected_point_f": corrected_point_f,
+        "p10_f": _json_float(forecast.get("p10_f")),
+        "p90_f": _json_float(forecast.get("p90_f")),
+        "interval_lower_f": interval_lower_f,
+        "interval_upper_f": interval_upper_f,
         "error_f": error_f,
         "absolute_error_f": abs(error_f),
         "threshold_outcomes": _settle_thresholds(prediction, observed.high_f),
@@ -181,6 +187,12 @@ def _summary(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[s
         for threshold in row.get("threshold_outcomes") or []
     ]
     sources = sorted({str(row["actual_source"]) for row in rows})
+    interval_rows = [
+        row
+        for row in rows
+        if row.get("interval_lower_f") is not None
+        and row.get("interval_upper_f") is not None
+    ]
     return {
         "n_predictions": len(rows) + len(errors),
         "n_settled": len(rows),
@@ -193,6 +205,18 @@ def _summary(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[s
         ),
         "bias_corrected_f": (
             sum(float(row["error_f"]) for row in rows) / len(rows) if rows else None
+        ),
+        "interval_coverage": (
+            sum(
+                1
+                for row in interval_rows
+                if float(row["interval_lower_f"])
+                <= float(row["observed_high_f"])
+                <= float(row["interval_upper_f"])
+            )
+            / len(interval_rows)
+            if interval_rows
+            else None
         ),
         "n_threshold_events": len(threshold_scores),
         "threshold_brier_score": (
@@ -259,6 +283,10 @@ HISTORY_COLUMNS = [
     "observed_high_f",
     "predicted_point_f",
     "predicted_corrected_point_f",
+    "p10_f",
+    "p90_f",
+    "interval_lower_f",
+    "interval_upper_f",
     "error_f",
     "absolute_error_f",
     "offset_f",
@@ -293,6 +321,10 @@ def settlement_history_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     "predicted_corrected_point_f": row[
                         "predicted_corrected_point_f"
                     ],
+                    "p10_f": row.get("p10_f"),
+                    "p90_f": row.get("p90_f"),
+                    "interval_lower_f": row.get("interval_lower_f"),
+                    "interval_upper_f": row.get("interval_upper_f"),
                     "error_f": row["error_f"],
                     "absolute_error_f": row["absolute_error_f"],
                     "offset_f": threshold["offset_f"],
@@ -422,8 +454,8 @@ def main(argv: list[str] | None = None) -> int:
             write_forward_test_report(history_path, report_path)
         except ValueError as error:
             print(f"Skipped forward test report: {error}")
-            return 1
-        print(f"Wrote forward test report: {report_path}")
+        else:
+            print(f"Wrote forward test report: {report_path}")
     return exit_code
 
 
