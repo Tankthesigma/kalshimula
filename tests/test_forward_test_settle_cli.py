@@ -396,6 +396,44 @@ def test_forward_test_settle_cli_can_use_actuals_csv_without_fetching(
     assert payload["summary"]["n_settled"] == 1
 
 
+def test_forward_test_settle_cli_preflights_actuals_csv_before_writing(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    packet_path = tmp_path / "packet.json"
+    actuals_path = tmp_path / "actuals.csv"
+    out_dir = tmp_path / "forward"
+    packet_path.write_text(json.dumps(_packet()), encoding="utf-8")
+    actuals_path.write_text(
+        "city,target_date,actual_high_f,actual_source\n"
+        "denver,2026-05-22,,manual\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "src.forward_test_settle_cli._fetch_observed_high",
+        lambda station, target: (_ for _ in ()).throw(AssertionError("fetch unused")),
+    )
+
+    code = forward_test_settle_cli.main(
+        [
+            "--packet",
+            str(packet_path),
+            "--target-date",
+            "2026-05-22",
+            "--actuals-csv",
+            str(actuals_path),
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "Actuals CSV: FAIL" in output
+    assert "Settlement not written" in output
+    assert not (out_dir / "2026-05-22_settlement.json").exists()
+    assert not (out_dir / "history.csv").exists()
+
+
 def test_build_settlement_payload_returns_error_for_city_fetch_failure(
     monkeypatch, tmp_path
 ) -> None:
