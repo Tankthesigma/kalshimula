@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src import (
     daily_packet_check_cli,
+    forward_test_settle_cli,
     model_gate_cli,
     model_policy_report_cli,
     predict_batch_cli,
@@ -121,11 +122,48 @@ def _write_manifest(
     batch_code: int,
     review_code: int,
     gate_code: int,
+    check_code: int | None = None,
+    settlement_code: int | None = None,
+    settlement_artifacts: dict[str, str] | None = None,
 ) -> int:
     exit_code = next(
-        (code for code in (batch_code, review_code, gate_code) if code != 0),
+        (
+            code
+            for code in (
+                batch_code,
+                review_code,
+                gate_code,
+                check_code,
+                settlement_code,
+            )
+            if code not in {None, 0}
+        ),
         0,
     )
+    steps = {
+        "batch_predictions": {"exit_code": batch_code},
+        "prediction_review": {"exit_code": review_code},
+        "model_gate_report": {"exit_code": gate_code},
+        "model_gate_json": {"exit_code": gate_code},
+        "model_policy_report": {"exit_code": 0},
+    }
+    if check_code is not None:
+        steps["packet_check"] = {"exit_code": check_code}
+    if settlement_code is not None:
+        steps["forward_test_settlement"] = {"exit_code": settlement_code}
+
+    artifacts = {
+        "prediction_json": str(paths.json_out),
+        "prediction_review": str(paths.review_out),
+        "model_gate_report": str(paths.gate_out),
+        "model_gate_json": str(paths.gate_json_out),
+        "model_policy_report": str(paths.policy_out),
+        "manifest": str(paths.manifest_out),
+        "packet_check": str(paths.check_out),
+    }
+    if settlement_artifacts:
+        artifacts.update(settlement_artifacts)
+
     payload = {
         "schema_version": "1.0",
         "generated_at": datetime.now(UTC).isoformat(),
@@ -137,25 +175,75 @@ def _write_manifest(
         "require_selected_source_applied": require_selected_source_applied,
         "max_packet_age_hours": max_packet_age_hours,
         "exit_code": exit_code,
-        "steps": {
-            "batch_predictions": {"exit_code": batch_code},
-            "prediction_review": {"exit_code": review_code},
-            "model_gate_report": {"exit_code": gate_code},
-            "model_gate_json": {"exit_code": gate_code},
-            "model_policy_report": {"exit_code": 0},
-        },
-        "artifacts": {
-            "prediction_json": str(paths.json_out),
-            "prediction_review": str(paths.review_out),
-            "model_gate_report": str(paths.gate_out),
-            "model_gate_json": str(paths.gate_json_out),
-            "model_policy_report": str(paths.policy_out),
-            "manifest": str(paths.manifest_out),
-        },
+        "steps": steps,
+        "artifacts": artifacts,
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return exit_code
+
+
+def _packet_target_date(path: Path) -> str:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    target = payload.get("target_date")
+    if not isinstance(target, str) or not target.strip():
+        raise ValueError(f"prediction packet missing target_date: {path}")
+    return target
+
+
+def _settlement_artifacts(
+    *,
+    out_dir: Path,
+    target_date: str,
+    settlement_out: Path | None,
+    settlement_history: Path | None,
+    settlement_report_out: Path | None,
+    settlement_no_report: bool,
+) -> dict[str, str]:
+    history = settlement_history or out_dir / "history.csv"
+    artifacts = {
+        "settlement_json": str(
+            settlement_out or out_dir / f"{target_date}_settlement.json"
+        ),
+        "settlement_history": str(history),
+    }
+    if not settlement_no_report:
+        artifacts["settlement_report"] = str(
+            settlement_report_out or history.with_name("report.json")
+        )
+    return artifacts
+
+
+def _run_settlement(
+    *,
+    packet_path: Path,
+    target_date: str,
+    actuals_csv: Path | None,
+    out_dir: Path,
+    settlement_out: Path | None,
+    settlement_history: Path | None,
+    settlement_report_out: Path | None,
+    settlement_no_report: bool,
+) -> int:
+    args = [
+        "--packet",
+        str(packet_path),
+        "--target-date",
+        target_date,
+        "--out-dir",
+        str(out_dir),
+    ]
+    if actuals_csv is not None:
+        args.extend(["--actuals-csv", str(actuals_csv)])
+    if settlement_out is not None:
+        args.extend(["--out", str(settlement_out)])
+    if settlement_history is not None:
+        args.extend(["--history", str(settlement_history)])
+    if settlement_report_out is not None:
+        args.extend(["--report-out", str(settlement_report_out)])
+    if settlement_no_report:
+        args.append("--no-report")
+    return forward_test_settle_cli.main(args)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -197,6 +285,33 @@ def main(argv: list[str] | None = None) -> int:
             "source policy could not be applied for one or more cities."
         ),
     )
+    parser.add_argument(
+        "--settle",
+        action="store_true",
+        help="After packet check, settle the packet and write forward-test artifacts.",
+    )
+    parser.add_argument(
+        "--settle-target-date",
+        help="Target date to settle. Defaults to the packet target_date.",
+    )
+    parser.add_argument(
+        "--settle-actuals-csv",
+        type=Path,
+        help="Optional offline actuals CSV for settlement.",
+    )
+    parser.add_argument(
+        "--settlement-out-dir",
+        type=Path,
+        help="Directory for settlement JSON/history/report. Defaults to <out>/forward_test.",
+    )
+    parser.add_argument("--settlement-out", type=Path)
+    parser.add_argument("--settlement-history", type=Path)
+    parser.add_argument("--settlement-report-out", type=Path)
+    parser.add_argument(
+        "--settlement-no-report",
+        action="store_true",
+        help="Pass --no-report through to forward_test_settle.",
+    )
     args = parser.parse_args(_normalize_threshold_offsets(list(argv or sys.argv[1:])))
 
     paths = build_refresh_paths(
@@ -233,7 +348,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote model gate report: {paths.gate_out}")
     print(f"Wrote model gate JSON: {paths.gate_json_out}")
     print(f"Wrote model policy report: {paths.policy_out}")
-    exit_code = _write_manifest(
+    _write_manifest(
         out_path=paths.manifest_out,
         model_run_dir=args.model_run_dir,
         cities=args.cities,
@@ -260,7 +375,60 @@ def main(argv: list[str] | None = None) -> int:
         ]
     )
     print(f"Wrote packet check: {paths.check_out}")
-    return exit_code if exit_code != 0 else check_code
+    settlement_code: int | None = None
+    settlement_artifacts: dict[str, str] | None = None
+    if args.settle:
+        try:
+            settlement_target_date = args.settle_target_date or _packet_target_date(
+                paths.json_out
+            )
+            settlement_out_dir = (
+                args.settlement_out_dir
+                or (args.out_dir or args.model_run_dir) / "forward_test"
+            )
+            settlement_artifacts = _settlement_artifacts(
+                out_dir=settlement_out_dir,
+                target_date=settlement_target_date,
+                settlement_out=args.settlement_out,
+                settlement_history=args.settlement_history,
+                settlement_report_out=args.settlement_report_out,
+                settlement_no_report=args.settlement_no_report,
+            )
+            settlement_code = _run_settlement(
+                packet_path=paths.json_out,
+                target_date=settlement_target_date,
+                actuals_csv=args.settle_actuals_csv,
+                out_dir=settlement_out_dir,
+                settlement_out=args.settlement_out,
+                settlement_history=args.settlement_history,
+                settlement_report_out=args.settlement_report_out,
+                settlement_no_report=args.settlement_no_report,
+            )
+            print("Ran forward-test settlement")
+        except ValueError as error:
+            settlement_code = 1
+            print(f"Forward-test settlement failed: {error}")
+
+    final_code = _write_manifest(
+        out_path=paths.manifest_out,
+        model_run_dir=args.model_run_dir,
+        cities=args.cities,
+        target_date=args.date,
+        threshold_offsets=args.threshold_offsets,
+        require_gate=not args.no_require_gate,
+        require_selected_source_applied=not args.allow_source_fallback,
+        max_packet_age_hours=(
+            None if args.no_max_packet_age else args.max_packet_age_hours
+        ),
+        paths=paths,
+        batch_code=batch_code,
+        review_code=review_code,
+        gate_code=gate_code,
+        check_code=check_code,
+        settlement_code=settlement_code,
+        settlement_artifacts=settlement_artifacts,
+    )
+    return final_code
 
 
 if __name__ == "__main__":

@@ -94,6 +94,11 @@ and required prediction fields, including source, station, forecast,
 selected-source-application status, calibration, threshold probabilities, and
 artifact paths for dashboard use. Add `--json` when a script needs the check
 result as structured data instead of text.
+When actual highs are available for the same packet, add `--settle` to
+`src.daily_model_refresh_cli` to run settlement after the packet check. Use
+`--settle-actuals-csv` for offline actuals, or omit it to use the NCEI/ASOS
+source layer. The final manifest records settlement artifact paths and exit
+codes.
 After actual highs are known, use `src.forward_test_settle_cli` to score the
 packet. By default it fetches observed highs through the existing NCEI/ASOS
 source layer; pass `--actuals-csv` with `city,target_date,actual_high_f` to run

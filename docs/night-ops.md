@@ -272,6 +272,17 @@ python -m src.daily_model_refresh_cli \
   --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
 ```
 
+When actuals are available and you want the refresh command to also settle the
+packet, add:
+
+```bash
+  --settle \
+  --settle-actuals-csv data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/daily_actuals.csv
+```
+
+The final manifest includes the packet-check result and, when `--settle` is
+used, the settlement JSON/history/report artifacts.
+
 That is the normal daily check. It writes the morning model packet under the run
 directory:
 
