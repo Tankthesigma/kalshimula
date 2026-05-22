@@ -300,6 +300,156 @@ def test_daily_model_refresh_cli_returns_check_failure(monkeypatch, tmp_path) ->
     assert code == 1
 
 
+def test_daily_model_refresh_cli_can_run_forward_settlement(monkeypatch, tmp_path) -> None:
+    calls = []
+
+    def fake_batch_main(argv):
+        calls.append(("batch", argv))
+        return 0
+
+    def fake_settle_main(argv):
+        calls.append(("settle", argv))
+        return 0
+
+    monkeypatch.setattr("src.predict_batch_cli.main", fake_batch_main)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.forward_test_settle_cli.main", fake_settle_main)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--prefix",
+            "packet",
+            "--settle",
+            "--settle-target-date",
+            "2026-05-22",
+            "--settle-actuals-csv",
+            str(tmp_path / "actuals.csv"),
+        ]
+    )
+
+    assert code == 0
+    settle_call = next(argv for name, argv in calls if name == "settle")
+    assert settle_call == [
+        "--packet",
+        str(tmp_path / "out" / "packet.json"),
+        "--target-date",
+        "2026-05-22",
+        "--out-dir",
+        str(tmp_path / "out" / "forward_test"),
+        "--actuals-csv",
+        str(tmp_path / "actuals.csv"),
+    ]
+    manifest = json.loads((tmp_path / "out" / "packet_manifest.json").read_text())
+    assert manifest["exit_code"] == 0
+    assert manifest["steps"]["packet_check"]["exit_code"] == 0
+    assert manifest["steps"]["forward_test_settlement"]["exit_code"] == 0
+    assert manifest["artifacts"]["settlement_json"] == str(
+        tmp_path / "out" / "forward_test" / "2026-05-22_settlement.json"
+    )
+    assert manifest["artifacts"]["settlement_history"] == str(
+        tmp_path / "out" / "forward_test" / "history.csv"
+    )
+    assert manifest["artifacts"]["settlement_report"] == str(
+        tmp_path / "out" / "forward_test" / "report.json"
+    )
+
+
+def test_daily_model_refresh_cli_can_infer_settlement_target_from_packet(
+    monkeypatch, tmp_path
+) -> None:
+    captured = {}
+    out_dir = tmp_path / "out"
+
+    def fake_batch_main(argv):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "packet.json").write_text(
+            json.dumps({"target_date": "2026-05-22"}),
+            encoding="utf-8",
+        )
+        return 0
+
+    def fake_settle_main(argv):
+        captured["settle"] = argv
+        return 0
+
+    monkeypatch.setattr("src.predict_batch_cli.main", fake_batch_main)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.forward_test_settle_cli.main", fake_settle_main)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--out-dir",
+            str(out_dir),
+            "--prefix",
+            "packet",
+            "--settle",
+            "--settlement-no-report",
+        ]
+    )
+
+    assert code == 0
+    assert "--target-date" in captured["settle"]
+    assert captured["settle"][captured["settle"].index("--target-date") + 1] == "2026-05-22"
+    assert "--no-report" in captured["settle"]
+    manifest = json.loads((out_dir / "packet_manifest.json").read_text())
+    assert "settlement_report" not in manifest["artifacts"]
+
+
+def test_daily_model_refresh_cli_returns_settlement_failure(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.forward_test_settle_cli.main", lambda argv: 1)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--settle",
+            "--settle-target-date",
+            "2026-05-22",
+        ]
+    )
+
+    assert code == 1
+    manifest = json.loads(
+        (tmp_path / "run" / "latest_predictions_manifest.json").read_text()
+    )
+    assert manifest["steps"]["forward_test_settlement"]["exit_code"] == 1
+
+
 def test_write_gate_report_writes_failure_for_missing_artifacts(tmp_path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()

@@ -444,6 +444,11 @@ requires every city to apply the selected source policy; use
 partial fallback packet useful. It also writes `max_packet_age_hours=24` into
 the manifest, so rerunning the checker later rejects stale packets; use
 `--no-max-packet-age` only for historical debugging.
+When actual highs are available, add `--settle` to the same refresh command to
+run forward-test settlement after the packet check. `--settle-actuals-csv`
+keeps settlement offline; omitting it uses the existing NCEI/ASOS source layer.
+The manifest is rewritten at the end with packet-check and settlement exit
+codes plus settlement artifact paths.
 Use `src.daily_packet_check_cli` to verify the manifest and referenced packet
 artifacts before feeding them into an external dashboard or review script. It
 also validates the prediction JSON gate status, error count, prediction count,
