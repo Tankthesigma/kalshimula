@@ -482,6 +482,10 @@ city/date predictions, and computes threshold Brier on threshold events. The
 settlement CLI writes this accumulated report automatically as `report.json`
 beside `history.csv`; pass `--no-report` when only the raw settlement artifacts
 are needed.
+Use `src.forward_test_gate_cli` on `report.json` when the accumulated live
+forward-test surface should block a dashboard or alert an operator. It gates
+sample counts plus corrected MAE, absolute bias, interval coverage, threshold
+Brier, and threshold ECE.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

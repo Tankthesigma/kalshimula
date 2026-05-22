@@ -110,6 +110,10 @@ unique city/date prediction MAE from threshold-event Brier score and supports
 `--json --out <path>` for dashboards or agent checks. The settlement CLI writes
 `report.json` next to `history.csv` by default; use `--no-report` to skip it or
 `--report-out <path>` to choose another location.
+Use `src.forward_test_gate_cli --report <forward_test>/report.json` to fail a
+live-monitor check when accumulated forward-test MAE, bias, interval coverage,
+threshold Brier, threshold ECE, or sample counts drift outside configured
+thresholds.
 
 Collect one city/date range into backtest rows:
 
