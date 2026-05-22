@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 from datetime import UTC, date, datetime
@@ -485,6 +486,91 @@ def _prediction_json_checks(
     return checks
 
 
+def _actuals_template_checks(payload: dict) -> list[dict]:
+    artifacts = payload.get("artifacts") or {}
+    raw_template_path = artifacts.get("actuals_template")
+    if raw_template_path is None:
+        return []
+
+    prediction_json, prediction_detail = _load_json_artifact(artifacts, "prediction_json")
+    if prediction_json is None:
+        return [
+            {
+                "name": "actuals_template:matches_packet",
+                "passed": False,
+                "detail": f"prediction JSON unreadable: {prediction_detail}",
+            }
+        ]
+
+    template_path = Path(str(raw_template_path))
+    required_columns = {"city", "target_date", "actual_high_f"}
+    try:
+        with template_path.open("r", newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = set(reader.fieldnames or [])
+            rows = [dict(row) for row in reader]
+    except OSError as error:
+        return [
+            {
+                "name": "actuals_template:matches_packet",
+                "passed": False,
+                "detail": f"{template_path}: {error}",
+            }
+        ]
+
+    missing_columns = sorted(required_columns - fieldnames)
+    if missing_columns:
+        return [
+            {
+                "name": "actuals_template:matches_packet",
+                "passed": False,
+                "detail": f"missing columns: {missing_columns}",
+            }
+        ]
+
+    target_date = str(prediction_json.get("target_date") or "").strip()
+    expected_cities = [
+        str(prediction.get("city") or "").strip().lower()
+        for prediction in prediction_json.get("predictions") or []
+        if str(prediction.get("city") or "").strip()
+    ]
+    template_cities = [
+        str(row.get("city") or "").strip().lower()
+        for row in rows
+        if str(row.get("target_date") or "").strip() == target_date
+    ]
+    wrong_target_rows = [
+        str(row.get("target_date") or "").strip()
+        for row in rows
+        if str(row.get("target_date") or "").strip() != target_date
+    ]
+    missing_cities = sorted(set(expected_cities) - set(template_cities))
+    extra_cities = sorted(set(template_cities) - set(expected_cities))
+    duplicate_cities = sorted(
+        city for city in set(template_cities) if template_cities.count(city) > 1
+    )
+    problems = []
+    if wrong_target_rows:
+        problems.append(f"wrong target_date rows: {sorted(set(wrong_target_rows))}")
+    if missing_cities or extra_cities or duplicate_cities:
+        problems.append(
+            f"expected={expected_cities} actual={template_cities} "
+            f"missing={missing_cities} extra={extra_cities} duplicates={duplicate_cities}"
+        )
+
+    return [
+        {
+            "name": "actuals_template:matches_packet",
+            "passed": not problems and bool(expected_cities),
+            "detail": (
+                f"target_date={target_date} cities={len(template_cities)}"
+                if not problems and expected_cities
+                else "; ".join(problems) or "packet has no expected cities"
+            ),
+        }
+    ]
+
+
 def _settlement_json_checks(payload: dict) -> list[dict]:
     artifacts = payload.get("artifacts") or {}
     if "settlement_json" not in artifacts:
@@ -634,6 +720,7 @@ def build_packet_checks(
             now=now,
         )
     )
+    checks.extend(_actuals_template_checks(payload))
     checks.extend(_settlement_json_checks(payload))
     checks.extend(_settlement_report_checks(payload))
     return payload, checks
