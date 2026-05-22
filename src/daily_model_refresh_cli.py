@@ -293,6 +293,18 @@ def _run_forward_test_gate(
     )
 
 
+def _run_packet_check(paths: RefreshPaths) -> int:
+    return daily_packet_check_cli.main(
+        [
+            "--manifest",
+            str(paths.manifest_out),
+            "--json",
+            "--out",
+            str(paths.check_out),
+        ]
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="daily_model_refresh",
@@ -467,15 +479,7 @@ def main(argv: list[str] | None = None) -> int:
         gate_code=gate_code,
     )
     print(f"Wrote packet manifest: {paths.manifest_out}")
-    check_code = daily_packet_check_cli.main(
-        [
-            "--manifest",
-            str(paths.manifest_out),
-            "--json",
-            "--out",
-            str(paths.check_out),
-        ]
-    )
+    check_code = _run_packet_check(paths)
     print(f"Wrote packet check: {paths.check_out}")
     settlement_code: int | None = None
     settlement_artifacts: dict[str, str] | None = None
@@ -557,6 +561,31 @@ def main(argv: list[str] | None = None) -> int:
         settlement_artifacts=settlement_artifacts,
         forward_test_gate_artifacts=forward_test_gate_artifacts,
     )
+    final_check_code = _run_packet_check(paths)
+    print(f"Wrote final packet check: {paths.check_out}")
+    if final_check_code != check_code:
+        final_code = _write_manifest(
+            out_path=paths.manifest_out,
+            model_run_dir=args.model_run_dir,
+            cities=args.cities,
+            target_date=args.date,
+            threshold_offsets=args.threshold_offsets,
+            require_gate=not args.no_require_gate,
+            require_selected_source_applied=not args.allow_source_fallback,
+            max_packet_age_hours=(
+                None if args.no_max_packet_age else args.max_packet_age_hours
+            ),
+            paths=paths,
+            batch_code=batch_code,
+            review_code=review_code,
+            gate_code=gate_code,
+            check_code=final_check_code,
+            settlement_code=settlement_code,
+            forward_test_gate_code=forward_test_gate_code,
+            settlement_artifacts=settlement_artifacts,
+            forward_test_gate_artifacts=forward_test_gate_artifacts,
+        )
+        _run_packet_check(paths)
     return final_code
 
 

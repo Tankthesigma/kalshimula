@@ -120,6 +120,16 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
                 str(tmp_path / "out" / "morning_check.json"),
             ],
         ),
+        (
+            "check",
+            [
+                "--manifest",
+                str(tmp_path / "out" / "morning_manifest.json"),
+                "--json",
+                "--out",
+                str(tmp_path / "out" / "morning_check.json"),
+            ],
+        ),
     ]
     output = capsys.readouterr().out
     assert "Wrote prediction JSON" in output
@@ -129,6 +139,7 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
     assert "Wrote model policy report" in output
     assert "Wrote packet manifest" in output
     assert "Wrote packet check" in output
+    assert "Wrote final packet check" in output
     manifest = json.loads((tmp_path / "out" / "morning_manifest.json").read_text())
     assert manifest["exit_code"] == 0
     assert manifest["cities"] == "denver,boston"
@@ -186,7 +197,7 @@ def test_daily_model_refresh_cli_returns_batch_failure_but_still_reviews(
     )
 
     assert code == 1
-    assert calls == ["batch", "review", "gate", "policy", "check"]
+    assert calls == ["batch", "review", "gate", "policy", "check", "check"]
     manifest = json.loads((tmp_path / "run" / "bad_manifest.json").read_text())
     assert manifest["exit_code"] == 1
     assert manifest["steps"]["batch_predictions"]["exit_code"] == 1
@@ -529,6 +540,86 @@ def test_daily_model_refresh_cli_can_run_forward_test_gate_after_settlement(
     assert manifest["artifacts"]["forward_test_gate_json"] == str(
         tmp_path / "out" / "forward_test" / "forward_test_gate.json"
     )
+
+
+def test_daily_model_refresh_cli_final_check_sees_final_artifacts(
+    monkeypatch, tmp_path
+) -> None:
+    checks_saw_forward_gate = []
+
+    def fake_check_main(argv):
+        manifest_path = Path(argv[argv.index("--manifest") + 1])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        checks_saw_forward_gate.append("forward_test_gate_json" in manifest["artifacts"])
+        return 0
+
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", fake_check_main)
+    monkeypatch.setattr("src.forward_test_settle_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.forward_test_gate_cli.main", lambda argv: 0)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--prefix",
+            "packet",
+            "--settle",
+            "--settle-target-date",
+            "2026-05-22",
+            "--forward-test-gate",
+        ]
+    )
+
+    assert code == 0
+    assert checks_saw_forward_gate == [False, True]
+
+
+def test_daily_model_refresh_cli_final_check_failure_rewrites_manifest(
+    monkeypatch, tmp_path
+) -> None:
+    check_codes = iter([0, 1, 1])
+    check_count = 0
+
+    def fake_check_main(argv):
+        nonlocal check_count
+        check_count += 1
+        return next(check_codes)
+
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", fake_check_main)
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        ["--model-run-dir", str(tmp_path / "run"), "--prefix", "bad-final-check"]
+    )
+
+    assert code == 1
+    assert check_count == 3
+    manifest = json.loads(
+        (tmp_path / "run" / "bad-final-check_manifest.json").read_text()
+    )
+    assert manifest["exit_code"] == 1
+    assert manifest["steps"]["packet_check"]["exit_code"] == 1
 
 
 def test_daily_model_refresh_cli_can_gate_existing_forward_test_report(
