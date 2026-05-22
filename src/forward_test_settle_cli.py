@@ -317,12 +317,34 @@ def _read_existing_history(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle))
 
 
+def _history_key(row: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(row.get("target_date") or ""),
+        str(row.get("city") or "").lower(),
+        str(row.get("offset_f") or ""),
+    )
+
+
+def _dedupe_history_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = _history_key(row)
+        if key in deduped:
+            del deduped[key]
+        deduped[key] = row
+    return list(deduped.values())
+
+
 def append_history_atomic(path: Path, rows: list[dict[str, Any]]) -> None:
-    """Append rows by rewriting the full CSV through an atomic replace."""
+    """Upsert rows by rewriting the full CSV through an atomic replace.
+
+    Re-settling a date can replace preliminary ASOS rows with finalized NCEI
+    rows, so history is unique by ``(target_date, city, offset_f)``.
+    """
     if not rows:
         return
     existing = _read_existing_history(path)
-    output_rows = [*existing, *rows]
+    output_rows = _dedupe_history_rows([*existing, *rows])
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent)
