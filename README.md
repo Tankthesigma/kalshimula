@@ -86,7 +86,10 @@ Use `src.daily_model_refresh_cli` for the normal morning refresh: it writes the
 gated all-city batch JSON, text prediction review, text and JSON model gate
 reports, and model policy summary in one command, plus a manifest JSON that
 indexes the packet paths and exit codes and a packet-check JSON that verifies
-the packet.
+the packet. Add `--write-actuals-template` when the refresh should also create
+or update the offline `city,target_date,actual_high_f` template for later
+settlement; existing filled values are preserved unless
+`--actuals-template-no-preserve-existing` is passed.
 Use `src.daily_packet_check_cli` to verify the manifest exit codes and artifact
 existence before a dashboard or downstream script consumes the packet. The
 checker also validates the prediction JSON gate status, prediction/error counts,

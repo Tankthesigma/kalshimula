@@ -272,6 +272,10 @@ python -m src.daily_model_refresh_cli \
   --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
 ```
 
+Add `--write-actuals-template` when the same refresh should also create or
+update `daily_actuals_template.csv` for later offline settlement. Existing
+filled actual values are preserved by default.
+
 When actuals are available and you want the refresh command to also settle the
 packet, add:
 
@@ -291,6 +295,7 @@ directory:
 - `latest_predictions_gate.txt`
 - `latest_predictions_gate.json`
 - `latest_predictions_model_policy.txt`
+- `daily_actuals_template.csv` when `--write-actuals-template` is used
 - `latest_predictions_manifest.json`
 - `latest_predictions_check.json`
 
