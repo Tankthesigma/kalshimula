@@ -193,6 +193,10 @@ def main():
     md.append("- Phase 5 P&L: `05_pnl_summary.md`")
     md.append("- Phase 6 zones: `06_money_zones.md`")
     md.append("- Phase 7 fixes: `07_model_money_fixes.md`")
+    md.append("- Phase 10 robustness (bootstrap + cross-val): `10_bootstrap_cv.md`")
+    md.append("- Phase 11 time-of-day: `11_time_of_day.md`")
+    md.append("- Phase 12 slippage + strike curves: `12_slippage_curves.md`")
+    md.append("- **DEEP_AUDIT_SUMMARY.md** consolidates all robustness checks.")
 
     (OUT_DIR / "FINAL_MONEY_REPORT.md").write_text("\n".join(md))
     print("wrote FINAL_MONEY_REPORT.md")

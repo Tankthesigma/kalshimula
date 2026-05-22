@@ -66,3 +66,7 @@ Wire the prediction packet into a paper-trade simulator that reads kalshi prices
 - Phase 5 P&L: `05_pnl_summary.md`
 - Phase 6 zones: `06_money_zones.md`
 - Phase 7 fixes: `07_model_money_fixes.md`
+- Phase 10 robustness (bootstrap + cross-val): `10_bootstrap_cv.md`
+- Phase 11 time-of-day: `11_time_of_day.md`
+- Phase 12 slippage + strike curves: `12_slippage_curves.md`
+- **DEEP_AUDIT_SUMMARY.md** consolidates all robustness checks.

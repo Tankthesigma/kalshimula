@@ -22,7 +22,6 @@ import csv
 import random
 import sys
 from collections import defaultdict
-from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -126,7 +125,7 @@ def main():
     print(f"  P(net>$100) = {boot['p_above_100']*100:.1f}%")
 
     cv = cross_validate(rows)
-    print(f"\nCROSS-VAL (train 5/1-5/14, test 5/15-5/21):")
+    print("\nCROSS-VAL (train 5/1-5/14, test 5/15-5/21):")
     print(f"  TRAIN: n={cv['train']['n_trades']}, win {cv['train']['win_rate']*100:.1f}%, net ${cv['train']['net_pnl']:.2f}")
     print(f"  TEST (all cities): n={cv['test_full']['n_trades']}, win {cv['test_full']['win_rate']*100:.1f}%, net ${cv['test_full']['net_pnl']:.2f}")
     print(f"  TEST (only train-profitable cities): n={cv['test_filtered']['n_trades']}, net ${cv['test_filtered']['net_pnl']:.2f}")
@@ -198,7 +197,7 @@ def main():
         for i in range(N_BOOTSTRAP):
             sample = [rnd.choice(pnls) for _ in range(len(pnls))]
             w.writerow({"resample_id": i, "net_pnl": sum(sample)})
-    print(f"wrote 10_bootstrap_cv.md and 10_bootstrap_resamples.csv")
+    print("wrote 10_bootstrap_cv.md and 10_bootstrap_resamples.csv")
 
 
 if __name__ == "__main__":

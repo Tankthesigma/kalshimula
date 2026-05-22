@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import csv
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

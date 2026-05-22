@@ -77,7 +77,26 @@ The model has SYSTEMATICALLY lower probability than market across most buckets (
 
 ---
 
-## 4. Caveats that still apply
+## 4. Time-of-day study (Phase 11) — operationally important
+
+Same trading rule replayed against three different snapshot times per day, with REAL bid/ask midpoint used as market_prob when available.
+
+| snapshot | n | win% | net | $ per trade |
+|---|---|---|---|---|
+| 04 UTC (midnight EDT) | 507 | **72.2%** | $176.29 | $0.35 |
+| 12 UTC (8am EDT)      | 452 | 68.6% | **$189.86** | $0.42 |
+| 20 UTC (4pm EDT)      | 296 | **38.5%** | **$14.70** | $0.05 |
+
+**Read**:
+1. **By 4pm EDT, edge is essentially gone.** Win rate drops to 38.5% — we'd be losing money on half our bets and winning only on small longshots.
+2. Trade count drops 507 → 296 as the day progresses; model and market converge.
+3. The market is efficiently absorbing daytime information. Don't bet after noon EDT.
+
+**Recommended operating window: 04-12 UTC** (midnight to morning EDT) for bet placement.
+
+---
+
+## 5. Caveats that still apply
 
 1. **21 days is small.** 95% CI on full window is [$113, $280] — but this assumes trades are i.i.d., which they aren't (multiple cities share weather correlation on a given day). True CI is wider.
 
@@ -93,7 +112,7 @@ The model has SYSTEMATICALLY lower probability than market across most buckets (
 
 ---
 
-## 5. Updated recommendations
+## 6. Updated recommendations
 
 | recommendation | confidence | basis |
 |---|---|---|
@@ -105,4 +124,5 @@ The model has SYSTEMATICALLY lower probability than market across most buckets (
 | Use Kalshi fee-adjusted P&L for go/no-go decisions | high | gross is misleading |
 | Avoid `kelly_quarter` sizing | high | simulator allowed drawdown > bankroll; unrealistic |
 | Restrict to strike − actual within ±5F | medium | edge concentrates there; outside is dead zone |
+| **Place bets 04-12 UTC (midnight-morning EDT)** | **high** | edge collapses to $14 net by 4pm EDT (win rate 38.5%) |
 | Paper-trade for 4 weeks before real money | **mandatory** | sample size + regime drift caveats |
