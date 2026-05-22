@@ -403,6 +403,16 @@ recalibration were Miami 20%-30% (-0.223), Philadelphia 20%-30% (-0.222), NYC
 means observed frequency was higher than the recalibrated probability; positive
 means the probability was too high. This is the first artifact to inspect
 before changing probability calibration policy.
+
+A small sweep over recalibration prior strength `{0,5,10,25,50,100}` and
+minimum bucket events `{10,20,30,45,60}` kept the current default
+(`prior_strength=25`, `min_events=20`) as the best overall ECE setting:
+recalibrated Brier 0.0568 and ECE 0.0095. The best single worst-bucket setting
+(`prior_strength=10`, `min_events=10`) only reduced the worst mid-bucket gap
+from 0.223 to 0.222 while worsening ECE to 0.0134. Do not change the
+recalibration defaults just to chase one bucket; the remaining gaps need more
+data or a more targeted calibration model.
+
 `predict --model-run-dir` automatically uses
 `probability_calibration/threshold_recalibration_table.csv` when it exists and
 prints the raw probability beside the recalibrated one. JSON threshold rows also
