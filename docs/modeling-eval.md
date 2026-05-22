@@ -396,7 +396,9 @@ events. On the completed run, that reduced test Brier from 0.0609 to about
 0.0568 and expected calibration error from 0.0241 to about 0.0095.
 `predict --model-run-dir` automatically uses
 `probability_calibration/threshold_recalibration_table.csv` when it exists and
-prints the raw probability beside the recalibrated one.
+prints the raw probability beside the recalibrated one. JSON threshold rows also
+include `recalibration_scope` (`city_source`, `global`, or `none`) and
+`recalibration_n` when a recalibration bucket was applied.
 
 After the residual artifact exists, live prediction can print threshold
 probabilities without any market integration:

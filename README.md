@@ -69,9 +69,11 @@ probabilities are adjusted by the validation-fitted bucket recalibration table
 and the raw probability is shown in parentheses. Sparse city/source buckets
 fall back to pooled global validation buckets when available. Use `--json` when
 a script, dashboard, or review tool needs machine-readable forecast,
-calibration, and threshold-probability fields. Use `src.predict_batch_cli` for
-multi-city JSON payloads; it continues after individual city failures and records them in the
-`errors` array. JSON outputs include `schema_version`, `generated_at`, and
+calibration, and threshold-probability fields; recalibrated threshold rows
+include `recalibration_scope` and `recalibration_n` for traceability. Use
+`src.predict_batch_cli` for multi-city JSON payloads; it continues after
+individual city failures and records them in the `errors` array. JSON outputs
+include `schema_version`, `generated_at`, and
 `artifact_paths` so downstream tools can verify which model artifacts produced
 the numbers. Add `--require-gate` to batch prediction when the payload will feed
 a dashboard or review script; it emits zero predictions and exits nonzero unless

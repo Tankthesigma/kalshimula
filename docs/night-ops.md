@@ -242,7 +242,9 @@ its 30-40% probability bucket was the largest miss.
 Also check `threshold_recalibration_comparison.csv`; the completed run improved
 from raw Brier/ECE 0.0609/0.0241 to recalibrated Brier/ECE about
 0.0568/0.0095. Sparse city/source buckets fall back to pooled global validation
-buckets when the global bucket has enough events.
+buckets when the global bucket has enough events. Live JSON threshold rows
+include `recalibration_scope` and `recalibration_n`; unexpected scopes or
+non-positive counts make the packet checker fail.
 
 Finally, run the model readiness gate:
 
