@@ -99,6 +99,10 @@ When actual highs are available for the same packet, add `--settle` to
 `--settle-actuals-csv` for offline actuals, or omit it to use the NCEI/ASOS
 source layer. The final manifest records settlement artifact paths and exit
 codes.
+Use `src.forward_test_pending_cli --packet <packet.json> --history
+<forward_test>/history.csv` before settlement to see whether the target date has
+passed and whether the packet is already settled, partially settled, or still
+unsettled.
 After actual highs are known, use `src.forward_test_settle_cli` to score the
 packet. By default it fetches observed highs through the existing NCEI/ASOS
 source layer; pass `--actuals-csv` with `city,target_date,actual_high_f` to run
