@@ -458,6 +458,57 @@ def test_daily_packet_check_cli_fails_threshold_not_centered(
     assert "threshold 70 != 69" in output
 
 
+def test_daily_packet_check_cli_fails_invalid_recalibration_scope(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["threshold_probabilities"][1][
+        "recalibration_scope"
+    ] = "mystery"
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:threshold_probabilities" in output
+    assert "invalid recalibration scope" in output
+
+
+def test_daily_packet_check_cli_fails_recalibration_used_without_scope(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    threshold = payload["predictions"][0]["threshold_probabilities"][1]
+    threshold["recalibration_used"] = True
+    threshold["recalibration_scope"] = "none"
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:threshold_probabilities" in output
+    assert "recalibration used with no scope" in output
+
+
+def test_daily_packet_check_cli_fails_invalid_recalibration_n(
+    tmp_path, capsys
+) -> None:
+    payload = _prediction_payload()
+    payload["predictions"][0]["threshold_probabilities"][1][
+        "recalibration_n"
+    ] = 0
+    manifest = _write_packet(tmp_path, prediction_payload=payload)
+
+    code = daily_packet_check_cli.main(["--manifest", str(manifest)])
+
+    output = capsys.readouterr().out
+    assert code == 1
+    assert "FAIL prediction_json:threshold_probabilities" in output
+    assert "recalibration_n must be positive" in output
+
+
 def test_build_packet_checks_enforces_manifest_freshness(tmp_path) -> None:
     generated_at = datetime(2026, 5, 21, 12, tzinfo=UTC)
     payload = _prediction_payload()

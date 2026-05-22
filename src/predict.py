@@ -261,6 +261,8 @@ def _apply_threshold_probability_recalibration(
     out = rows.copy()
     out["raw_predicted_probability"] = out["predicted_probability"].astype(float)
     out["recalibration_used"] = False
+    out["recalibration_scope"] = "none"
+    out["recalibration_n"] = pd.NA
     for index, row in out.iterrows():
         probability = float(row["raw_predicted_probability"])
         matches = recalibration_table[
@@ -277,9 +279,17 @@ def _apply_threshold_probability_recalibration(
                 matches["city"].astype(str) == GLOBAL_RECALIBRATION_KEY
             ).astype(int)
         ).sort_values("_global_rank")
-        recalibrated = float(matches.iloc[0]["recalibrated_probability"])
+        match = matches.iloc[0]
+        recalibrated = float(match["recalibrated_probability"])
         out.at[index, "predicted_probability"] = min(max(recalibrated, 0.0), 1.0)
         out.at[index, "recalibration_used"] = True
+        out.at[index, "recalibration_scope"] = (
+            "global"
+            if str(match["city"]) == GLOBAL_RECALIBRATION_KEY
+            else "city_source"
+        )
+        if "n" in match.index and pd.notna(match["n"]):
+            out.at[index, "recalibration_n"] = int(match["n"])
     return out
 
 
@@ -414,6 +424,10 @@ def _json_thresholds(thresholds: pd.DataFrame | None) -> list[dict]:
             item["raw_predicted_probability"] = float(row.raw_predicted_probability)
         if hasattr(row, "recalibration_used"):
             item["recalibration_used"] = bool(row.recalibration_used)
+        if hasattr(row, "recalibration_scope"):
+            item["recalibration_scope"] = str(row.recalibration_scope)
+        if hasattr(row, "recalibration_n") and pd.notna(row.recalibration_n):
+            item["recalibration_n"] = int(row.recalibration_n)
         rows.append(item)
     return rows
 

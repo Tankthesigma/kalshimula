@@ -138,6 +138,7 @@ def test_threshold_probability_rows_apply_recalibration_table() -> None:
                 "bucket_start": 0.7,
                 "bucket_end": 0.8,
                 "recalibrated_probability": 0.65,
+                "n": 40,
                 "used": True,
             },
             {
@@ -146,6 +147,7 @@ def test_threshold_probability_rows_apply_recalibration_table() -> None:
                 "bucket_start": 0.7,
                 "bucket_end": 0.8,
                 "recalibrated_probability": 0.6,
+                "n": 25,
                 "used": True,
             }
         ]
@@ -161,6 +163,9 @@ def test_threshold_probability_rows_apply_recalibration_table() -> None:
     assert rows["predicted_probability"].tolist() == [0.6, 0.5]
     assert rows["raw_predicted_probability"].tolist() == [0.75, 0.5]
     assert rows["recalibration_used"].tolist() == [True, False]
+    assert rows["recalibration_scope"].tolist() == ["city_source", "none"]
+    assert int(rows.iloc[0]["recalibration_n"]) == 25
+    assert pd.isna(rows.iloc[1]["recalibration_n"])
 
 
 def test_threshold_probability_rows_use_global_recalibration_fallback() -> None:
@@ -181,6 +186,7 @@ def test_threshold_probability_rows_use_global_recalibration_fallback() -> None:
                 "bucket_start": 0.7,
                 "bucket_end": 0.8,
                 "recalibrated_probability": 0.65,
+                "n": 40,
                 "used": True,
             }
         ]
@@ -196,6 +202,9 @@ def test_threshold_probability_rows_use_global_recalibration_fallback() -> None:
     assert rows["predicted_probability"].tolist() == [0.65, 0.5]
     assert rows["raw_predicted_probability"].tolist() == [0.75, 0.5]
     assert rows["recalibration_used"].tolist() == [True, False]
+    assert rows["recalibration_scope"].tolist() == ["global", "none"]
+    assert int(rows.iloc[0]["recalibration_n"]) == 40
+    assert pd.isna(rows.iloc[1]["recalibration_n"])
 
 
 def test_load_threshold_recalibration_table_keeps_global_fallback(tmp_path) -> None:
@@ -490,6 +499,12 @@ def test_predict_cli_prints_json(monkeypatch, tmp_path, capsys) -> None:
         "denver,gfs_ens,4\n",
         encoding="utf-8",
     )
+    threshold_recalibration = tmp_path / "threshold_recalibration_table.csv"
+    threshold_recalibration.write_text(
+        "city,source,bucket_start,bucket_end,n,recalibrated_probability,used\n"
+        "denver,gfs_ens,0.7,0.8,25,0.6,True\n",
+        encoding="utf-8",
+    )
 
     monkeypatch.setattr(
         predict,
@@ -515,6 +530,8 @@ def test_predict_cli_prints_json(monkeypatch, tmp_path, capsys) -> None:
             str(bias_table),
             "--threshold-residuals",
             str(threshold_residuals),
+            "--threshold-recalibration-table",
+            str(threshold_recalibration),
             "--threshold-offsets",
             "0",
             "--json",
@@ -531,10 +548,21 @@ def test_predict_cli_prints_json(monkeypatch, tmp_path, capsys) -> None:
     assert payload["artifact_paths"]["selected_sources"] == str(selected_sources)
     assert payload["artifact_paths"]["bias_table"] == str(bias_table)
     assert payload["artifact_paths"]["threshold_residuals"] == str(threshold_residuals)
+    assert payload["artifact_paths"]["threshold_recalibration_table"] == str(
+        threshold_recalibration
+    )
     assert payload["forecast"]["point_f"] == 71.0
     assert payload["calibration"]["corrected_point_f"] == 73.0
     assert payload["threshold_probabilities"] == [
-        {"offset_f": 0, "predicted_probability": 0.75, "threshold_f": 73}
+        {
+            "offset_f": 0,
+            "predicted_probability": 0.6,
+            "raw_predicted_probability": 0.75,
+            "recalibration_n": 25,
+            "recalibration_scope": "city_source",
+            "recalibration_used": True,
+            "threshold_f": 73,
+        }
     ]
 
 

@@ -161,6 +161,27 @@ def _threshold_contract_check(manifest: dict, prediction_json: dict) -> dict:
                 else:
                     if not 0 <= raw_probability <= 1:
                         problems.append(f"{city}: raw probability out of range for offset {offset}")
+            if "recalibration_scope" in row:
+                scope = row["recalibration_scope"]
+                valid_scopes = {"city_source", "global", "none"}
+                if scope not in valid_scopes:
+                    problems.append(
+                        f"{city}: invalid recalibration scope {scope!r} for offset {offset}"
+                    )
+                if row.get("recalibration_used") is True and scope == "none":
+                    problems.append(
+                        f"{city}: recalibration used with no scope for offset {offset}"
+                    )
+            if "recalibration_n" in row:
+                try:
+                    recalibration_n = int(row["recalibration_n"])
+                except (TypeError, ValueError):
+                    problems.append(f"{city}: invalid recalibration_n for offset {offset}")
+                else:
+                    if recalibration_n <= 0:
+                        problems.append(
+                            f"{city}: recalibration_n must be positive for offset {offset}"
+                        )
 
         missing_offsets = sorted(set(expected_offsets) - set(actual_offsets))
         extra_offsets = sorted(set(actual_offsets) - set(expected_offsets))
