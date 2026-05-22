@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -233,6 +235,62 @@ def render_gate_report(checks: list[GateCheck]) -> str:
     return "\n".join(lines)
 
 
+def gate_check_payload(check: GateCheck) -> dict:
+    """Return a stable JSON-friendly representation of one gate check."""
+    return {
+        "name": check.name,
+        "value": check.value,
+        "threshold": check.threshold,
+        "passed": check.passed,
+        "detail": check.detail,
+    }
+
+
+def summarize_gate_checks(checks: list[GateCheck]) -> dict:
+    """Return compact gate-check counts for status consumers."""
+    failed = [check for check in checks if not check.passed]
+    return {
+        "total_checks": len(checks),
+        "passed_checks": len(checks) - len(failed),
+        "failed_checks": len(failed),
+        "failed_check_names": [check.name for check in failed],
+    }
+
+
+def build_gate_check_payload(run_dir: Path, checks: list[GateCheck]) -> dict:
+    """Build the machine-readable model-readiness gate result."""
+    return {
+        "schema_version": "1.0",
+        "generated_at": datetime.now(UTC).isoformat(),
+        "run_dir": str(run_dir),
+        "passed": all(check.passed for check in checks),
+        "summary": summarize_gate_checks(checks),
+        "checks": [gate_check_payload(check) for check in checks],
+    }
+
+
+def build_artifact_error_payload(run_dir: Path, error: ValueError) -> dict:
+    """Build a machine-readable failed gate result for artifact-read errors."""
+    check = GateCheck(
+        name="artifact_error",
+        value=str(error),
+        threshold="all required artifacts readable",
+        passed=False,
+        detail=str(error),
+    )
+    return build_gate_check_payload(run_dir, [check])
+
+
+def write_gate_payload(payload: dict, output_path: Path | None) -> None:
+    """Write JSON to a file or stdout-compatible string destination."""
+    content = json.dumps(payload, indent=2, sort_keys=True)
+    if output_path is None:
+        print(content)
+        return
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(content + "\n", encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="model_gate",
@@ -263,6 +321,16 @@ def main(argv: list[str] | None = None) -> int:
         "--min-ece-improvement", default=DEFAULT_MIN_ECE_IMPROVEMENT, type=float
     )
     parser.add_argument("--expected-source", default=DEFAULT_EXPECTED_SOURCE)
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit a machine-readable JSON gate result instead of the text report.",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        help="Optional path for the JSON gate result. Implies --json.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -282,8 +350,15 @@ def main(argv: list[str] | None = None) -> int:
             expected_source=args.expected_source,
         )
     except ValueError as error:
+        if args.json or args.out is not None:
+            write_gate_payload(build_artifact_error_payload(args.run_dir, error), args.out)
+            return 1
         print(f"Model readiness gate:\n  FAIL artifact_error: {error}\nOutcome: FAIL")
         return 1
+    if args.json or args.out is not None:
+        payload = build_gate_check_payload(args.run_dir, checks)
+        write_gate_payload(payload, args.out)
+        return 0 if payload["passed"] else 1
     print(render_gate_report(checks))
     return 0 if all(check.passed for check in checks) else 1
 

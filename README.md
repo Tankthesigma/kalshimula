@@ -114,7 +114,12 @@ python -m src.interval_policy_cli --input data\runs\<run>\rows.csv --recommended
 python -m src.threshold_calibration_cli --input data\runs\<run>\rows.csv --recommended-sources data\runs\<run>\source_selection\recommended_sources.csv --bias-table data\runs\<run>\model_policy\bias_table.csv --out-dir data\runs\<run>\probability_calibration --validation-start 2025-11-01 --test-start 2026-02-01 --offsets=-6,-4,-2,0,2,4,6 --recalibration-prior-strength 25 --min-recalibration-events 20
 python -m src.model_policy_report_cli --run-dir data\runs\<run>
 python -m src.model_gate_cli --run-dir data\runs\<run>
+python -m src.model_gate_cli --run-dir data\runs\<run> --json --out data\runs\<run>\model_gate.json
 ```
+
+`src.model_gate_cli --json` writes the same research-readiness checks as a
+machine-readable payload with `passed`, `summary.failed_check_names`, and the
+full per-check values/thresholds.
 
 Summarize collected rows:
 

@@ -253,6 +253,11 @@ python -m src.model_gate_cli \
   --run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr
 ```
 
+For automation or a dashboard status card, add
+`--json --out data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/model_gate.json`.
+The JSON payload includes top-level `passed`, compact summary counts, failed
+check names, and all per-check values/thresholds.
+
 The completed two-year run should print `Outcome: PASS`. The default gate first
 checks data coverage: at least 50,000 rows, 10 cities, 8 forecast sources, and
 700 unique target dates. A failure means the current artifacts should be treated

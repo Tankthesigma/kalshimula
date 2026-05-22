@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from src import model_gate_cli
@@ -135,3 +137,54 @@ def test_model_gate_cli_fails_missing_artifacts(tmp_path, capsys) -> None:
     assert code == 1
     assert "artifact_error" in output
     assert "Outcome: FAIL" in output
+
+
+def test_model_gate_cli_emits_json_summary(tmp_path, capsys) -> None:
+    run_dir = tmp_path / "run"
+    _write_gate_artifacts(run_dir)
+
+    code = model_gate_cli.main([*_gate_args(run_dir), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["schema_version"] == "1.0"
+    assert payload["run_dir"] == str(run_dir)
+    assert payload["passed"] is True
+    assert payload["summary"]["total_checks"] == len(payload["checks"])
+    assert payload["summary"]["failed_checks"] == 0
+    assert payload["summary"]["failed_check_names"] == []
+    assert {check["name"] for check in payload["checks"]} >= {
+        "row_count",
+        "test_mae_corrected",
+        "recalibrated_brier",
+    }
+
+
+def test_model_gate_cli_writes_json_failure_summary(tmp_path, capsys) -> None:
+    run_dir = tmp_path / "run"
+    _write_gate_artifacts(run_dir, mae=1.4)
+    out_path = tmp_path / "gate" / "model_gate.json"
+
+    code = model_gate_cli.main([*_gate_args(run_dir), "--out", str(out_path)])
+
+    assert code == 1
+    assert capsys.readouterr().out == ""
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["passed"] is False
+    assert payload["summary"]["failed_checks"] == 1
+    assert payload["summary"]["failed_check_names"] == ["test_mae_corrected"]
+
+
+def test_model_gate_cli_writes_json_artifact_error(tmp_path, capsys) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    out_path = tmp_path / "gate.json"
+
+    code = model_gate_cli.main(["--run-dir", str(run_dir), "--json", "--out", str(out_path)])
+
+    assert code == 1
+    assert capsys.readouterr().out == ""
+    payload = json.loads(out_path.read_text(encoding="utf-8"))
+    assert payload["passed"] is False
+    assert payload["summary"]["failed_check_names"] == ["artifact_error"]
+    assert payload["checks"][0]["name"] == "artifact_error"
