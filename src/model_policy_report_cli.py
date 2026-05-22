@@ -113,6 +113,7 @@ def _threshold_lines(
     test_group_summary: pd.DataFrame,
     test_group_calibration: pd.DataFrame,
     recalibration_comparison: pd.DataFrame,
+    probability_gap_report: pd.DataFrame,
 ) -> list[str]:
     if summary.empty:
         return ["Threshold probabilities: missing probability_calibration/threshold_calibration_summary.csv"]
@@ -185,6 +186,31 @@ def _threshold_lines(
                 f"ece={_fmt_number(recalibrated.get('expected_calibration_error'))} "
                 f"(raw {_fmt_number(raw.get('expected_calibration_error'))})"
             )
+    required_gap = {
+        "city",
+        "source",
+        "bucket_start",
+        "bucket_end",
+        "n",
+        "recalibrated_calibration_gap",
+        "abs_recalibrated_calibration_gap",
+    }
+    if not probability_gap_report.empty and required_gap.issubset(
+        probability_gap_report.columns
+    ):
+        gap = probability_gap_report.sort_values(
+            ["abs_recalibrated_calibration_gap", "n"],
+            ascending=[False, False],
+            na_position="last",
+        ).iloc[0]
+        lines.append(
+            "  worst recalibrated mid-prob bucket: "
+            f"{gap.get('city', 'n/a')}/{gap.get('source', 'n/a')} "
+            f"{_fmt_percent(gap.get('bucket_start'))}-"
+            f"{_fmt_percent(gap.get('bucket_end'))} "
+            f"gap={_fmt_number(gap.get('recalibrated_calibration_gap'))}, "
+            f"events={int(gap.get('n', 0)):,}"
+        )
     return lines
 
 
@@ -224,6 +250,9 @@ def build_model_policy_report(run_dir: Path) -> str:
     threshold_recalibration_comparison = _read_csv_if_exists(
         run_dir / "probability_calibration" / "threshold_recalibration_comparison.csv"
     )
+    threshold_probability_gap_report = _read_csv_if_exists(
+        run_dir / "probability_calibration" / "threshold_probability_gap_report.csv"
+    )
 
     lines = [f"Run: {run_dir}"]
     lines.extend(_data_lines(rows))
@@ -237,6 +266,7 @@ def build_model_policy_report(run_dir: Path) -> str:
             threshold_test_group_summary,
             threshold_test_group_calibration,
             threshold_recalibration_comparison,
+            threshold_probability_gap_report,
         )
     )
     return "\n".join(lines)

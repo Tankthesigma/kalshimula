@@ -171,6 +171,51 @@ def _write_artifacts(run_dir):
         run_dir / "probability_calibration" / "threshold_recalibration_comparison.csv",
         index=False,
     )
+    pd.DataFrame(
+        [
+            {
+                "city": "denver",
+                "source": "gfs_ens",
+                "bucket_index": 2,
+                "bucket_start": 0.2,
+                "bucket_end": 0.3,
+                "n": 30,
+                "mean_raw_probability": 0.25,
+                "mean_recalibrated_probability": 0.35,
+                "observed_frequency": 0.50,
+                "raw_calibration_gap": -0.25,
+                "recalibrated_calibration_gap": -0.15,
+                "abs_raw_calibration_gap": 0.25,
+                "abs_recalibrated_calibration_gap": 0.15,
+                "abs_gap_improvement": 0.10,
+                "city_source_recalibrated_events": 30,
+                "global_recalibrated_events": 0,
+                "unrecalibrated_events": 0,
+            },
+            {
+                "city": "boston",
+                "source": "gfs_ens",
+                "bucket_index": 5,
+                "bucket_start": 0.5,
+                "bucket_end": 0.6,
+                "n": 25,
+                "mean_raw_probability": 0.55,
+                "mean_recalibrated_probability": 0.58,
+                "observed_frequency": 0.80,
+                "raw_calibration_gap": -0.25,
+                "recalibrated_calibration_gap": -0.22,
+                "abs_raw_calibration_gap": 0.25,
+                "abs_recalibrated_calibration_gap": 0.22,
+                "abs_gap_improvement": 0.03,
+                "city_source_recalibrated_events": 25,
+                "global_recalibrated_events": 0,
+                "unrecalibrated_events": 0,
+            },
+        ]
+    ).to_csv(
+        run_dir / "probability_calibration" / "threshold_probability_gap_report.csv",
+        index=False,
+    )
 
 
 def test_build_model_policy_report_summarizes_artifacts(tmp_path) -> None:
@@ -189,6 +234,10 @@ def test_build_model_policy_report_summarizes_artifacts(tmp_path) -> None:
     assert "worst test group: boston/gfs_ens brier=0.080, ece=0.050" in report
     assert "worst test bucket: boston/gfs_ens 50.0%-60.0% gap=-0.150" in report
     assert "recalibrated test: brier=0.057 (raw 0.061), ece=0.010 (raw 0.024)" in report
+    assert (
+        "worst recalibrated mid-prob bucket: boston/gfs_ens "
+        "50.0%-60.0% gap=-0.220"
+    ) in report
 
 
 def test_build_model_policy_report_handles_missing_artifacts(tmp_path) -> None:
