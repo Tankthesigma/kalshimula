@@ -18,6 +18,7 @@ def test_build_refresh_paths_defaults_to_model_run_dir() -> None:
     assert paths.policy_out == Path("run/latest_model_policy.txt")
     assert paths.manifest_out == Path("run/latest_manifest.json")
     assert paths.check_out == Path("run/latest_check.json")
+    assert paths.pending_status_out == Path("run/latest_pending_status.json")
 
 
 def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, capsys) -> None:
@@ -401,6 +402,113 @@ def test_daily_model_refresh_cli_can_reset_actuals_template(
         str(tmp_path / "actuals.csv"),
         "--no-preserve-existing",
     ]
+
+
+def test_daily_model_refresh_cli_can_write_pending_status(
+    monkeypatch, tmp_path
+) -> None:
+    captured = {}
+
+    def fake_pending_status(**kwargs):
+        captured.update(kwargs)
+        return {
+            "schema_version": "1.0",
+            "ready_to_settle": False,
+            "next_action": "wait_for_target_date_to_pass",
+        }
+
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr(
+        "src.forward_test_pending_cli.build_pending_status",
+        fake_pending_status,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--out-dir",
+            str(tmp_path / "out"),
+            "--prefix",
+            "packet",
+            "--write-pending-status",
+        ]
+    )
+
+    assert code == 0
+    assert captured == {
+        "packet_path": tmp_path / "out" / "packet.json",
+        "history_path": tmp_path / "out" / "forward_test" / "history.csv",
+        "actuals_csv": None,
+    }
+    pending_path = tmp_path / "out" / "packet_pending_status.json"
+    assert json.loads(pending_path.read_text(encoding="utf-8"))["next_action"] == (
+        "wait_for_target_date_to_pass"
+    )
+    manifest = json.loads((tmp_path / "out" / "packet_manifest.json").read_text())
+    assert manifest["steps"]["forward_test_pending_status"]["exit_code"] == 0
+    assert manifest["artifacts"]["forward_test_pending_status"] == str(pending_path)
+
+
+def test_daily_model_refresh_cli_pending_status_uses_generated_actuals_template(
+    monkeypatch, tmp_path
+) -> None:
+    captured = {}
+
+    def fake_template_main(argv):
+        out_path = Path(argv[argv.index("--out") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            "city,target_date,actual_high_f,actual_source\n",
+            encoding="utf-8",
+        )
+        return 0
+
+    def fake_pending_status(**kwargs):
+        captured.update(kwargs)
+        return {"schema_version": "1.0", "ready_to_settle": False}
+
+    monkeypatch.setattr("src.predict_batch_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
+    monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
+    monkeypatch.setattr(
+        "src.forward_test_actuals_template_cli.main",
+        fake_template_main,
+    )
+    monkeypatch.setattr(
+        "src.forward_test_pending_cli.build_pending_status",
+        fake_pending_status,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_gate_report",
+        lambda *, run_dir, out_path, json_out_path=None: 0,
+    )
+    monkeypatch.setattr(
+        "src.daily_model_refresh_cli._write_policy_report",
+        lambda *, run_dir, out_path: None,
+    )
+
+    code = daily_model_refresh_cli.main(
+        [
+            "--model-run-dir",
+            str(tmp_path / "run"),
+            "--write-actuals-template",
+            "--write-pending-status",
+        ]
+    )
+
+    assert code == 0
+    assert captured["actuals_csv"] == tmp_path / "run" / "daily_actuals_template.csv"
 
 
 def test_daily_model_refresh_cli_returns_check_failure(monkeypatch, tmp_path) -> None:

@@ -274,7 +274,9 @@ python -m src.daily_model_refresh_cli \
 
 Add `--write-actuals-template` when the same refresh should also create or
 update `daily_actuals_template.csv` for later offline settlement. Existing
-filled actual values are preserved by default.
+filled actual values are preserved by default. Add `--write-pending-status`
+when the refresh should also write a machine-readable forward-test pending
+status JSON for agents or dashboards.
 
 When actuals are available and you want the refresh command to also settle the
 packet, add:
@@ -296,6 +298,7 @@ directory:
 - `latest_predictions_gate.json`
 - `latest_predictions_model_policy.txt`
 - `daily_actuals_template.csv` when `--write-actuals-template` is used
+- `latest_predictions_pending_status.json` when `--write-pending-status` is used
 - `latest_predictions_manifest.json`
 - `latest_predictions_check.json`
 
