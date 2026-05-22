@@ -465,6 +465,11 @@ result as structured data. The payload includes `summary.total_checks`,
 `summary.passed_checks`, `summary.failed_checks`, and
 `summary.failed_check_names` so downstream consumers can render packet status
 without scanning the full check list.
+Use `src.forward_test_settle_cli` after the target date has settled to score a
+packet. The default path fetches observed highs through the existing NCEI/ASOS
+source layer; `--actuals-csv` accepts a `city,target_date,actual_high_f` CSV for
+offline settlement. The output includes corrected MAE, threshold Brier score,
+errors, per-city rows, and a flattened history CSV for forward testing.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:

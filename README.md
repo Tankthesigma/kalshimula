@@ -51,6 +51,7 @@ python -m src.prediction_review_cli --input data\runs\<run>\latest_predictions.j
 python -m src.daily_model_refresh_cli --model-run-dir data\runs\<run>
 python -m src.daily_packet_check_cli --manifest data\runs\<run>\latest_predictions_manifest.json
 python -m src.daily_packet_check_cli --manifest data\runs\<run>\latest_predictions_manifest.json --json --out data\runs\<run>\latest_predictions_check.json
+python -m src.forward_test_settle_cli --packet data\runs\<run>\latest_predictions.json --target-date 2026-05-22 --actuals-csv data\runs\<run>\daily_actuals.csv --out-dir data\runs\<run>\forward_test
 ```
 
 When a run has `source_selection/recommended_sources.csv`, `--model-run-dir`
@@ -93,6 +94,11 @@ and required prediction fields, including source, station, forecast,
 selected-source-application status, calibration, threshold probabilities, and
 artifact paths for dashboard use. Add `--json` when a script needs the check
 result as structured data instead of text.
+After actual highs are known, use `src.forward_test_settle_cli` to score the
+packet. By default it fetches observed highs through the existing NCEI/ASOS
+source layer; pass `--actuals-csv` with `city,target_date,actual_high_f` to run
+the settlement offline. It reports corrected MAE, threshold Brier score, errors,
+and per-city settlement rows without touching Kalshi.
 
 Collect one city/date range into backtest rows:
 

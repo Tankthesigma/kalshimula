@@ -44,6 +44,26 @@ def _load_packet(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _read_actuals_csv(path: Path, target: date) -> dict[str, ObservedHigh]:
+    with path.open("r", newline="", encoding="utf-8-sig") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = set(reader.fieldnames or [])
+        missing = {"city", "target_date", "actual_high_f"} - fieldnames
+        if missing:
+            raise ValueError(f"actuals CSV missing columns: {sorted(missing)}")
+        actuals: dict[str, ObservedHigh] = {}
+        for row in reader:
+            if str(row.get("target_date", "")).strip() != target.isoformat():
+                continue
+            city = str(row.get("city", "")).strip().lower()
+            high = row.get("actual_high_f")
+            if not city or high in {None, ""}:
+                continue
+            source = str(row.get("actual_source") or "actuals_csv")
+            actuals[city] = ObservedHigh(high_f=float(high), source=source)
+        return actuals
+
+
 def _fetch_observed_high(station: Station, target: date) -> ObservedHigh:
     """Fetch observed high with NCEI preferred and ASOS as preliminary fallback."""
     actual = ncei.fetch_daily_high(station, target)
@@ -111,6 +131,7 @@ def _settle_prediction(
     prediction: dict[str, Any],
     *,
     target: date,
+    actuals: dict[str, ObservedHigh] | None = None,
 ) -> dict[str, Any]:
     city = _prediction_city(prediction)
     target_text = _prediction_target_date(packet, prediction)
@@ -119,8 +140,13 @@ def _settle_prediction(
             f"prediction target_date {target_text} does not match {target.isoformat()}"
         )
 
-    station = get_station(city)
-    observed = _fetch_observed_high(station, target)
+    if actuals is None:
+        station = get_station(city)
+        observed = _fetch_observed_high(station, target)
+    else:
+        observed = actuals.get(city.lower())
+        if observed is None:
+            raise ValueError("no observed high in actuals CSV")
     forecast = prediction.get("forecast") or {}
     calibration = prediction.get("calibration") or {}
     if not isinstance(forecast, dict) or not isinstance(calibration, dict):
@@ -147,10 +173,38 @@ def _settle_prediction(
     }
 
 
+def _summary(rows: list[dict[str, Any]], errors: list[dict[str, str]]) -> dict[str, Any]:
+    threshold_scores = [
+        (float(threshold["predicted_probability"]) - float(bool(threshold["outcome"]))) ** 2
+        for row in rows
+        for threshold in row.get("threshold_outcomes") or []
+    ]
+    sources = sorted({str(row["actual_source"]) for row in rows})
+    return {
+        "n_predictions": len(rows) + len(errors),
+        "n_settled": len(rows),
+        "n_errors": len(errors),
+        "actual_sources": sources,
+        "mae_corrected_f": (
+            sum(float(row["absolute_error_f"]) for row in rows) / len(rows)
+            if rows
+            else None
+        ),
+        "bias_corrected_f": (
+            sum(float(row["error_f"]) for row in rows) / len(rows) if rows else None
+        ),
+        "n_threshold_events": len(threshold_scores),
+        "threshold_brier_score": (
+            sum(threshold_scores) / len(threshold_scores) if threshold_scores else None
+        ),
+    }
+
+
 def build_settlement_payload(
     *,
     packet_path: Path,
     target: date,
+    actuals: dict[str, ObservedHigh] | None = None,
     generated_at: datetime | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Build a settlement payload for one prediction packet."""
@@ -173,7 +227,9 @@ def build_settlement_payload(
             continue
         city = str(prediction.get("city") or "<unknown>")
         try:
-            rows.append(_settle_prediction(packet, prediction, target=target))
+            rows.append(
+                _settle_prediction(packet, prediction, target=target, actuals=actuals)
+            )
         except Exception as error:  # noqa: BLE001
             errors.append({"city": city, "error": str(error)})
 
@@ -186,6 +242,7 @@ def build_settlement_payload(
         "target_date": target.isoformat(),
         "n_rows": len(rows),
         "n_errors": len(errors),
+        "summary": _summary(rows, errors),
         "rows": rows,
         "errors": errors,
     }
@@ -295,14 +352,24 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--packet", required=True, type=Path)
     parser.add_argument("--target-date", required=True, type=_parse_date)
+    parser.add_argument(
+        "--actuals-csv",
+        type=Path,
+        help=(
+            "Optional offline actuals CSV with city,target_date,actual_high_f. "
+            "When supplied, no NCEI/ASOS fetch is performed."
+        ),
+    )
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--history", type=Path)
     args = parser.parse_args(argv)
 
+    actuals = _read_actuals_csv(args.actuals_csv, args.target_date) if args.actuals_csv else None
     payload, exit_code = build_settlement_payload(
         packet_path=args.packet,
         target=args.target_date,
+        actuals=actuals,
     )
     out_path = args.out or args.out_dir / f"{args.target_date.isoformat()}_settlement.json"
     history_path = args.history or args.out_dir / "history.csv"
