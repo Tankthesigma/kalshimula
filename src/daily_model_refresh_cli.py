@@ -26,6 +26,7 @@ class RefreshPaths:
     json_out: Path
     review_out: Path
     gate_out: Path
+    gate_json_out: Path
     policy_out: Path
     manifest_out: Path
     check_out: Path
@@ -43,6 +44,7 @@ def build_refresh_paths(
         json_out=directory / f"{prefix}.json",
         review_out=directory / f"{prefix}.txt",
         gate_out=directory / f"{prefix}_gate.txt",
+        gate_json_out=directory / f"{prefix}_gate.json",
         policy_out=directory / f"{prefix}_model_policy.txt",
         manifest_out=directory / f"{prefix}_manifest.json",
         check_out=directory / f"{prefix}_check.json",
@@ -68,7 +70,7 @@ def _normalize_threshold_offsets(argv: list[str]) -> list[str]:
     return normalized
 
 
-def _write_gate_report(*, run_dir: Path, out_path: Path) -> int:
+def _write_gate_report(*, run_dir: Path, out_path: Path, json_out_path: Path | None = None) -> int:
     try:
         checks = model_gate_cli.build_gate_checks(
             run_dir=run_dir,
@@ -86,12 +88,16 @@ def _write_gate_report(*, run_dir: Path, out_path: Path) -> int:
             expected_source=model_gate_cli.DEFAULT_EXPECTED_SOURCE,
         )
         report = model_gate_cli.render_gate_report(checks)
+        payload = model_gate_cli.build_gate_check_payload(run_dir, checks)
         code = 0 if all(check.passed for check in checks) else 1
     except ValueError as error:
         report = f"Model readiness gate:\n  FAIL artifact_error: {error}\nOutcome: FAIL"
+        payload = model_gate_cli.build_artifact_error_payload(run_dir, error)
         code = 1
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(report + "\n", encoding="utf-8")
+    if json_out_path is not None:
+        model_gate_cli.write_gate_payload(payload, json_out_path)
     return code
 
 
@@ -135,12 +141,14 @@ def _write_manifest(
             "batch_predictions": {"exit_code": batch_code},
             "prediction_review": {"exit_code": review_code},
             "model_gate_report": {"exit_code": gate_code},
+            "model_gate_json": {"exit_code": gate_code},
             "model_policy_report": {"exit_code": 0},
         },
         "artifacts": {
             "prediction_json": str(paths.json_out),
             "prediction_review": str(paths.review_out),
             "model_gate_report": str(paths.gate_out),
+            "model_gate_json": str(paths.gate_json_out),
             "model_policy_report": str(paths.policy_out),
             "manifest": str(paths.manifest_out),
         },
@@ -214,11 +222,16 @@ def main(argv: list[str] | None = None) -> int:
     review_code = prediction_review_cli.main(
         ["--input", str(paths.json_out), "--out", str(paths.review_out)]
     )
-    gate_code = _write_gate_report(run_dir=args.model_run_dir, out_path=paths.gate_out)
+    gate_code = _write_gate_report(
+        run_dir=args.model_run_dir,
+        out_path=paths.gate_out,
+        json_out_path=paths.gate_json_out,
+    )
     _write_policy_report(run_dir=args.model_run_dir, out_path=paths.policy_out)
     print(f"Wrote prediction JSON: {paths.json_out}")
     print(f"Wrote prediction review: {paths.review_out}")
     print(f"Wrote model gate report: {paths.gate_out}")
+    print(f"Wrote model gate JSON: {paths.gate_json_out}")
     print(f"Wrote model policy report: {paths.policy_out}")
     exit_code = _write_manifest(
         out_path=paths.manifest_out,

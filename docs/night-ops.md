@@ -278,6 +278,7 @@ directory:
 - `latest_predictions.json`
 - `latest_predictions.txt`
 - `latest_predictions_gate.txt`
+- `latest_predictions_gate.json`
 - `latest_predictions_model_policy.txt`
 - `latest_predictions_manifest.json`
 - `latest_predictions_check.json`

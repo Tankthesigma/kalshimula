@@ -14,6 +14,7 @@ def test_build_refresh_paths_defaults_to_model_run_dir() -> None:
     assert paths.json_out == Path("run/latest.json")
     assert paths.review_out == Path("run/latest.txt")
     assert paths.gate_out == Path("run/latest_gate.txt")
+    assert paths.gate_json_out == Path("run/latest_gate.json")
     assert paths.policy_out == Path("run/latest_model_policy.txt")
     assert paths.manifest_out == Path("run/latest_manifest.json")
     assert paths.check_out == Path("run/latest_check.json")
@@ -30,8 +31,8 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
         calls.append(("review", argv))
         return 0
 
-    def fake_write_gate_report(*, run_dir, out_path):
-        calls.append(("gate", [str(run_dir), str(out_path)]))
+    def fake_write_gate_report(*, run_dir, out_path, json_out_path=None):
+        calls.append(("gate", [str(run_dir), str(out_path), str(json_out_path)]))
         return 0
 
     def fake_write_policy_report(*, run_dir, out_path):
@@ -99,6 +100,7 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
             [
                 str(tmp_path / "run"),
                 str(tmp_path / "out" / "morning_gate.txt"),
+                str(tmp_path / "out" / "morning_gate.json"),
             ],
         ),
         (
@@ -123,6 +125,7 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
     assert "Wrote prediction JSON" in output
     assert "Wrote prediction review" in output
     assert "Wrote model gate report" in output
+    assert "Wrote model gate JSON" in output
     assert "Wrote model policy report" in output
     assert "Wrote packet manifest" in output
     assert "Wrote packet check" in output
@@ -135,6 +138,10 @@ def test_daily_model_refresh_cli_runs_batch_then_review(monkeypatch, tmp_path, c
     assert manifest["require_selected_source_applied"] is True
     assert manifest["max_packet_age_hours"] == 24.0
     assert manifest["steps"]["batch_predictions"]["exit_code"] == 0
+    assert manifest["steps"]["model_gate_json"]["exit_code"] == 0
+    assert manifest["artifacts"]["model_gate_json"] == str(
+        tmp_path / "out" / "morning_gate.json"
+    )
     assert manifest["artifacts"]["model_policy_report"] == str(
         tmp_path / "out" / "morning_model_policy.txt"
     )
@@ -153,7 +160,7 @@ def test_daily_model_refresh_cli_returns_batch_failure_but_still_reviews(
         calls.append("review")
         return 1
 
-    def fake_write_gate_report(*, run_dir, out_path):
+    def fake_write_gate_report(*, run_dir, out_path, json_out_path=None):
         calls.append("gate")
         return 0
 
@@ -198,7 +205,7 @@ def test_daily_model_refresh_cli_can_skip_required_gate(monkeypatch, tmp_path) -
     monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_gate_report",
-        lambda *, run_dir, out_path: 0,
+        lambda *, run_dir, out_path, json_out_path=None: 0,
     )
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_policy_report",
@@ -223,7 +230,7 @@ def test_daily_model_refresh_cli_can_allow_source_fallback(monkeypatch, tmp_path
     monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_gate_report",
-        lambda *, run_dir, out_path: 0,
+        lambda *, run_dir, out_path, json_out_path=None: 0,
     )
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_policy_report",
@@ -251,7 +258,7 @@ def test_daily_model_refresh_cli_can_omit_packet_age_limit(monkeypatch, tmp_path
     monkeypatch.setattr("src.daily_packet_check_cli.main", lambda argv: 0)
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_gate_report",
-        lambda *, run_dir, out_path: 0,
+        lambda *, run_dir, out_path, json_out_path=None: 0,
     )
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_policy_report",
@@ -278,7 +285,7 @@ def test_daily_model_refresh_cli_returns_check_failure(monkeypatch, tmp_path) ->
     monkeypatch.setattr("src.prediction_review_cli.main", lambda argv: 0)
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_gate_report",
-        lambda *, run_dir, out_path: 0,
+        lambda *, run_dir, out_path, json_out_path=None: 0,
     )
     monkeypatch.setattr(
         "src.daily_model_refresh_cli._write_policy_report",
@@ -297,16 +304,21 @@ def test_write_gate_report_writes_failure_for_missing_artifacts(tmp_path) -> Non
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     out_path = tmp_path / "out" / "gate.txt"
+    json_out_path = tmp_path / "out" / "gate.json"
 
     code = daily_model_refresh_cli._write_gate_report(
         run_dir=run_dir,
         out_path=out_path,
+        json_out_path=json_out_path,
     )
 
     assert code == 1
     text = out_path.read_text(encoding="utf-8")
     assert "Outcome: FAIL" in text
     assert "artifact_error" in text
+    payload = json.loads(json_out_path.read_text(encoding="utf-8"))
+    assert payload["passed"] is False
+    assert payload["summary"]["failed_check_names"] == ["artifact_error"]
 
 
 def test_write_policy_report_writes_model_policy_summary(tmp_path) -> None:
