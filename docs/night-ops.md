@@ -402,6 +402,17 @@ The report keeps prediction MAE/bias separate from threshold-event Brier score,
 so reruns and multiple threshold offsets do not inflate the point-forecast
 metric.
 
+Gate the accumulated forward test before treating it as healthy:
+
+```bash
+python -m src.forward_test_gate_cli \
+  --report data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/forward_test/report.json
+```
+
+The gate fails on insufficient sample count, high corrected MAE, high absolute
+bias, low interval coverage, high threshold Brier, or high threshold ECE. Tighten
+or loosen thresholds with the CLI flags once enough live days have accumulated.
+
 ## Bridge health
 
 The Discord bridge runs in a WSL tmux session (`bridge`) and forwards
