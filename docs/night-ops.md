@@ -354,6 +354,30 @@ The review command exits nonzero when the batch payload has a failed required
 gate or city-level errors. Use `--allow-errors` only when intentionally
 inspecting a partial payload.
 
+## Settling a forward-test packet
+
+After actual highs are known, create a CSV with:
+
+```csv
+city,target_date,actual_high_f
+denver,2026-05-22,73
+```
+
+Then settle the packet offline:
+
+```bash
+python -m src.forward_test_settle_cli \
+  --packet data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.json \
+  --target-date 2026-05-22 \
+  --actuals-csv data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/daily_actuals.csv \
+  --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/forward_test
+```
+
+The settlement output reports corrected MAE, threshold Brier score, settlement
+errors, and per-city rows. Use `--actuals-csv` when you want source validation
+separate from forward-test scoring; omit it when NCEI/ASOS settlement fetching
+is appropriate.
+
 ## Bridge health
 
 The Discord bridge runs in a WSL tmux session (`bridge`) and forwards
