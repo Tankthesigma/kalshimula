@@ -40,6 +40,24 @@ def main(argv: list[str] | None = None) -> int:
             "mapping before falling back to a pooled global bucket."
         ),
     )
+    parser.add_argument(
+        "--gap-min-events",
+        default=20,
+        type=int,
+        help="Minimum test events per city/source bucket in the gap report.",
+    )
+    parser.add_argument(
+        "--gap-probability-min",
+        default=0.2,
+        type=float,
+        help="Lowest raw probability bucket edge included in the gap report.",
+    )
+    parser.add_argument(
+        "--gap-probability-max",
+        default=0.8,
+        type=float,
+        help="Highest raw probability bucket edge included in the gap report.",
+    )
     args = parser.parse_args(argv)
 
     result = write_threshold_calibration_outputs(
@@ -53,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
         n_buckets=args.buckets,
         recalibration_prior_strength=args.recalibration_prior_strength,
         min_recalibration_events=args.min_recalibration_events,
+        probability_gap_min_events=args.gap_min_events,
+        probability_gap_min=args.gap_probability_min,
+        probability_gap_max=args.gap_probability_max,
     )
     test = result.summary[result.summary["split"] == "test"].iloc[0]
     recalibrated = result.recalibration_comparison[
@@ -62,7 +83,8 @@ def main(argv: list[str] | None = None) -> int:
         f"Wrote threshold calibration to {args.out_dir}: "
         f"{int(test['n_events'])} test events, "
         f"raw brier={test['brier_score']:.4f}, "
-        f"recalibrated brier={recalibrated['brier_score']:.4f}"
+        f"recalibrated brier={recalibrated['brier_score']:.4f}, "
+        f"gap buckets={len(result.probability_gap_report)}"
     )
     return 0
 

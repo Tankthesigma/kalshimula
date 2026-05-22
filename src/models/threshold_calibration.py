@@ -74,6 +74,25 @@ RECALIBRATION_TABLE_COLUMNS = [
     "used",
 ]
 RECALIBRATION_COMPARISON_COLUMNS = ["policy", *SUMMARY_COLUMNS]
+PROBABILITY_GAP_REPORT_COLUMNS = [
+    "city",
+    "source",
+    "bucket_index",
+    "bucket_start",
+    "bucket_end",
+    "n",
+    "mean_raw_probability",
+    "mean_recalibrated_probability",
+    "observed_frequency",
+    "raw_calibration_gap",
+    "recalibrated_calibration_gap",
+    "abs_raw_calibration_gap",
+    "abs_recalibrated_calibration_gap",
+    "abs_gap_improvement",
+    "city_source_recalibrated_events",
+    "global_recalibrated_events",
+    "unrecalibrated_events",
+]
 GLOBAL_RECALIBRATION_KEY = "__global__"
 
 
@@ -97,6 +116,7 @@ class ThresholdCalibrationResult:
     test_recalibrated_group_summary: pd.DataFrame
     test_recalibrated_group_calibration: pd.DataFrame
     recalibration_comparison: pd.DataFrame
+    probability_gap_report: pd.DataFrame
 
 
 def evaluate_threshold_calibration(
@@ -110,6 +130,9 @@ def evaluate_threshold_calibration(
     n_buckets: int = 10,
     recalibration_prior_strength: float = 25.0,
     min_recalibration_events: int = 20,
+    probability_gap_min_events: int = 20,
+    probability_gap_min: float = 0.2,
+    probability_gap_max: float = 0.8,
 ) -> ThresholdCalibrationResult:
     """Evaluate threshold probabilities from empirical corrected residuals.
 
@@ -126,6 +149,10 @@ def evaluate_threshold_calibration(
         raise ValueError("recalibration_prior_strength must be non-negative")
     if min_recalibration_events <= 0:
         raise ValueError("min_recalibration_events must be positive")
+    if probability_gap_min_events <= 0:
+        raise ValueError("probability_gap_min_events must be positive")
+    if not 0.0 <= probability_gap_min < probability_gap_max <= 1.0:
+        raise ValueError("probability gap bounds must satisfy 0 <= min < max <= 1")
 
     source_rows = filter_rows_to_recommended_sources(rows, recommended_sources)
     if source_rows.empty:
@@ -195,6 +222,13 @@ def evaluate_threshold_calibration(
         recalibrated_events=test_recalibrated_events,
         recalibrated_calibration=test_recalibrated_calibration,
     )
+    probability_gap_report = _probability_gap_report(
+        test_recalibrated_events,
+        n_buckets=n_buckets,
+        min_events=probability_gap_min_events,
+        probability_min=probability_gap_min,
+        probability_max=probability_gap_max,
+    )
     return ThresholdCalibrationResult(
         validation_events=validation_events,
         test_events=test_events,
@@ -212,6 +246,7 @@ def evaluate_threshold_calibration(
         test_recalibrated_group_summary=test_recalibrated_group_summary,
         test_recalibrated_group_calibration=test_recalibrated_group_calibration,
         recalibration_comparison=recalibration_comparison,
+        probability_gap_report=probability_gap_report,
     )
 
 
@@ -227,6 +262,9 @@ def write_threshold_calibration_outputs(
     n_buckets: int = 10,
     recalibration_prior_strength: float = 25.0,
     min_recalibration_events: int = 20,
+    probability_gap_min_events: int = 20,
+    probability_gap_min: float = 0.2,
+    probability_gap_max: float = 0.8,
 ) -> ThresholdCalibrationResult:
     """Run threshold probability calibration from CSV artifacts and write outputs."""
     rows = pd.read_csv(input_path, parse_dates=["target_date"])
@@ -242,6 +280,9 @@ def write_threshold_calibration_outputs(
         n_buckets=n_buckets,
         recalibration_prior_strength=recalibration_prior_strength,
         min_recalibration_events=min_recalibration_events,
+        probability_gap_min_events=probability_gap_min_events,
+        probability_gap_min=probability_gap_min,
+        probability_gap_max=probability_gap_max,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     result.validation_events.to_csv(output_dir / "threshold_validation_events.csv", index=False)
@@ -281,6 +322,9 @@ def write_threshold_calibration_outputs(
     )
     result.recalibration_comparison.to_csv(
         output_dir / "threshold_recalibration_comparison.csv", index=False
+    )
+    result.probability_gap_report.to_csv(
+        output_dir / "threshold_probability_gap_report.csv", index=False
     )
     return result
 
@@ -621,6 +665,92 @@ def _recalibration_comparison(
         {"policy": "validation_bucket_recalibrated", **recalibrated},
     ]
     return pd.DataFrame(rows, columns=RECALIBRATION_COMPARISON_COLUMNS)
+
+
+def _probability_gap_report(
+    events: pd.DataFrame,
+    *,
+    n_buckets: int,
+    min_events: int,
+    probability_min: float,
+    probability_max: float,
+) -> pd.DataFrame:
+    """Rank city/source raw-probability buckets by residual calibration gap."""
+    if events.empty:
+        return pd.DataFrame(columns=PROBABILITY_GAP_REPORT_COLUMNS)
+
+    df = events.copy()
+    raw_probability_column = (
+        "raw_predicted_probability"
+        if "raw_predicted_probability" in df.columns
+        else "predicted_probability"
+    )
+    recalibrated_column = (
+        "recalibrated_probability"
+        if "recalibrated_probability" in df.columns
+        else raw_probability_column
+    )
+    if "bucket_index" not in df.columns:
+        df["bucket_index"] = _bucket_indexes(
+            df[raw_probability_column], n_buckets=n_buckets
+        )
+
+    records = []
+    for (city, source, bucket_index), group in df.groupby(
+        ["city", "source", "bucket_index"], sort=True
+    ):
+        bucket_index = int(bucket_index)
+        bucket_start = bucket_index / n_buckets
+        bucket_end = (bucket_index + 1) / n_buckets
+        if bucket_start < probability_min or bucket_end > probability_max:
+            continue
+        if len(group) < min_events:
+            continue
+
+        mean_raw = float(group[raw_probability_column].astype(float).mean())
+        mean_recalibrated = float(group[recalibrated_column].astype(float).mean())
+        observed = float(group["outcome"].astype(float).mean())
+        raw_gap = mean_raw - observed
+        recalibrated_gap = mean_recalibrated - observed
+        scope_counts = (
+            group["recalibration_scope"].value_counts()
+            if "recalibration_scope" in group.columns
+            else pd.Series(dtype=int)
+        )
+        records.append(
+            {
+                "city": city,
+                "source": source,
+                "bucket_index": bucket_index,
+                "bucket_start": bucket_start,
+                "bucket_end": bucket_end,
+                "n": int(len(group)),
+                "mean_raw_probability": mean_raw,
+                "mean_recalibrated_probability": mean_recalibrated,
+                "observed_frequency": observed,
+                "raw_calibration_gap": raw_gap,
+                "recalibrated_calibration_gap": recalibrated_gap,
+                "abs_raw_calibration_gap": abs(raw_gap),
+                "abs_recalibrated_calibration_gap": abs(recalibrated_gap),
+                "abs_gap_improvement": abs(raw_gap) - abs(recalibrated_gap),
+                "city_source_recalibrated_events": int(
+                    scope_counts.get("city_source", 0)
+                ),
+                "global_recalibrated_events": int(scope_counts.get("global", 0)),
+                "unrecalibrated_events": int(scope_counts.get("none", 0)),
+            }
+        )
+
+    if not records:
+        return pd.DataFrame(columns=PROBABILITY_GAP_REPORT_COLUMNS)
+    return (
+        pd.DataFrame(records, columns=PROBABILITY_GAP_REPORT_COLUMNS)
+        .sort_values(
+            ["abs_recalibrated_calibration_gap", "abs_raw_calibration_gap", "city"],
+            ascending=[False, False, True],
+        )
+        .reset_index(drop=True)
+    )
 
 
 def _expected_calibration_error(buckets: pd.DataFrame) -> float:

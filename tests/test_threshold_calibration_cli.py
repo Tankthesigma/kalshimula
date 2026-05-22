@@ -57,8 +57,11 @@ def test_threshold_calibration_cli_writes_outputs(tmp_path, capsys) -> None:
     )
 
     assert code == 0
-    assert "test events" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "test events" in output
+    assert "gap buckets" in output
     assert (output_dir / "threshold_calibration_summary.csv").exists()
+    assert (output_dir / "threshold_probability_gap_report.csv").exists()
 
 
 def _row(target_date: str, point_f: float, actual_high_f: float) -> dict:

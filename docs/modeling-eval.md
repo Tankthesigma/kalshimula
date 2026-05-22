@@ -394,6 +394,15 @@ table and applies it to the held-out test events. Sparse city/source buckets
 fall back to pooled global validation buckets when the global bucket has enough
 events. On the completed run, that reduced test Brier from 0.0609 to about
 0.0568 and expected calibration error from 0.0241 to about 0.0095.
+It also writes `threshold_probability_gap_report.csv`, which ranks city/source
+raw-probability buckets by the remaining recalibrated calibration gap after
+filtering to the 20%-80% probability band with at least 20 held-out events. On
+the completed run it produced 27 buckets. The largest remaining gaps after
+recalibration were Miami 20%-30% (-0.223), Philadelphia 20%-30% (-0.222), NYC
+30%-40% (-0.204), LA 60%-70% (-0.188), and Chicago 70%-80% (+0.185). Negative
+means observed frequency was higher than the recalibrated probability; positive
+means the probability was too high. This is the first artifact to inspect
+before changing probability calibration policy.
 `predict --model-run-dir` automatically uses
 `probability_calibration/threshold_recalibration_table.csv` when it exists and
 prints the raw probability beside the recalibrated one. JSON threshold rows also
@@ -524,9 +533,9 @@ by at least 0.002/0.010. The completed two-year run passes all of those gates.
   policy until a stronger per-city selector is validated.
 - **Probability calibration.** Threshold probabilities now have offline
   reliability artifacts, and sparse city/source recalibration buckets fall back
-  to pooled global validation buckets. The next probability slice is deeper
-  mid-probability calibration analysis; do not treat these diagnostics as trade
-  signals.
+  to pooled global validation buckets. The probability gap report now identifies
+  the remaining mid-probability buckets to investigate next; do not treat these
+  diagnostics as trade signals.
 - **Test sample size.** 89 days/city is enough for an MAE estimate; tight
   for coverage estimation. NYC's 51.7% reading at n=89 has a ~5%-point
   standard error — the real coverage is probably 47–57%, still well below
