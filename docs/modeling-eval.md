@@ -470,6 +470,10 @@ packet. The default path fetches observed highs through the existing NCEI/ASOS
 source layer; `--actuals-csv` accepts a `city,target_date,actual_high_f` CSV for
 offline settlement. The output includes corrected MAE, threshold Brier score,
 errors, per-city rows, and a flattened history CSV for forward testing.
+Use `src.forward_test_report_cli` on that history CSV to monitor accumulated
+forward-test quality. It deduplicates rerun rows by latest
+`(target_date, city, offset_f)`, computes corrected MAE/bias on unique
+city/date predictions, and computes threshold Brier on threshold events.
 
 Use `src.model_gate_cli` as the final research-readiness check after refreshing
 all selected model artifacts:
