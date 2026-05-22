@@ -21,6 +21,10 @@ def _write_history(path, rows) -> None:
                 "observed_high_f",
                 "predicted_point_f",
                 "predicted_corrected_point_f",
+                "p10_f",
+                "p90_f",
+                "interval_lower_f",
+                "interval_upper_f",
                 "error_f",
                 "absolute_error_f",
                 "offset_f",
@@ -46,7 +50,12 @@ def _row(
     error="-1.0",
     absolute_error="1.0",
     offset="0",
+    predicted_probability="0.8",
+    outcome="True",
     brier="0.04",
+    observed_high="73.0",
+    interval_lower="70.0",
+    interval_upper="75.0",
 ):
     return {
         "settled_at": "2026-05-23T00:00:00+00:00",
@@ -54,19 +63,23 @@ def _row(
         "target_date": target_date,
         "city": city,
         "actual_source": source,
-        "observed_high_f": "73.0",
+        "observed_high_f": observed_high,
         "predicted_point_f": "70.0",
         "predicted_corrected_point_f": "72.0",
+        "p10_f": "68.0",
+        "p90_f": "74.0",
+        "interval_lower_f": interval_lower,
+        "interval_upper_f": interval_upper,
         "error_f": error,
         "absolute_error_f": absolute_error,
         "offset_f": offset,
         "threshold_f": "72",
-        "predicted_probability": "0.8",
+        "predicted_probability": predicted_probability,
         "raw_predicted_probability": "0.75",
         "recalibration_used": "True",
         "recalibration_scope": "city_source",
         "recalibration_n": "123",
-        "outcome": "True",
+        "outcome": outcome,
         "brier": brier,
     }
 
@@ -95,12 +108,15 @@ def test_build_forward_test_report_separates_predictions_from_thresholds(tmp_pat
     assert payload["summary"]["n_cities"] == 2
     assert payload["summary"]["mae_corrected_f"] == 1.5
     assert payload["summary"]["bias_corrected_f"] == 0.5
+    assert payload["summary"]["interval_coverage"] == 1.0
     assert payload["summary"]["threshold_brier_score"] == pytest.approx(
         (0.04 + 0.09 + 0.04 + 0.04) / 4
     )
+    assert payload["summary"]["threshold_ece"] == pytest.approx(0.2)
     assert payload["summary"]["actual_sources"] == {"ncei": 2}
     assert payload["daily"][0]["target_date"] == "2026-05-22"
     assert payload["daily"][0]["n_predictions"] == 2
+    assert payload["daily"][0]["interval_coverage"] == 1.0
 
 
 def test_build_forward_test_report_uses_latest_duplicate_rows(tmp_path):
@@ -122,6 +138,61 @@ def test_build_forward_test_report_uses_latest_duplicate_rows(tmp_path):
     assert payload["summary"]["actual_sources"] == {"ncei": 1}
 
 
+def test_build_forward_test_report_computes_coverage_and_ece(tmp_path):
+    history_path = tmp_path / "history.csv"
+    _write_history(
+        history_path,
+        [
+            _row(
+                city="denver",
+                observed_high="73.0",
+                interval_lower="70.0",
+                interval_upper="75.0",
+                predicted_probability="0.25",
+                outcome="False",
+                brier="0.0625",
+            ),
+            _row(
+                city="austin",
+                observed_high="80.0",
+                interval_lower="70.0",
+                interval_upper="75.0",
+                predicted_probability="0.75",
+                outcome="True",
+                brier="0.0625",
+            ),
+        ],
+    )
+
+    payload = forward_test_report_cli.build_forward_test_report(
+        history_path,
+        n_buckets=2,
+    )
+
+    assert payload["summary"]["interval_coverage"] == 0.5
+    assert payload["summary"]["threshold_ece"] == pytest.approx(0.25)
+    assert payload["summary"]["calibration_buckets"] == [
+        {
+            "bucket_start": 0.0,
+            "bucket_end": 0.5,
+            "n": 1,
+            "mean_predicted_probability": 0.25,
+            "observed_frequency": 0.0,
+            "calibration_gap": 0.25,
+            "abs_calibration_gap": 0.25,
+        },
+        {
+            "bucket_start": 0.5,
+            "bucket_end": 1.0,
+            "n": 1,
+            "mean_predicted_probability": 0.75,
+            "observed_frequency": 1.0,
+            "calibration_gap": -0.25,
+            "abs_calibration_gap": 0.25,
+        },
+    ]
+
+
 def test_forward_test_report_cli_writes_json(tmp_path):
     history_path = tmp_path / "history.csv"
     out_path = tmp_path / "report.json"
@@ -135,6 +206,18 @@ def test_forward_test_report_cli_writes_json(tmp_path):
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["schema_version"] == "1.0"
     assert payload["summary"]["n_predictions"] == 1
+
+
+def test_render_forward_test_report_warns_on_bias_drift(tmp_path):
+    history_path = tmp_path / "history.csv"
+    _write_history(history_path, [_row(error="1.2", absolute_error="1.2")])
+
+    payload = forward_test_report_cli.build_forward_test_report(history_path)
+    report = forward_test_report_cli.render_forward_test_report(payload)
+
+    assert "WARN: forward-test bias 1.2000 F exceeds 0.5 F" in report
+    assert "Interval coverage: 1.0000" in report
+    assert "Threshold ECE: 0.2000" in report
 
 
 def test_forward_test_report_cli_returns_failure_for_missing_history(capsys, tmp_path):
