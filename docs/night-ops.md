@@ -388,6 +388,16 @@ city,target_date,actual_high_f
 denver,2026-05-22,73
 ```
 
+Generate the blank CSV from the packet so the city/date list is exact:
+
+```bash
+python -m src.forward_test_actuals_template_cli \
+  --packet data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.json \
+  --out data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/daily_actuals.csv
+```
+
+Then fill in `actual_high_f` and optionally `actual_source` before settlement.
+
 Then settle the packet offline:
 
 ```bash
