@@ -102,7 +102,9 @@ codes.
 Use `src.forward_test_pending_cli --packet <packet.json> --history
 <forward_test>/history.csv` before settlement to see whether the target date has
 passed and whether the packet is already settled, partially settled, or still
-unsettled.
+unsettled. Add `--actuals-csv daily_actuals.csv` to include offline actuals
+readiness in the same status; an incomplete actuals CSV changes the next action
+to `fill_actuals_csv`.
 Use `src.forward_test_actuals_template_cli --packet <packet.json> --out
 daily_actuals.csv` to generate the exact `city,target_date,actual_high_f`
 template before filling offline actuals; reruns preserve existing filled values

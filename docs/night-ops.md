@@ -373,13 +373,16 @@ already been settled in the accumulated history:
 ```bash
 python -m src.forward_test_pending_cli \
   --packet data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.json \
-  --history data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/forward_test/history.csv
+  --history data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/forward_test/history.csv \
+  --actuals-csv data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/daily_actuals.csv
 ```
 
 The pending command reports `wait_for_target_date_to_pass` while the packet's
 target date is still today or in the future, `run_forward_test_settle` when the
 target date has passed and rows are missing, and `already_settled` when all
-city/threshold rows are present in history. Use `--json` for automation.
+city/threshold rows are present in history. When `--actuals-csv` is supplied,
+an incomplete actuals file reports `fill_actuals_csv` instead of settlement
+readiness. Use `--json` for automation.
 
 After actual highs are known, create a CSV with:
 

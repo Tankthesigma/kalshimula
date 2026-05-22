@@ -61,6 +61,54 @@ def test_build_pending_status_reports_unsettled_ready_packet(tmp_path) -> None:
         "boston": ["-2", "0", "2"],
         "denver": ["-2", "0", "2"],
     }
+    assert "actuals_check" not in payload
+
+
+def test_build_pending_status_blocks_ready_when_actuals_csv_is_incomplete(
+    tmp_path,
+) -> None:
+    packet_path = tmp_path / "packet.json"
+    actuals_path = tmp_path / "actuals.csv"
+    packet_path.write_text(json.dumps(_packet()), encoding="utf-8")
+    actuals_path.write_text(
+        "city,target_date,actual_high_f,actual_source\n"
+        "denver,2026-05-22,73,ncei\n"
+        "boston,2026-05-22,,ncei\n",
+        encoding="utf-8",
+    )
+
+    payload = forward_test_pending_cli.build_pending_status(
+        packet_path=packet_path,
+        actuals_csv=actuals_path,
+        as_of_date=date(2026, 5, 23),
+    )
+
+    assert payload["ready_to_settle"] is False
+    assert payload["next_action"] == "fill_actuals_csv"
+    assert payload["actuals_check"]["passed"] is False
+    assert payload["actuals_check"]["n_valid_actuals"] == 1
+
+
+def test_build_pending_status_reports_ready_with_complete_actuals_csv(tmp_path) -> None:
+    packet_path = tmp_path / "packet.json"
+    actuals_path = tmp_path / "actuals.csv"
+    packet_path.write_text(json.dumps(_packet()), encoding="utf-8")
+    actuals_path.write_text(
+        "city,target_date,actual_high_f,actual_source\n"
+        "denver,2026-05-22,73,ncei\n"
+        "boston,2026-05-22,68,ncei\n",
+        encoding="utf-8",
+    )
+
+    payload = forward_test_pending_cli.build_pending_status(
+        packet_path=packet_path,
+        actuals_csv=actuals_path,
+        as_of_date=date(2026, 5, 23),
+    )
+
+    assert payload["ready_to_settle"] is True
+    assert payload["next_action"] == "run_forward_test_settle"
+    assert payload["actuals_check"]["passed"] is True
 
 
 def test_build_pending_status_waits_for_target_date_to_pass(tmp_path) -> None:
@@ -132,12 +180,21 @@ def test_build_pending_status_reports_fully_settled_packet(tmp_path) -> None:
 
 def test_forward_test_pending_cli_prints_status(tmp_path, capsys) -> None:
     packet_path = tmp_path / "packet.json"
+    actuals_path = tmp_path / "actuals.csv"
     packet_path.write_text(json.dumps(_packet()), encoding="utf-8")
+    actuals_path.write_text(
+        "city,target_date,actual_high_f\n"
+        "denver,2026-05-22,73\n"
+        "boston,2026-05-22,\n",
+        encoding="utf-8",
+    )
 
     code = forward_test_pending_cli.main(
         [
             "--packet",
             str(packet_path),
+            "--actuals-csv",
+            str(actuals_path),
             "--as-of-date",
             "2026-05-23",
         ]
@@ -145,8 +202,9 @@ def test_forward_test_pending_cli_prints_status(tmp_path, capsys) -> None:
 
     assert code == 0
     output = capsys.readouterr().out
-    assert "Ready to settle: true" in output
-    assert "Next action: run_forward_test_settle" in output
+    assert "Ready to settle: false" in output
+    assert "Next action: fill_actuals_csv" in output
+    assert "Actuals CSV: FAIL (1/2 cities)" in output
 
 
 def test_forward_test_pending_cli_prints_json(tmp_path, capsys) -> None:
