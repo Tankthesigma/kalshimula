@@ -410,7 +410,9 @@ python -m src.forward_test_actuals_check_cli \
 
 The check fails on missing cities, blank or non-numeric highs, duplicate
 city/date rows, and extra cities for the packet date. Add `--json` when an
-agent or dashboard needs the result as structured data.
+agent or dashboard needs the result as structured data. Offline settlement runs
+the same preflight automatically and does not write settlement JSON, history, or
+report artifacts when the preflight fails.
 
 Then settle the packet offline:
 

@@ -15,6 +15,10 @@ from typing import Any
 
 from src.config import Station, get_station
 from src.fetchers import asos, ncei
+from src.forward_test_actuals_check_cli import (
+    build_actuals_check,
+    render_actuals_check,
+)
 from src.forward_test_report_cli import build_forward_test_report, write_report_payload
 
 SETTLEMENT_SCHEMA_VERSION = "1.0"
@@ -406,6 +410,17 @@ def write_forward_test_report(history_path: Path, report_path: Path) -> None:
     write_report_payload(report, report_path)
 
 
+def _read_preflighted_actuals_csv(
+    *, packet_path: Path, actuals_csv: Path, target: date
+) -> dict[str, ObservedHigh] | None:
+    actuals_check = build_actuals_check(packet_path=packet_path, actuals_csv=actuals_csv)
+    if not actuals_check["passed"]:
+        print(render_actuals_check(actuals_check))
+        print("Settlement not written because offline actuals preflight failed.")
+        return None
+    return _read_actuals_csv(actuals_csv, target)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="forward_test_settle",
@@ -436,7 +451,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    actuals = _read_actuals_csv(args.actuals_csv, args.target_date) if args.actuals_csv else None
+    actuals = None
+    if args.actuals_csv:
+        actuals = _read_preflighted_actuals_csv(
+            packet_path=args.packet,
+            actuals_csv=args.actuals_csv,
+            target=args.target_date,
+        )
+        if actuals is None:
+            return 1
     payload, exit_code = build_settlement_payload(
         packet_path=args.packet,
         target=args.target_date,

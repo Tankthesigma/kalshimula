@@ -110,7 +110,8 @@ unless `--no-preserve-existing` is passed.
 Run `src.forward_test_actuals_check_cli --packet <packet.json> --actuals-csv
 daily_actuals.csv` before offline settlement to verify every packet city has
 one numeric actual high for the packet date and that no wrong city/date rows
-will be silently used.
+will be silently used. `src.forward_test_settle_cli --actuals-csv` runs the same
+preflight automatically and will not write settlement artifacts when it fails.
 After actual highs are known, use `src.forward_test_settle_cli` to score the
 packet. By default it fetches observed highs through the existing NCEI/ASOS
 source layer; pass `--actuals-csv` with `city,target_date,actual_high_f` to run
