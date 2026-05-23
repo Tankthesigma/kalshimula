@@ -125,4 +125,20 @@ Same trading rule replayed against three different snapshot times per day, with 
 | Avoid `kelly_quarter` sizing | high | simulator allowed drawdown > bankroll; unrealistic |
 | Restrict to strike − actual within ±5F | medium | edge concentrates there; outside is dead zone |
 | **Place bets 04-12 UTC (midnight-morning EDT)** | **high** | edge collapses to $14 net by 4pm EDT (win rate 38.5%) |
+| Keep `gfs_ens` single-source (NOT multi-source blend) | **high** | Phase 13: blend_equal cuts net $190 → $50, win rate 68.6% → 59.5%; market already prices multi-source consensus |
+| Do NOT veto trades on high single-vs-multi disagreement | **high** | Phase 13 skip-rule: net drops at every threshold (>1F: $77, >2F: $151, >3F: $161, vs $190 baseline) |
 | Paper-trade for 4 weeks before real money | **mandatory** | sample size + regime drift caveats |
+
+---
+
+## 7. Phase 13 — multi-source A/B (counterintuitive finding)
+
+Triggered by the May 22 forward day where phoenix missed by +4F (gfs_ens 94.5F vs actual 98.5F; ecmwf/icon/gem said 96-97F). We tested replacing `gfs_ens` with PR #90's `blend_equal` (equal-weight pool across gfs_ens, ecmwf_ens, icon_ens, gem_ens, aifs) on the full May 1-21 window.
+
+**Multi-source improves point-estimate accuracy** (MAE on May 22 dropped 1.38F → 0.98F, phoenix-specific 4.0F → 2.1F miss) — **but DESTROYS trading edge.** Net P&L $189.86 → $50.39 (−74%), win rate 68.6% → 59.5%. Only phoenix improved (+$4.90); 8 of 9 cities got worse.
+
+**Why:** Kalshi market is already pricing the multi-source consensus. The audit's edge comes from `gfs_ens` being the contrarian outlier. Aligning with the market via multi-source eliminates the disagreement that creates profitable bets.
+
+**Skip-rule veto** (skip trade when |single_corrected − multi_corrected| > X) **also failed** — reduces net at every threshold. The Friday phoenix +4F miss was a 99th-pctile rare event, not a recurring failure mode that the rule could catch profitably.
+
+Full Phase 13 results: `13_multi_source.md`.

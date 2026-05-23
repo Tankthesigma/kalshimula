@@ -15,6 +15,8 @@ Output:
 from __future__ import annotations
 
 import csv
+import json
+import os
 from collections import defaultdict
 from pathlib import Path
 
@@ -24,6 +26,39 @@ OUT_DIR = REPO_ROOT / "reports" / "kalshi_edge"
 
 SOURCE = "gfs_ens"
 N_BUCKETS = 10
+# EDGE_MODE=single (default) | multi_source
+EDGE_MODE = os.environ.get("EDGE_MODE", "single")
+MULTI_DIR = REPO_ROOT / "outputs" / "multi_source"
+
+
+def load_multi_source_points() -> dict[tuple[str, str], dict]:
+    """For each prediction JSON in outputs/multi_source/, extract
+    multi_source.calibration.corrected_point_f per (city, target_date)."""
+    out: dict[tuple[str, str], dict] = {}
+    if not MULTI_DIR.exists():
+        return out
+    for p in sorted(MULTI_DIR.glob("predictions_*.json")):
+        try:
+            data = json.loads(p.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        for pred in data.get("predictions", []):
+            ms = pred.get("multi_source")
+            if not ms:
+                continue
+            cal = ms.get("calibration") or {}
+            corrected = cal.get("corrected_point_f")
+            if corrected is None:
+                continue
+            city = pred.get("city")
+            target = pred.get("target_date")
+            if city and target:
+                out[(city, target)] = {
+                    "corrected_point": float(corrected),
+                    "n_members": (ms.get("forecast") or {}).get("n_members"),
+                    "source_weights": ms.get("source_weights") or {},
+                }
+    return out
 
 
 def load_holdout() -> dict[tuple[str, str], dict]:
@@ -54,9 +89,14 @@ def load_bias() -> dict[str, float]:
 
 def load_residuals() -> dict[str, list[float]]:
     out: dict[str, list[float]] = defaultdict(list)
-    with (RUN_DIR / "probability_calibration_global_fallback" / "threshold_residuals.csv").open() as f:
+    if EDGE_MODE == "multi_source":
+        path = OUT_DIR / "13_multi_source_residuals.csv"
+    else:
+        path = RUN_DIR / "probability_calibration_global_fallback" / "threshold_residuals.csv"
+    expected_src = "multi_blend_equal" if EDGE_MODE == "multi_source" else SOURCE
+    with path.open() as f:
         for r in csv.DictReader(f):
-            if r["source"] == SOURCE:
+            if r.get("source") == expected_src:
                 try:
                     out[r["city"]].append(float(r["residual_f"]))
                 except (ValueError, KeyError):
@@ -124,6 +164,9 @@ def main() -> None:
     bias = load_bias()
     residuals = load_residuals()
     per_city_recal, glob_recal = load_recalibration()
+    multi_points = load_multi_source_points() if EDGE_MODE == "multi_source" else {}
+    if EDGE_MODE == "multi_source":
+        print(f"EDGE_MODE=multi_source — loaded {len(multi_points)} multi-source points")
 
     # Load market metadata
     market_rows = []
@@ -154,7 +197,14 @@ def main() -> None:
 
         point = hold["point"]
         actual = hold["actual"]
-        corrected = point + bias[city]
+        if EDGE_MODE == "multi_source":
+            ms = multi_points.get((city, target))
+            if ms is None:
+                edge_rows.append({**_blank_row(m), "comparable_flag": "no", "skip_reason": "no multi-source prediction"})
+                continue
+            corrected = ms["corrected_point"]
+        else:
+            corrected = point + bias[city]
 
         strike_type = (m.get("strike_type") or "").strip().lower()
         try:
@@ -258,7 +308,7 @@ def main() -> None:
             "skip_reason": skip_reason,
         })
 
-    out_path = OUT_DIR / "03_edge_table.csv"
+    out_path = OUT_DIR / ("13_edge_table_multi.csv" if EDGE_MODE == "multi_source" else "03_edge_table.csv")
     with out_path.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(edge_rows[0].keys()))
         w.writeheader()

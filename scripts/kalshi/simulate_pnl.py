@@ -48,8 +48,10 @@ def safe_float(v):
 
 
 def load_rows() -> list[dict]:
+    import os as _os
+    edge_file = "13_edge_table_multi.csv" if _os.environ.get("EDGE_MODE") == "multi_source" else "03_edge_table.csv"
     rows = []
-    with (OUT_DIR / "03_edge_table.csv").open() as f:
+    with (OUT_DIR / edge_file).open() as f:
         for r in csv.DictReader(f):
             if r.get("comparable_flag") != "yes":
                 continue
