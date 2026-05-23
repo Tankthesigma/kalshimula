@@ -137,10 +137,168 @@ def test_predict_batch_cli_writes_json(monkeypatch, tmp_path, capsys) -> None:
     assert payload["n_errors"] == 0
     assert payload["predictions"][0]["city"] == "denver"
     assert payload["predictions"][0]["schema_version"] == "1.0"
+    assert "multi_source" not in payload["predictions"][0]
     assert payload["model_gate"] == {"required": False, "passed": None, "checks": []}
     assert payload["predictions"][0]["artifact_paths"]["selected_sources"] == str(selected_sources)
     assert payload["predictions"][0]["threshold_probabilities"][0]["threshold_f"] == 73
     assert payload["predictions"][1]["calibration"]["corrected_point_f"] == 40.0
+
+
+def test_predict_batch_cli_adds_multi_source_prediction(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    selected_sources = tmp_path / "selected_sources.csv"
+    selected_sources.write_text("city,selected_source\ndenver,gfs_ens\n", encoding="utf-8")
+    bias_table = tmp_path / "bias_table.csv"
+    bias_table.write_text(
+        "city,source,n,mean_error_f,bias_correction_f\n"
+        "denver,gfs_ens,10,0.0,0.0\n"
+        "denver,openmeteo_naive,10,-1.0,1.0\n",
+        encoding="utf-8",
+    )
+    threshold_residuals = tmp_path / "threshold_residuals.csv"
+    threshold_residuals.write_text(
+        "city,source,residual_f\n"
+        "denver,openmeteo_naive,-1\n"
+        "denver,openmeteo_naive,1\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "src.predict._fetch_all_parallel",
+        lambda station, target, *, use_historical: [
+            ModelDailyHigh(
+                source="gfs_ens",
+                target_date=target,
+                members_f=[60.0, 80.0],
+            ),
+            ModelDailyHigh(
+                source="ecmwf_ens",
+                target_date=target,
+                members_f=[100.0],
+            ),
+        ],
+    )
+
+    code = predict_batch_cli.main(
+        [
+            "--cities",
+            "denver",
+            "--date",
+            "2026-05-22",
+            "--selected-sources",
+            str(selected_sources),
+            "--bias-table",
+            str(bias_table),
+            "--threshold-residuals",
+            str(threshold_residuals),
+            "--threshold-offsets",
+            "0",
+            "--multi-source-mode",
+            "blend_equal",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    prediction = payload["predictions"][0]
+    assert code == 0
+    assert prediction["forecast"]["point_f"] == 70.0
+    assert prediction["multi_source"]["mode"] == "blend_equal"
+    assert prediction["multi_source"]["artifact_source"] == "openmeteo_naive"
+    assert prediction["multi_source"]["forecast"]["point_f"] == 85.0
+    assert prediction["multi_source"]["calibration"]["corrected_point_f"] == 86.0
+    assert prediction["multi_source"]["threshold_probabilities"] == [
+        {
+            "offset_f": 0,
+            "predicted_probability": 0.5,
+            "threshold_f": 86,
+        }
+    ]
+
+
+def test_predict_batch_cli_fits_multi_source_calibration_from_run_rows(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "city": "denver",
+                "source": "gfs_ens",
+                "target_date": "2026-05-01",
+                "point_f": 70.0,
+                "actual_high_f": 82.0,
+            },
+            {
+                "city": "denver",
+                "source": "ecmwf_ens",
+                "target_date": "2026-05-01",
+                "point_f": 90.0,
+                "actual_high_f": 82.0,
+            },
+            {
+                "city": "denver",
+                "source": "gfs_ens",
+                "target_date": "2026-05-02",
+                "point_f": 60.0,
+                "actual_high_f": 69.0,
+            },
+            {
+                "city": "denver",
+                "source": "ecmwf_ens",
+                "target_date": "2026-05-02",
+                "point_f": 80.0,
+                "actual_high_f": 69.0,
+            },
+        ]
+    ).to_csv(run_dir / "rows.csv", index=False)
+
+    monkeypatch.setattr(
+        "src.predict._fetch_all_parallel",
+        lambda station, target, *, use_historical: [
+            ModelDailyHigh(
+                source="gfs_ens",
+                target_date=target,
+                members_f=[60.0, 80.0],
+            ),
+            ModelDailyHigh(
+                source="ecmwf_ens",
+                target_date=target,
+                members_f=[100.0],
+            ),
+        ],
+    )
+
+    code = predict_batch_cli.main(
+        [
+            "--cities",
+            "denver",
+            "--date",
+            "2026-05-22",
+            "--model-run-dir",
+            str(run_dir),
+            "--threshold-offsets",
+            "0",
+            "--multi-source-mode",
+            "blend_equal",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    multi_source = payload["predictions"][0]["multi_source"]
+    assert code == 0
+    assert multi_source["warnings"] == []
+    assert multi_source["forecast"]["point_f"] == 85.0
+    assert multi_source["calibration"]["corrected_point_f"] == 85.5
+    assert multi_source["calibration"]["interval_lower_f"] is not None
+    assert multi_source["threshold_probabilities"] == [
+        {
+            "offset_f": 0,
+            "predicted_probability": 0.5,
+            "threshold_f": 86,
+        }
+    ]
 
 
 def test_predict_batch_cli_continues_after_city_error(monkeypatch, tmp_path, capsys) -> None:

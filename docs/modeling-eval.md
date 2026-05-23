@@ -451,6 +451,12 @@ Use `src.prediction_review_cli` to render the batch JSON into a compact text
 review table. It exits nonzero when a required gate fails or the payload has
 city-level errors, which makes it suitable for manual-review scripts before any
 future dashboard consumes the same JSON.
+For offline diagnostics that compare the selected-source forecast against a
+cross-model view, pass `--multi-source-mode blend_equal` or
+`--multi-source-mode blend_mae_90d` to `src.predict_batch_cli`. This adds a
+separate `multi_source` object to each prediction without replacing the default
+selected-source forecast. When `--model-run-dir` is present, the multi-source
+object fits a recent residual calibration from that run's `rows.csv`.
 For the normal all-city refresh, use `src.daily_model_refresh_cli`; it runs the
 gated batch prediction and review rendering together, then writes
 `latest_predictions.json`, `latest_predictions.txt`, `latest_predictions_gate.txt`,

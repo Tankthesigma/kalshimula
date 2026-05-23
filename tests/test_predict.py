@@ -2,6 +2,7 @@ import json
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from src import predict
 from src.fetchers.openmeteo import ModelDailyHigh
@@ -47,6 +48,70 @@ def test_members_for_selected_source_keeps_pool_for_openmeteo_naive() -> None:
 
     assert not applied
     assert selected.equals(members)
+
+
+def test_multi_source_equal_blend_weights_sources_equally() -> None:
+    members = pd.DataFrame(
+        {
+            "source": ["gfs_ens", "gfs_ens", "ecmwf_ens"],
+            "temp_f": [60.0, 80.0, 100.0],
+        }
+    )
+
+    forecast, metadata, warnings = predict._multi_source_forecast(
+        members=members,
+        mode="blend_equal",
+        city="denver",
+        target=date(2026, 5, 22),
+    )
+
+    assert warnings == []
+    assert forecast.point_f == pytest.approx(85.0)
+    assert forecast.per_source_counts == {"ecmwf_ens": 1, "gfs_ens": 2}
+    assert metadata["source_weights"] == {"ecmwf_ens": 0.5, "gfs_ens": 0.5}
+    assert metadata["artifact_source"] == "openmeteo_naive"
+
+
+def test_multi_source_mae_blend_uses_recent_city_source_mae(tmp_path) -> None:
+    members = pd.DataFrame(
+        {
+            "source": ["gfs_ens", "ecmwf_ens"],
+            "temp_f": [70.0, 90.0],
+        }
+    )
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "city": "denver",
+                "source": "gfs_ens",
+                "target_date": "2026-05-01",
+                "point_f": 70.0,
+                "actual_high_f": 71.0,
+            },
+            {
+                "city": "denver",
+                "source": "ecmwf_ens",
+                "target_date": "2026-05-01",
+                "point_f": 70.0,
+                "actual_high_f": 75.0,
+            },
+        ]
+    ).to_csv(run_dir / "rows.csv", index=False)
+
+    forecast, metadata, warnings = predict._multi_source_forecast(
+        members=members,
+        mode="blend_mae_90d",
+        city="denver",
+        target=date(2026, 5, 22),
+        model_run_dir=run_dir,
+    )
+
+    assert warnings == []
+    assert metadata["recent_90d_mae_f"] == {"ecmwf_ens": 5.0, "gfs_ens": 1.0}
+    assert metadata["source_weights"]["gfs_ens"] > metadata["source_weights"]["ecmwf_ens"]
+    assert forecast.point_f == pytest.approx(73.3333333333)
 
 
 def test_apply_prediction_artifacts_corrects_point_and_interval(tmp_path) -> None:
