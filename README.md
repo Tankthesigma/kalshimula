@@ -76,9 +76,13 @@ include `recalibration_scope` and `recalibration_n` for traceability. Use
 individual city failures and records them in the `errors` array. JSON outputs
 include `schema_version`, `generated_at`, and
 `artifact_paths` so downstream tools can verify which model artifacts produced
-the numbers. Add `--require-gate` to batch prediction when the payload will feed
-a dashboard or review script; it emits zero predictions and exits nonzero unless
-the model run passes `src.model_gate_cli`.
+the numbers. Add `--multi-source-mode blend_equal` or
+`--multi-source-mode blend_mae_90d` when a review script needs an additive
+`multi_source` forecast beside the default selected-source forecast; the default
+`single` mode preserves the existing payload shape. Add `--require-gate` to
+batch prediction when the payload will feed a dashboard or review script; it
+emits zero predictions and exits nonzero unless the model run passes
+`src.model_gate_cli`.
 Use `src.prediction_review_cli` to turn the batch JSON into a compact human
 review table with gate status, corrected points, intervals, and threshold
 probabilities.

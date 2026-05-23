@@ -26,12 +26,21 @@ from src.fetchers.openmeteo import (
     fetch_source,
     members_dataframe,
 )
-from src.models.bias import apply_bias_correction
+from src.models.bias import apply_bias_correction, fit_bias_table
 from src.models.ensemble import NaiveForecast, naive_forecast_from_members
-from src.models.intervals import apply_empirical_intervals
+from src.models.intervals import apply_empirical_intervals, fit_empirical_intervals
 from src.models.threshold_calibration import GLOBAL_RECALIBRATION_KEY
 
 PREDICTION_JSON_SCHEMA_VERSION = "1.0"
+MULTI_SOURCE_MODES = ("single", "blend_equal", "blend_mae_90d")
+MULTI_SOURCE_ARTIFACT_SOURCE = "openmeteo_naive"
+MULTI_SOURCE_PRIMARY_SOURCES = (
+    "gfs_ens",
+    "ecmwf_ens",
+    "icon_ens",
+    "gem_ens",
+    "aifs",
+)
 
 # Windows default console is cp1252 and chokes on box-drawing glyphs.
 for _stream in (sys.stdout, sys.stderr):
@@ -122,6 +131,242 @@ def _prediction_source(selected_source: str | None, *, selected_applied: bool) -
     if selected_applied and selected_source:
         return selected_source
     return "openmeteo_naive"
+
+
+def _members_for_primary_multi_source(members: pd.DataFrame) -> pd.DataFrame:
+    """Keep the core global sources used for multi-source live blends."""
+    selected = members[members["source"].isin(MULTI_SOURCE_PRIMARY_SOURCES)].copy()
+    return selected if not selected.empty else members.copy()
+
+
+def _weighted_percentile(values: pd.Series, weights: pd.Series, q: float) -> float:
+    ordered = (
+        pd.DataFrame({"value": values.astype(float), "weight": weights.astype(float)})
+        .sort_values("value")
+        .reset_index(drop=True)
+    )
+    total = float(ordered["weight"].sum())
+    if total <= 0:
+        raise ValueError("multi-source weights must sum to a positive value")
+    cutoff = q * total
+    cumulative = ordered["weight"].cumsum()
+    index = int(cumulative.searchsorted(cutoff, side="left"))
+    index = min(max(index, 0), len(ordered) - 1)
+    return float(ordered.iloc[index]["value"])
+
+
+def _forecast_from_weighted_members(
+    members: pd.DataFrame, weights: pd.Series, *, bin_min_prob: float = 0.005
+) -> NaiveForecast:
+    """Build a NaiveForecast from per-member weights."""
+    if members.empty:
+        raise ValueError("No forecast members returned — every source failed?")
+    if len(members) != len(weights):
+        raise ValueError("member and weight lengths differ")
+
+    temps = members["temp_f"].astype(float).reset_index(drop=True)
+    weights = weights.astype(float).reset_index(drop=True)
+    total_weight = float(weights.sum())
+    if total_weight <= 0:
+        raise ValueError("multi-source weights must sum to a positive value")
+    weights = weights / total_weight
+
+    point = float((temps * weights).sum())
+    p10 = _weighted_percentile(temps, weights, 0.10)
+    p50 = _weighted_percentile(temps, weights, 0.50)
+    p90 = _weighted_percentile(temps, weights, 0.90)
+
+    bins = temps.map(lambda value: int(math.floor(float(value) + 0.5)))
+    raw_probs = weights.groupby(bins).sum().to_dict()
+    kept = {int(bin_f): float(prob) for bin_f, prob in raw_probs.items() if prob >= bin_min_prob}
+    if kept:
+        kept_total = sum(kept.values())
+        if kept_total > 0:
+            kept = {bin_f: prob / kept_total for bin_f, prob in kept.items()}
+    else:
+        kept = {int(bin_f): float(prob) for bin_f, prob in raw_probs.items()}
+
+    return NaiveForecast(
+        n_members=len(members),
+        point_f=point,
+        p10_f=p10,
+        p50_f=p50,
+        p90_f=p90,
+        bin_probs=dict(sorted(kept.items())),
+        per_source_counts=members.groupby("source").size().to_dict(),
+    )
+
+
+def _equal_source_member_weights(members: pd.DataFrame) -> tuple[pd.Series, dict[str, float]]:
+    counts = members.groupby("source").size()
+    sources = sorted(counts.index.astype(str).tolist())
+    if not sources:
+        raise ValueError("No forecast members returned — every source failed?")
+    source_weight = 1.0 / len(sources)
+    weights = members["source"].map(
+        {source: source_weight / float(counts[source]) for source in sources}
+    )
+    return weights.astype(float), {source: source_weight for source in sources}
+
+
+def _recent_source_mae_weights(
+    *,
+    rows_path: Path,
+    city: str,
+    target: date,
+    sources: set[str],
+    lookback_days: int = 90,
+) -> tuple[dict[str, float], dict[str, float]]:
+    rows = pd.read_csv(
+        rows_path,
+        usecols=["city", "source", "target_date", "point_f", "actual_high_f"],
+    )
+    rows["target_date"] = pd.to_datetime(rows["target_date"], errors="coerce").dt.date
+    rows["point_f"] = pd.to_numeric(rows["point_f"], errors="coerce")
+    rows["actual_high_f"] = pd.to_numeric(rows["actual_high_f"], errors="coerce")
+    start = target - timedelta(days=lookback_days)
+    filtered = rows[
+        (rows["city"].astype(str).str.lower() == city.lower())
+        & (rows["source"].astype(str).isin(sources))
+        & (rows["target_date"] >= start)
+        & (rows["target_date"] < target)
+    ].dropna(subset=["target_date", "point_f", "actual_high_f"])
+    if filtered.empty:
+        return {}, {}
+
+    filtered = filtered.assign(
+        absolute_error_f=(filtered["point_f"] - filtered["actual_high_f"]).abs()
+    )
+    mae_by_source = filtered.groupby("source")["absolute_error_f"].mean().to_dict()
+    if not mae_by_source:
+        return {}, {}
+    fallback_mae = float(pd.Series(mae_by_source, dtype=float).median())
+    inverse_scores = {
+        source: 1.0 / max(float(mae_by_source.get(source, fallback_mae)), 0.1)
+        for source in sources
+    }
+    total = sum(inverse_scores.values())
+    if total <= 0:
+        return {}, mae_by_source
+    return {
+        source: score / total for source, score in inverse_scores.items()
+    }, {source: float(value) for source, value in mae_by_source.items()}
+
+
+def _historical_multi_source_rows(
+    *,
+    rows_path: Path,
+    city: str,
+    target: date,
+    source_weights: dict[str, float],
+    lookback_days: int = 90,
+) -> pd.DataFrame:
+    if not source_weights:
+        return pd.DataFrame(
+            columns=["city", "source", "target_date", "point_f", "actual_high_f"]
+        )
+    rows = pd.read_csv(
+        rows_path,
+        usecols=["city", "source", "target_date", "point_f", "actual_high_f"],
+    )
+    rows["target_date"] = pd.to_datetime(rows["target_date"], errors="coerce").dt.date
+    rows["point_f"] = pd.to_numeric(rows["point_f"], errors="coerce")
+    rows["actual_high_f"] = pd.to_numeric(rows["actual_high_f"], errors="coerce")
+    start = target - timedelta(days=lookback_days)
+    filtered = rows[
+        (rows["city"].astype(str).str.lower() == city.lower())
+        & (rows["source"].astype(str).isin(source_weights))
+        & (rows["target_date"] >= start)
+        & (rows["target_date"] < target)
+    ].dropna(subset=["target_date", "point_f", "actual_high_f"])
+    if filtered.empty:
+        return pd.DataFrame(
+            columns=["city", "source", "target_date", "point_f", "actual_high_f"]
+        )
+
+    records = []
+    for target_date, group in filtered.groupby("target_date", sort=True):
+        available_weights = {
+            str(row.source): float(source_weights[str(row.source)])
+            for row in group.itertuples(index=False)
+            if str(row.source) in source_weights
+        }
+        total_weight = sum(available_weights.values())
+        if total_weight <= 0:
+            continue
+        point = 0.0
+        for row in group.itertuples(index=False):
+            source = str(row.source)
+            if source in available_weights:
+                point += float(row.point_f) * available_weights[source] / total_weight
+        records.append(
+            {
+                "city": city,
+                "source": MULTI_SOURCE_ARTIFACT_SOURCE,
+                "target_date": target_date,
+                "point_f": point,
+                "actual_high_f": float(group["actual_high_f"].mean()),
+            }
+        )
+    return pd.DataFrame.from_records(
+        records,
+        columns=["city", "source", "target_date", "point_f", "actual_high_f"],
+    )
+
+
+def _multi_source_forecast(
+    *,
+    members: pd.DataFrame,
+    mode: str,
+    city: str,
+    target: date,
+    model_run_dir: Path | None = None,
+) -> tuple[NaiveForecast, dict, list[str]]:
+    """Build an additive multi-source live blend forecast."""
+    if mode not in MULTI_SOURCE_MODES or mode == "single":
+        raise ValueError(f"unsupported multi-source mode: {mode}")
+
+    blend_members = _members_for_primary_multi_source(members)
+    warnings: list[str] = []
+    sources = set(blend_members["source"].astype(str).unique())
+
+    if mode == "blend_equal":
+        weights, source_weights = _equal_source_member_weights(blend_members)
+        mae_by_source: dict[str, float] = {}
+    else:
+        source_weights = {}
+        mae_by_source = {}
+        if model_run_dir is not None:
+            rows_path = model_run_dir / "rows.csv"
+            if rows_path.exists():
+                source_weights, mae_by_source = _recent_source_mae_weights(
+                    rows_path=rows_path,
+                    city=city,
+                    target=target,
+                    sources=sources,
+                )
+        if not source_weights:
+            warnings.append(
+                "no recent 90d source MAE rows available; using equal source weights"
+            )
+            weights, source_weights = _equal_source_member_weights(blend_members)
+        else:
+            source_counts = blend_members.groupby("source").size()
+            weights = blend_members["source"].map(
+                {
+                    source: source_weights[source] / float(source_counts[source])
+                    for source in source_weights
+                }
+            ).astype(float)
+
+    forecast = _forecast_from_weighted_members(blend_members, weights)
+    metadata = {
+        "mode": mode,
+        "artifact_source": MULTI_SOURCE_ARTIFACT_SOURCE,
+        "source_weights": {key: float(source_weights[key]) for key in sorted(source_weights)},
+        "recent_90d_mae_f": {key: float(mae_by_source[key]) for key in sorted(mae_by_source)},
+    }
+    return forecast, metadata, warnings
 
 
 def _has_city_source(table: pd.DataFrame, *, city: str, source: str) -> bool:
@@ -410,6 +655,18 @@ def _json_calibration(row: pd.Series | None) -> dict | None:
     }
 
 
+def _json_forecast(fc: NaiveForecast) -> dict:
+    return {
+        "n_members": fc.n_members,
+        "point_f": fc.point_f,
+        "p10_f": fc.p10_f,
+        "p50_f": fc.p50_f,
+        "p90_f": fc.p90_f,
+        "bin_probabilities": {str(key): value for key, value in fc.bin_probs.items()},
+        "per_source_counts": fc.per_source_counts,
+    }
+
+
 def _json_thresholds(thresholds: pd.DataFrame | None) -> list[dict]:
     if thresholds is None or thresholds.empty:
         return []
@@ -430,6 +687,122 @@ def _json_thresholds(thresholds: pd.DataFrame | None) -> list[dict]:
             item["recalibration_n"] = int(row.recalibration_n)
         rows.append(item)
     return rows
+
+
+def _json_multi_source_prediction(
+    *,
+    city: str,
+    target: date,
+    members: pd.DataFrame,
+    mode: str,
+    model_run_dir: Path | None,
+    bias_table_path: Path | None,
+    interval_table_path: Path | None,
+    threshold_residuals_path: Path | None,
+    threshold_recalibration_table_path: Path | None,
+    threshold_offsets: tuple[int, ...] | None,
+) -> dict:
+    forecast, metadata, warnings = _multi_source_forecast(
+        members=members,
+        mode=mode,
+        city=city,
+        target=target,
+        model_run_dir=model_run_dir,
+    )
+    source = MULTI_SOURCE_ARTIFACT_SOURCE
+    calibration = None
+    historical_rows = pd.DataFrame()
+    rows_path = model_run_dir / "rows.csv" if model_run_dir is not None else None
+    if rows_path is not None and rows_path.exists():
+        historical_rows = _historical_multi_source_rows(
+            rows_path=rows_path,
+            city=city,
+            target=target,
+            source_weights=metadata["source_weights"],
+        )
+
+    if not historical_rows.empty:
+        current = pd.DataFrame(
+            [
+                {
+                    "city": city,
+                    "source": source,
+                    "target_date": target.isoformat(),
+                    "point_f": forecast.point_f,
+                }
+            ]
+        )
+        bias_table = fit_bias_table(historical_rows)
+        calibration = apply_bias_correction(current, bias_table).iloc[0]
+        interval_table = fit_empirical_intervals(historical_rows)
+        calibration = apply_empirical_intervals(
+            pd.DataFrame([calibration.to_dict()]),
+            interval_table,
+        ).iloc[0]
+    elif bias_table_path or interval_table_path:
+        calibration, artifact_warnings = _apply_prediction_artifacts(
+            city=city,
+            source=source,
+            target=target,
+            point_f=forecast.point_f,
+            bias_table_path=bias_table_path,
+            interval_table_path=interval_table_path,
+        )
+        warnings.extend(artifact_warnings)
+
+    threshold_probabilities = None
+    if threshold_offsets is not None:
+        if calibration is None:
+            calibration = pd.Series(
+                {
+                    "city": city,
+                    "source": source,
+                    "target_date": target.isoformat(),
+                    "point_f": forecast.point_f,
+                }
+            )
+        if not historical_rows.empty:
+            corrected_history = apply_bias_correction(
+                historical_rows,
+                fit_bias_table(historical_rows),
+            )
+            residuals = (
+                corrected_history["actual_high_f"].astype(float)
+                - corrected_history["corrected_point_f"].astype(float)
+            )
+        elif threshold_residuals_path is None:
+            warnings.append(
+                "threshold offsets requested but no threshold residuals artifact found"
+            )
+            residuals = pd.Series(dtype=float)
+        else:
+            residuals = _load_threshold_residuals(
+                threshold_residuals_path, city=city, source=source
+            )
+        if not residuals.empty:
+            recalibration_table = None
+            if threshold_recalibration_table_path is not None:
+                recalibration_table = _load_threshold_recalibration_table(
+                    threshold_recalibration_table_path,
+                    city=city,
+                    source=source,
+                )
+            threshold_probabilities = _threshold_probability_rows(
+                calibration=calibration,
+                residuals=residuals,
+                offsets=threshold_offsets,
+                recalibration_table=recalibration_table,
+            )
+            if threshold_probabilities.empty:
+                warnings.append(f"no threshold residual rows for {city}/{source}")
+
+    return {
+        **metadata,
+        "forecast": _json_forecast(forecast),
+        "calibration": _json_calibration(calibration),
+        "threshold_probabilities": _json_thresholds(threshold_probabilities),
+        "warnings": warnings,
+    }
 
 
 def _json_payload(
@@ -475,15 +848,7 @@ def _json_payload(
         "target_date": target.isoformat(),
         "selected_source": selected_source,
         "selected_source_applied": selected_applied,
-        "forecast": {
-            "n_members": fc.n_members,
-            "point_f": fc.point_f,
-            "p10_f": fc.p10_f,
-            "p50_f": fc.p50_f,
-            "p90_f": fc.p90_f,
-            "bin_probabilities": {str(key): value for key, value in fc.bin_probs.items()},
-            "per_source_counts": fc.per_source_counts,
-        },
+        "forecast": _json_forecast(fc),
         "artifact_paths": artifact_paths,
         "calibration": _json_calibration(calibration),
         "threshold_probabilities": _json_thresholds(threshold_probabilities),

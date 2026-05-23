@@ -34,6 +34,7 @@ def _prediction_for_city(
     threshold_residuals_path: Path | None,
     threshold_recalibration_table_path: Path | None,
     threshold_offsets: tuple[int, ...] | None,
+    multi_source_mode: str,
     generated_at: datetime,
 ) -> dict:
     station = get_station(city)
@@ -45,9 +46,10 @@ def _prediction_for_city(
     sources = predict._fetch_all_parallel(
         station, target, use_historical=use_historical
     )
-    members = members_dataframe(sources)
-    if members.empty:
+    all_members = members_dataframe(sources)
+    if all_members.empty:
         raise ValueError("every Open-Meteo source returned empty")
+    members = all_members
 
     selected_source = None
     selected_applied = False
@@ -127,6 +129,19 @@ def _prediction_for_city(
         threshold_residuals_path=threshold_residuals_path,
         threshold_recalibration_table_path=threshold_recalibration_table_path,
     )
+    if multi_source_mode != "single":
+        payload["multi_source"] = predict._json_multi_source_prediction(
+            city=city,
+            target=target,
+            members=all_members,
+            mode=multi_source_mode,
+            model_run_dir=model_run_dir,
+            bias_table_path=bias_table_path,
+            interval_table_path=interval_table_path,
+            threshold_residuals_path=threshold_residuals_path,
+            threshold_recalibration_table_path=threshold_recalibration_table_path,
+            threshold_offsets=threshold_offsets,
+        )
     return payload
 
 
@@ -238,6 +253,7 @@ def build_batch_payload(
     threshold_residuals_path: Path | None,
     threshold_recalibration_table_path: Path | None,
     threshold_offsets: tuple[int, ...] | None,
+    multi_source_mode: str = "single",
     model_gate: dict | None = None,
     generated_at: datetime | None = None,
 ) -> tuple[dict, int]:
@@ -257,6 +273,7 @@ def build_batch_payload(
                     threshold_residuals_path=threshold_residuals_path,
                     threshold_recalibration_table_path=threshold_recalibration_table_path,
                     threshold_offsets=threshold_offsets,
+                    multi_source_mode=multi_source_mode,
                     generated_at=created_at,
                 )
             )
@@ -304,6 +321,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--threshold-residuals", type=Path)
     parser.add_argument("--threshold-recalibration-table", type=Path)
     parser.add_argument("--threshold-offsets")
+    parser.add_argument(
+        "--multi-source-mode",
+        choices=predict.MULTI_SOURCE_MODES,
+        default="single",
+        help=(
+            "Add an alternate multi_source forecast to each prediction. "
+            "Default single preserves the existing selected-source output."
+        ),
+    )
     parser.add_argument(
         "--require-gate",
         action="store_true",
@@ -412,6 +438,7 @@ def main(argv: list[str] | None = None) -> int:
         threshold_residuals_path=threshold_residuals_path,
         threshold_recalibration_table_path=threshold_recalibration_table_path,
         threshold_offsets=offsets,
+        multi_source_mode=args.multi_source_mode,
         model_gate=gate_payload,
         generated_at=created_at,
     )
