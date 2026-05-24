@@ -118,6 +118,54 @@ def fetch_observations_for_rules(
     return pd.concat(all_observations, ignore_index=True)
 
 
+def load_observation_store(path: Path) -> pd.DataFrame:
+    """Load an ASOS observation store from CSV."""
+    if not path.exists():
+        return pd.DataFrame(columns=OBSERVATION_COLUMNS)
+    rows = pd.read_csv(path)
+    missing = set(OBSERVATION_COLUMNS) - set(rows.columns)
+    if missing:
+        raise ValueError(f"observation store missing columns: {sorted(missing)}")
+    return rows.loc[:, OBSERVATION_COLUMNS].copy()
+
+
+def merge_observation_store(
+    existing: pd.DataFrame | None,
+    new_rows: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Merge observation rows with deterministic de-duplication."""
+    frames = [
+        frame
+        for frame in (existing, new_rows)
+        if frame is not None and not frame.empty
+    ]
+    if not frames:
+        return pd.DataFrame(columns=OBSERVATION_COLUMNS)
+    merged = pd.concat(frames, ignore_index=True)
+    for column in OBSERVATION_COLUMNS:
+        if column not in merged.columns:
+            merged[column] = pd.NA
+    merged = merged.loc[:, OBSERVATION_COLUMNS]
+    merged["_available_sort"] = pd.to_datetime(
+        merged["available_ts_utc"],
+        errors="coerce",
+    )
+    merged = (
+        merged.sort_values(["station_id", "obs_ts_utc", "_available_sort"])
+        .drop_duplicates(["station_id", "obs_ts_utc"], keep="last")
+        .drop(columns=["_available_sort"])
+        .sort_values(["station_id", "obs_ts_utc"])
+        .reset_index(drop=True)
+    )
+    return merged
+
+
+def write_observation_store(path: Path, observations: pd.DataFrame) -> None:
+    """Write the canonical observation store."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    merge_observation_store(None, observations).to_csv(path, index=False)
+
+
 def build_nowcast_features(
     observations: pd.DataFrame,
     rules: list[StationRule],
@@ -182,16 +230,33 @@ def write_nowcast_features(
     as_of_ts: datetime,
     decision_time_label: str,
     observations: pd.DataFrame | None = None,
+    observation_store_path: Path | None = None,
+    update_observation_store: bool = False,
     station_rules_path: Path = DEFAULT_STATION_RULES_PATH,
     fetch_live: bool = False,
     git_commit: str | None = None,
 ) -> NowcastFeatureResult:
     """Build and write nowcast feature artifacts."""
     rules = load_station_rules(station_rules_path)
+    store_observations = (
+        load_observation_store(observation_store_path)
+        if observation_store_path is not None
+        else pd.DataFrame(columns=OBSERVATION_COLUMNS)
+    )
     if observations is None:
-        if not fetch_live:
+        if not fetch_live and observation_store_path is None:
             raise ValueError("observations are required unless fetch_live=True")
-        observations = fetch_observations_for_rules(rules, start=target_date, end=target_date)
+        observations = pd.DataFrame(columns=OBSERVATION_COLUMNS)
+    if fetch_live:
+        live_observations = fetch_observations_for_rules(
+            rules,
+            start=target_date,
+            end=target_date,
+        )
+        observations = merge_observation_store(observations, live_observations)
+    observations = merge_observation_store(store_observations, observations)
+    if observation_store_path is not None and update_observation_store:
+        write_observation_store(observation_store_path, observations)
     features = build_nowcast_features(
         observations,
         rules,
@@ -205,6 +270,12 @@ def write_nowcast_features(
         "generated_at": datetime.now(UTC).isoformat(),
         "git_commit": git_commit,
         "station_rules_path": str(station_rules_path),
+        "observation_store_path": (
+            str(observation_store_path) if observation_store_path is not None else None
+        ),
+        "observation_store_updated": bool(
+            observation_store_path is not None and update_observation_store
+        ),
         "station_table_hash": station_table_hash(station_rules_path),
         "target_date": target_date.isoformat(),
         "as_of_ts_utc": _as_utc_naive(as_of_ts).isoformat(),

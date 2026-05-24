@@ -24,6 +24,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
     parser.add_argument("--observations-csv", type=Path)
+    parser.add_argument(
+        "--observation-store",
+        type=Path,
+        help="Canonical ASOS observation cache CSV to read before building features.",
+    )
+    parser.add_argument(
+        "--update-observation-store",
+        action="store_true",
+        help="Write merged fetched/input observations back to --observation-store.",
+    )
     parser.add_argument("--fetch-live", action="store_true")
     args = parser.parse_args(argv)
 
@@ -38,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
         as_of_ts=_parse_as_of(args.as_of),
         decision_time_label=args.decision_time_label,
         observations=observations,
+        observation_store_path=args.observation_store,
+        update_observation_store=args.update_observation_store,
         station_rules_path=args.station_rules,
         fetch_live=args.fetch_live,
         git_commit=_git_commit(),

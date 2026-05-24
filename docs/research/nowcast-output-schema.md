@@ -206,6 +206,25 @@ python -m src.nowcast_features_cli \
   --out-dir reports/overnight_model_intelligence/nowcast_features
 ```
 
+Maintain a reusable ASOS observation cache while fetching live rows:
+
+```text
+python -m src.nowcast_features_cli \
+  --target-date 2026-05-24 \
+  --as-of 2026-05-24T15:00:00Z \
+  --decision-time-label morning \
+  --observation-store reports/overnight_model_intelligence/asos_observation_store.csv \
+  --fetch-live \
+  --update-observation-store \
+  --out-dir reports/overnight_model_intelligence/nowcast_features
+```
+
+The store uses the canonical observation columns from `src.models.nowcast_features`.
+Rows are de-duplicated by `station_id` and `obs_ts_utc`, keeping the latest
+available row. If a live station fetch is rate-limited or fails, the feature
+builder continues from cached rows and marks missing/stale stations with
+weather-only veto reasons.
+
 Build Bobby's frozen prediction input:
 
 ```text

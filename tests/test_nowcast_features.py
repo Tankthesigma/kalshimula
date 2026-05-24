@@ -6,8 +6,12 @@ from src.fetchers.asos import AsosHourlyObservation
 from src.models.nowcast_features import (
     build_nowcast_features,
     fetch_observations_for_rules,
+    load_observation_store,
+    merge_observation_store,
     observations_to_frame,
     render_nowcast_feature_report,
+    write_nowcast_features,
+    write_observation_store,
 )
 from src.models.station_rules import station_rule_by_key
 
@@ -51,6 +55,54 @@ def test_fetch_observations_for_rules_degrades_failed_station(monkeypatch) -> No
 
     assert observations["station_id"].tolist() == ["KNYC"]
     assert observations["temperature_f"].tolist() == [70.0]
+
+
+def test_observation_store_merges_and_deduplicates(tmp_path) -> None:
+    existing = pd.DataFrame(
+        [
+            _obs("KMDW", "2026-05-24T13:00:00", 70),
+            _obs("KMDW", "2026-05-24T14:00:00", 71),
+        ]
+    )
+    newer = pd.DataFrame(
+        [
+            _obs("KMDW", "2026-05-24T14:00:00", 72),
+            _obs("KNYC", "2026-05-24T14:00:00", 65),
+        ]
+    )
+
+    merged = merge_observation_store(existing, newer)
+
+    assert len(merged) == 3
+    chicago_14 = merged[
+        (merged["station_id"] == "KMDW")
+        & (merged["obs_ts_utc"] == "2026-05-24T14:00:00")
+    ].iloc[0]
+    assert chicago_14["temperature_f"] == 72
+
+    store = tmp_path / "observations.csv"
+    write_observation_store(store, merged)
+    loaded = load_observation_store(store)
+    assert loaded["station_id"].tolist() == ["KMDW", "KMDW", "KNYC"]
+
+
+def test_write_nowcast_features_can_read_and_update_observation_store(tmp_path) -> None:
+    store = tmp_path / "observations.csv"
+    write_observation_store(store, pd.DataFrame([_obs("KMDW", "2026-05-24T14:00:00", 72)]))
+
+    result = write_nowcast_features(
+        output_dir=tmp_path / "out",
+        target_date=datetime(2026, 5, 24).date(),
+        as_of_ts=datetime(2026, 5, 24, 14, 30),
+        decision_time_label="10",
+        observation_store_path=store,
+        update_observation_store=True,
+    )
+
+    chicago = result.features[result.features["city"] == "chicago"].iloc[0]
+    assert chicago["latest_temp_f"] == 72
+    assert result.manifest["observation_store_updated"] is True
+    assert store.exists()
 
 
 def test_nowcast_features_use_only_observations_available_by_as_of() -> None:
