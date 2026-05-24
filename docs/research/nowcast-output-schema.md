@@ -388,11 +388,21 @@ guidance_diagnostics/
 weather_desk_manifest.json
 ```
 
+Inside `guidance/`, the weather desk writes:
+
+```text
+nws_guidance_rows.csv
+model_vs_nws_guidance.csv
+model_vs_nws_guidance.md
+```
+
 `predictions_nowcast_adjusted/predictions_nowcast.csv` is the canonical
 weather-adjusted model mode for Bobby/private audit. It uses the same frozen
 schema as raw `predictions_nowcast.csv`, so private PnL tooling can compare raw
 versus adjusted without a separate parser.
 When `--include-nws-guidance` is set, the packet also writes
 `guidance/model_vs_nws_guidance.csv`, a weather-only comparison of model point
-versus public NWS guidance point. It is an accuracy/desk diagnostic only, not a
-market signal.
+versus public NWS guidance point, plus `guidance/model_vs_nws_guidance.md`.
+Agreement bands are `aligned` within 2F, `watch` above 2F and below 3F, and
+`divergent` at 3F or more. It is an accuracy/desk diagnostic only, not a market
+signal.

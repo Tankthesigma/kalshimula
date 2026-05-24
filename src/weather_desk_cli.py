@@ -119,6 +119,10 @@ def main(argv: list[str] | None = None) -> int:
             out_dir / "guidance" / "model_vs_nws_guidance.csv",
             index=False,
         )
+        (out_dir / "guidance" / "model_vs_nws_guidance.md").write_text(
+            _render_guidance_comparison(guidance_comparison),
+            encoding="utf-8",
+        )
     manifest = {
         "schema_version": "1.0",
         "generated_at": datetime.now(UTC).isoformat(),
@@ -139,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
                     "nws_guidance": "guidance/nws_guidance_rows.csv",
                     "nws_guidance_diagnostics": "guidance_diagnostics/guidance_report.md",
                     "model_vs_nws_guidance": "guidance/model_vs_nws_guidance.csv",
+                    "model_vs_nws_guidance_report": "guidance/model_vs_nws_guidance.md",
                 }
                 if args.include_nws_guidance
                 else {}
@@ -190,6 +195,9 @@ def _guidance_comparison(summary: pd.DataFrame, latest: pd.DataFrame) -> pd.Data
         "model_point_f",
         "nws_guidance_point_f",
         "model_minus_nws_f",
+        "abs_model_minus_nws_f",
+        "model_vs_nws_direction",
+        "guidance_agreement",
         "model_q10_f",
         "model_q90_f",
         "nws_available_ts_utc",
@@ -230,7 +238,72 @@ def _guidance_comparison(summary: pd.DataFrame, latest: pd.DataFrame) -> pd.Data
     output["model_minus_nws_f"] = (
         output["model_point_f"] - output["nws_guidance_point_f"]
     )
+    output["abs_model_minus_nws_f"] = output["model_minus_nws_f"].abs()
+    output["model_vs_nws_direction"] = output["model_minus_nws_f"].map(_guidance_direction)
+    output["guidance_agreement"] = output["abs_model_minus_nws_f"].map(_guidance_agreement)
     return output.loc[:, columns].sort_values(["city", "market_type"]).reset_index(drop=True)
+
+
+def _guidance_direction(delta: object) -> str:
+    if pd.isna(delta):
+        return "unknown"
+    value = float(delta)
+    if value > 0:
+        return "model_hotter"
+    if value < 0:
+        return "model_colder"
+    return "aligned"
+
+
+def _guidance_agreement(abs_delta: object) -> str:
+    if pd.isna(abs_delta):
+        return "unknown"
+    value = float(abs_delta)
+    if value >= 3.0:
+        return "divergent"
+    if value > 2.0:
+        return "watch"
+    return "aligned"
+
+
+def _render_guidance_comparison(comparison: pd.DataFrame) -> str:
+    lines = [
+        "# Model vs NWS Guidance",
+        "",
+        "Weather-only guidance comparison. No market prices, order books, private PnL labels, or trade instructions.",
+        "",
+    ]
+    if comparison.empty:
+        return "\n".join([*lines, "No comparable rows.", ""])
+    lines.extend(
+        [
+            "| agreement | city | market | model | NWS | delta | direction | priority |",
+            "|---|---|---|---:|---:|---:|---|---|",
+        ]
+    )
+    ordered = comparison.sort_values(
+        ["abs_model_minus_nws_f", "city"],
+        ascending=[False, True],
+    )
+    for row in ordered.itertuples(index=False):
+        lines.append(
+            f"| {row.guidance_agreement} | {row.city} | {row.market_type} | "
+            f"{row.model_point_f:.1f} | {row.nws_guidance_point_f:.1f} | "
+            f"{row.model_minus_nws_f:+.1f} | {row.model_vs_nws_direction} | "
+            f"{row.priority} |"
+        )
+    lines.extend(
+        [
+            "",
+            "Agreement bands:",
+            "- `aligned`: model and NWS are within 2F.",
+            "- `watch`: model and NWS differ by more than 2F but less than 3F.",
+            "- `divergent`: model and NWS differ by 3F or more.",
+            "",
+            "Use this as a weather-desk sanity check only. Bobby/private audit decides whether any divergence is market-relevant.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
 
 
 def _git_commit() -> str | None:

@@ -26,7 +26,7 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
                     "issue_ts_utc": "2026-05-24T14:30:00+00:00",
                     "valid_ts_utc": "2026-05-25T00:00:00+00:00",
                     "available_ts_utc": "2026-05-24T14:30:00+00:00",
-                    "guidance_point_f": 74,
+                    "guidance_point_f": 72,
                     "guidance_q10_f": None,
                     "guidance_q50_f": 74,
                     "guidance_q90_f": None,
@@ -114,5 +114,13 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     assert adjusted["bin_lower_f"].tolist() == [75]
     assert adjusted["calibrated_probability"].tolist() == [1.0]
     comparison = pd.read_csv(comparison_path)
-    assert comparison["model_minus_nws_f"].tolist() == [1.0]
+    assert comparison["model_minus_nws_f"].tolist() == [3.0]
+    assert comparison["abs_model_minus_nws_f"].tolist() == [3.0]
+    assert comparison["model_vs_nws_direction"].tolist() == ["model_hotter"]
+    assert comparison["guidance_agreement"].tolist() == ["divergent"]
+    comparison_md = (out_dir / "guidance" / "model_vs_nws_guidance.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Weather-only guidance comparison" in comparison_md
+    assert "divergent" in comparison_md
     assert "Wrote weather desk packet" in capsys.readouterr().out
