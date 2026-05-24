@@ -52,6 +52,53 @@ def _prediction_rows() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _low_prediction_rows() -> pd.DataFrame:
+    rows = []
+    pmf = {"49": 0.25, "50": 0.5, "51": 0.25}
+    for degree, probability in [(49, 0.25), (50, 0.5), (51, 0.25)]:
+        rows.append(
+            {
+                "model_version": "test",
+                "city": "nyc",
+                "platform": "kalshi",
+                "market_type": "low",
+                "station_id": "KNYC",
+                "target_date": "2026-05-24",
+                "prediction_ts_utc": "2026-05-24T23:00:00+00:00",
+                "prediction_time_local": "2026-05-24T19:00:00-04:00",
+                "decision_time_label": "evening",
+                "as_of_ts_utc": "2026-05-24T23:00:00+00:00",
+                "bin_lower_f": degree,
+                "bin_upper_f": degree,
+                "bin_label": str(degree),
+                "model_probability": probability,
+                "calibrated_probability": probability,
+                "point_f": 50,
+                "q05_f": 49,
+                "q10_f": 49,
+                "q20_f": 49,
+                "q25_f": 49,
+                "q30_f": 50,
+                "q40_f": 50,
+                "q50_f": 50,
+                "q60_f": 50,
+                "q70_f": 50,
+                "q75_f": 50,
+                "q80_f": 51,
+                "q90_f": 51,
+                "q95_f": 51,
+                "pmf_degree_json": json.dumps(pmf),
+                "source_policy": "gfs_ens",
+                "nowcast_veto_flag": False,
+                "weather_reason_codes": "",
+                "station_rule_confidence": "medium",
+                "source_independence_score": 1.0,
+                "feature_hash": "feature",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def _features(high_so_far: float | None) -> pd.DataFrame:
     return pd.DataFrame(
         [
@@ -90,6 +137,14 @@ def _features(high_so_far: float | None) -> pd.DataFrame:
     )
 
 
+def _low_features(low_so_far: float | None) -> pd.DataFrame:
+    frame = _features(60.0)
+    frame["market_type"] = "low"
+    frame["decision_time_label"] = "evening"
+    frame["low_so_far_f"] = low_so_far
+    return frame
+
+
 def test_adjustment_truncates_high_pmf_below_high_so_far() -> None:
     adjusted = apply_nowcast_adjustments(_prediction_rows(), _features(70.6))
 
@@ -113,3 +168,21 @@ def test_adjustment_keeps_rows_without_high_so_far() -> None:
 
     assert adjusted["bin_lower_f"].tolist() == [69, 70, 71]
     assert adjusted["calibrated_probability"].tolist() == [0.25, 0.5, 0.25]
+
+
+def test_adjustment_truncates_low_pmf_above_low_so_far() -> None:
+    adjusted = apply_nowcast_adjustments(_low_prediction_rows(), _low_features(49.4))
+
+    assert adjusted["bin_lower_f"].tolist() == [49]
+    assert adjusted["calibrated_probability"].tolist() == [1.0]
+    assert adjusted.iloc[0]["point_f"] == 49.0
+    assert "pmf_truncated_above_low_so_far:49" in adjusted.iloc[0]["weather_reason_codes"]
+    assert json.loads(adjusted.iloc[0]["pmf_degree_json"]) == {"49": 1.0}
+
+
+def test_adjustment_collapses_when_low_so_far_below_support() -> None:
+    adjusted = apply_nowcast_adjustments(_low_prediction_rows(), _low_features(47.0))
+
+    assert adjusted["bin_lower_f"].tolist() == [47]
+    assert adjusted["calibrated_probability"].tolist() == [1.0]
+    assert adjusted["model_probability"].tolist() == [0.0]

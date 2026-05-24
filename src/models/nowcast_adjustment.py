@@ -28,8 +28,9 @@ def apply_nowcast_adjustments(
     """Apply physical weather-only constraints to nowcast prediction rows.
 
     For high-temperature markets, final high cannot be below the observed
-    ``high_so_far_f`` available at prediction time. The adjustment truncates the
-    degree PMF below that floor and renormalizes.
+    ``high_so_far_f`` available at prediction time. For low-temperature markets,
+    final low cannot be above the observed ``low_so_far_f``. The adjustment
+    truncates physically impossible degree mass and renormalizes.
     """
     _validate_predictions(predictions)
     _validate_features(features)
@@ -45,15 +46,22 @@ def apply_nowcast_adjustments(
     ]
     for keys, group in predictions.groupby(group_cols, sort=True, dropna=False):
         feature = feature_map.get(tuple(str(value) for value in keys))
-        if feature is None or str(keys[2]).lower() != "high":
+        market_type = str(keys[2]).lower()
+        if feature is None or market_type not in {"high", "low"}:
             output.extend(group.to_dict(orient="records"))
             continue
-        high_so_far = _float_or_none(feature.get("high_so_far_f"))
-        if high_so_far is None:
-            output.extend(group.to_dict(orient="records"))
-            continue
-        min_degree = int(math.floor(high_so_far + 0.5))
-        adjusted = _truncate_high_pmf(group, min_degree)
+        if market_type == "high":
+            high_so_far = _float_or_none(feature.get("high_so_far_f"))
+            if high_so_far is None:
+                output.extend(group.to_dict(orient="records"))
+                continue
+            adjusted = _truncate_high_pmf(group, int(math.floor(high_so_far + 0.5)))
+        else:
+            low_so_far = _float_or_none(feature.get("low_so_far_f"))
+            if low_so_far is None:
+                output.extend(group.to_dict(orient="records"))
+                continue
+            adjusted = _truncate_low_pmf(group, int(math.floor(low_so_far + 0.5)))
         output.extend(adjusted)
     return pd.DataFrame(output, columns=NOWCAST_PREDICTION_COLUMNS)
 
@@ -78,7 +86,7 @@ def write_nowcast_adjusted_predictions(
             "nowcast_features": _sha256(features_path),
         },
         "row_count": int(len(adjusted)),
-        "adjustment": "truncate high-temperature PMF below high_so_far_f",
+        "adjustment": "truncate high PMF below high_so_far_f and low PMF above low_so_far_f",
         "notes": [
             "Weather-only adjustment. No market prices, order books, private PnL labels, or trading instructions.",
             "calibrated_probability and pmf_degree_json are adjusted; model_probability remains the original diagnostic probability by degree.",
@@ -112,6 +120,46 @@ def _truncate_high_pmf(group: pd.DataFrame, min_degree: int) -> list[dict[str, A
     reasons = _append_reason(
         base.get("weather_reason_codes"),
         f"pmf_truncated_below_high_so_far:{min_degree}",
+    )
+    rows = []
+    for degree, probability in sorted(adjusted.items()):
+        row = dict(base)
+        row.update(
+            {
+                "bin_lower_f": degree,
+                "bin_upper_f": degree,
+                "bin_label": str(degree),
+                "model_probability": original_model_probability.get(degree, 0.0),
+                "calibrated_probability": probability,
+                "point_f": point,
+                **{f"q{q:02d}_f": quantiles[q] for q in QUANTILES},
+                "pmf_degree_json": pmf_json,
+                "weather_reason_codes": reasons,
+            }
+        )
+        rows.append(row)
+    return rows
+
+
+def _truncate_low_pmf(group: pd.DataFrame, max_degree: int) -> list[dict[str, Any]]:
+    original = _pmf_from_group(group)
+    adjusted = {degree: prob for degree, prob in original.items() if degree <= max_degree}
+    adjusted = {max_degree: 1.0} if not adjusted else _normalize(adjusted)
+    quantiles = _quantiles(adjusted)
+    point = sum(degree * probability for degree, probability in adjusted.items())
+    pmf_json = json.dumps(
+        {str(degree): probability for degree, probability in sorted(adjusted.items())},
+        sort_keys=True,
+    )
+    base = group.iloc[0].to_dict()
+    original_model_probability = {
+        int(float(row.bin_lower_f)): float(row.model_probability)
+        for row in group.itertuples(index=False)
+        if pd.notna(row.bin_lower_f)
+    }
+    reasons = _append_reason(
+        base.get("weather_reason_codes"),
+        f"pmf_truncated_above_low_so_far:{max_degree}",
     )
     rows = []
     for degree, probability in sorted(adjusted.items()):

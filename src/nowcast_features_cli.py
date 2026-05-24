@@ -23,6 +23,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--decision-time-label", required=True)
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
+    parser.add_argument(
+        "--market-type",
+        choices=["high", "low", "all"],
+        default="high",
+        help="Station-rule market type to build. Defaults to high.",
+    )
     parser.add_argument("--observations-csv", type=Path)
     parser.add_argument(
         "--observation-store",
@@ -51,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
         observation_store_path=args.observation_store,
         update_observation_store=args.update_observation_store,
         station_rules_path=args.station_rules,
+        market_types=["high", "low"] if args.market_type == "all" else [args.market_type],
         fetch_live=args.fetch_live,
         git_commit=_git_commit(),
     )

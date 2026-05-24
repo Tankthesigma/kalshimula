@@ -106,7 +106,11 @@ def fetch_observations_for_rules(
 ) -> pd.DataFrame:
     """Fetch ASOS observations for station rules and return canonical rows."""
     all_observations: list[pd.DataFrame] = []
+    seen_stations: set[str] = set()
     for rule in rules:
+        if rule.settlement_station in seen_stations:
+            continue
+        seen_stations.add(rule.settlement_station)
         try:
             text = fetch_asos_observation_csv(rule.settlement_station, start, end)
             parsed = parse_asos_csv(text, rule.settlement_station)
@@ -233,11 +237,12 @@ def write_nowcast_features(
     observation_store_path: Path | None = None,
     update_observation_store: bool = False,
     station_rules_path: Path = DEFAULT_STATION_RULES_PATH,
+    market_types: list[str] | None = None,
     fetch_live: bool = False,
     git_commit: str | None = None,
 ) -> NowcastFeatureResult:
     """Build and write nowcast feature artifacts."""
-    rules = load_station_rules(station_rules_path)
+    rules = _filter_rules(load_station_rules(station_rules_path), market_types=market_types)
     store_observations = (
         load_observation_store(observation_store_path)
         if observation_store_path is not None
@@ -300,6 +305,16 @@ def write_nowcast_features(
         report=report,
         manifest=manifest,
     )
+
+
+def _filter_rules(
+    rules: list[StationRule], *, market_types: list[str] | None
+) -> list[StationRule]:
+    if market_types is None:
+        market_type_set = {"high"}
+    else:
+        market_type_set = {market_type.strip().lower() for market_type in market_types}
+    return [rule for rule in rules if rule.market_type in market_type_set]
 
 
 def _feature_row(

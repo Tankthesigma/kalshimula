@@ -25,6 +25,14 @@ def test_station_rule_by_key_normalizes_lookup() -> None:
     assert rule.settlement_station == "KMDW"
 
 
+def test_low_station_rules_are_available_but_not_high_confidence() -> None:
+    rule = station_rule_by_key(city="nyc", platform="kalshi", market_type="low")
+
+    assert rule.settlement_station == "KNYC"
+    assert rule.market_type == "low"
+    assert rule.rule_confidence == "medium"
+
+
 def test_station_table_hash_is_stable_hex() -> None:
     digest = station_table_hash()
 

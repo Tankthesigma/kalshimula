@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--decision-time-label", required=True)
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
+    parser.add_argument("--market-type", choices=["high", "low"], default="high")
     parser.add_argument("--observations-csv", type=Path)
     parser.add_argument("--observation-store", type=Path)
     parser.add_argument("--update-observation-store", action="store_true")
@@ -57,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         observation_store_path=args.observation_store,
         update_observation_store=args.update_observation_store,
         station_rules_path=args.station_rules,
+        market_types=[args.market_type],
         fetch_live=args.fetch_live,
         git_commit=git_commit,
     )
@@ -67,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         nowcast_features_path=out_dir / "nowcast_features" / "nowcast_features.csv",
         station_rules_path=args.station_rules,
         as_of_ts_utc=args.as_of,
+        market_type=args.market_type,
         model_version=args.model_version,
         git_commit=git_commit,
     )
@@ -86,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at": datetime.now(UTC).isoformat(),
         "git_commit": git_commit,
         "target_date": args.target_date,
+        "market_type": args.market_type,
         "as_of_ts_utc": _parse_as_of(args.as_of).isoformat(),
         "decision_time_label": args.decision_time_label,
         "artifacts": {

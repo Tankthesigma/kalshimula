@@ -80,6 +80,7 @@ def build_nowcast_prediction_rows(
     station_rules_path: Path = DEFAULT_STATION_RULES_PATH,
     decision_time_label: str,
     as_of_ts_utc: datetime | str | None = None,
+    market_type: str = "high",
     model_version: str = "mainline-nowcast-v1",
 ) -> pd.DataFrame:
     """Convert prediction JSON into the frozen ``predictions_nowcast.csv`` schema."""
@@ -92,10 +93,10 @@ def build_nowcast_prediction_rows(
         city = str(prediction.get("city") or "").strip().lower()
         if not city:
             continue
-        rule = rule_map.get((city, "kalshi", "high"))
+        rule = rule_map.get((city, "kalshi", market_type.strip().lower()))
         if rule is None:
             continue
-        feature = feature_map.get((city, "kalshi", "high", rule.settlement_station))
+        feature = feature_map.get((city, "kalshi", rule.market_type, rule.settlement_station))
         rows.extend(
             _rows_for_prediction(
                 prediction,
@@ -118,6 +119,7 @@ def write_nowcast_predictions(
     nowcast_features_path: Path | None = None,
     station_rules_path: Path = DEFAULT_STATION_RULES_PATH,
     as_of_ts_utc: datetime | str | None = None,
+    market_type: str = "high",
     model_version: str = "mainline-nowcast-v1",
     git_commit: str | None = None,
 ) -> NowcastPredictionResult:
@@ -130,6 +132,7 @@ def write_nowcast_predictions(
         station_rules_path=station_rules_path,
         decision_time_label=decision_time_label,
         as_of_ts_utc=as_of_ts_utc,
+        market_type=market_type,
         model_version=model_version,
     )
     manifest = {
@@ -146,6 +149,7 @@ def write_nowcast_predictions(
         "station_table_hash": station_table_hash(station_rules_path),
         "prediction_date_range": _prediction_date_range(predictions),
         "decision_time_labels": sorted(predictions["decision_time_label"].dropna().unique()),
+        "market_type": market_type,
         "no_leak_max_observation_ts": _max_observation_ts(features),
         "source_independence_summary": {
             "source_independence_score_default": 1.0,

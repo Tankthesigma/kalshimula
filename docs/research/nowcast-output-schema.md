@@ -227,11 +227,25 @@ available row. If a live station fetch is rate-limited or fails, the feature
 builder continues from cached rows and marks missing/stale stations with
 weather-only veto reasons.
 
+High markets are the default. Low markets use the same schema and can be built
+explicitly:
+
+```text
+python -m src.nowcast_features_cli \
+  --market-type low \
+  --target-date 2026-05-24 \
+  --as-of 2026-05-24T23:00:00Z \
+  --decision-time-label evening \
+  --observation-store reports/overnight_model_intelligence/asos_observation_store.csv \
+  --out-dir reports/overnight_model_intelligence/low_nowcast_features
+```
+
 Build Bobby's frozen prediction input:
 
 ```text
 python -m src.nowcast_predictions_cli \
   --predictions-json data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.json \
+  --market-type high \
   --nowcast-features reports/overnight_model_intelligence/nowcast_features/nowcast_features.csv \
   --decision-time-label morning \
   --out-dir reports/overnight_model_intelligence/nowcast_predictions
@@ -269,10 +283,13 @@ python -m src.nowcast_adjustment_cli \
   --out-dir reports/overnight_model_intelligence/nowcast_predictions_adjusted
 ```
 
-For high-temperature markets, this only enforces the physical constraint that
+For high-temperature markets, this enforces the physical constraint that
 final high cannot be below `high_so_far_f` as of the prediction time. It
 truncates `pmf_degree_json` and `calibrated_probability` below that observed
 floor, then renormalizes. It does not use market prices or private audit labels.
+For low-temperature markets, the symmetric weather-only constraint is that final
+low cannot be above `low_so_far_f`; the adjustment truncates probability mass
+above that observed ceiling and renormalizes.
 
 ## Professional Guidance Contract
 
@@ -344,6 +361,7 @@ For operational use, run the mainline weather-only pipeline in one command:
 ```text
 python -m src.weather_desk_cli \
   --predictions-json data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.json \
+  --market-type high \
   --target-date 2026-05-24 \
   --as-of 2026-05-24T15:00:00Z \
   --decision-time-label morning \

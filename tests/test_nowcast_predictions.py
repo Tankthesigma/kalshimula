@@ -6,11 +6,11 @@ from src.models.nowcast_predictions import build_nowcast_prediction_rows
 from src.models.station_rules import StationRule
 
 
-def _rule() -> StationRule:
+def _rule(market_type: str = "high") -> StationRule:
     return StationRule(
         city="nyc",
         platform="kalshi",
-        market_type="high",
+        market_type=market_type,
         settlement_station="KNYC",
         station_name="Central Park",
         timezone="America/New_York",
@@ -109,3 +109,16 @@ def test_build_nowcast_prediction_rows_carries_weather_only_feature_flags() -> N
     assert set(rows["nowcast_veto_flag"]) == {True}
     assert set(rows["weather_reason_codes"]) == {"high_so_far_exceeds_model_point"}
     assert set(rows["feature_hash"]) == {"abc123"}
+
+
+def test_build_nowcast_prediction_rows_can_emit_low_market_rows() -> None:
+    rows = build_nowcast_prediction_rows(
+        _payload(),
+        station_rules=[_rule("low")],
+        decision_time_label="evening",
+        as_of_ts_utc="2026-05-24T23:00:00Z",
+        market_type="low",
+    )
+
+    assert set(rows["market_type"]) == {"low"}
+    assert set(rows["station_id"]) == {"KNYC"}

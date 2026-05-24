@@ -105,6 +105,24 @@ def test_write_nowcast_features_can_read_and_update_observation_store(tmp_path) 
     assert store.exists()
 
 
+def test_write_nowcast_features_can_target_low_market_rules(tmp_path) -> None:
+    store = tmp_path / "observations.csv"
+    write_observation_store(store, pd.DataFrame([_obs("KMDW", "2026-05-24T14:00:00", 72)]))
+
+    result = write_nowcast_features(
+        output_dir=tmp_path / "out",
+        target_date=datetime(2026, 5, 24).date(),
+        as_of_ts=datetime(2026, 5, 24, 14, 30),
+        decision_time_label="10",
+        observation_store_path=store,
+        market_types=["low"],
+    )
+
+    chicago = result.features[result.features["city"] == "chicago"].iloc[0]
+    assert chicago["market_type"] == "low"
+    assert chicago["station_id"] == "KMDW"
+
+
 def test_nowcast_features_use_only_observations_available_by_as_of() -> None:
     rule = station_rule_by_key(city="chicago")
     observations = pd.DataFrame(
