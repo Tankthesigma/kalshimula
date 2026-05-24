@@ -360,7 +360,8 @@ empirically validates the low-market station and LST/DST settlement behavior.
 
 ## One-Command Weather Desk Pipeline
 
-For operational use, run the mainline weather-only pipeline in one command:
+If a prediction JSON already exists, run the mainline weather-only desk in one
+command:
 
 ```text
 python -m src.weather_desk_cli \
@@ -419,3 +420,24 @@ python -m src.weather_analyst_cli \
   --guidance-comparison reports/overnight_model_intelligence/weather_desk/guidance/model_vs_nws_guidance.csv \
   --out-dir reports/overnight_model_intelligence/weather_desk/weather_analyst
 ```
+
+For daily operation, generate the prediction JSON and the full desk packet in
+one mainline-safe refresh:
+
+```text
+python -m src.weather_desk_refresh_cli \
+  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr \
+  --cities nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston \
+  --date tomorrow \
+  --as-of 2026-05-24T15:00:00Z \
+  --decision-time-label morning \
+  --threshold-offsets -2,0,2 \
+  --multi-source-mode single \
+  --fetch-live \
+  --include-nws-guidance \
+  --out-dir reports/overnight_model_intelligence/daily_weather_desk
+```
+
+This writes `<prefix>_predictions.json`, `<prefix>/` with all weather desk
+artifacts, and `<prefix>_refresh_manifest.json`. It is still weather-only and
+does not call market APIs.
