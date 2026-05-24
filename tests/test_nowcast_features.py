@@ -5,6 +5,7 @@ import pandas as pd
 from src.fetchers.asos import AsosHourlyObservation
 from src.models.nowcast_features import (
     build_nowcast_features,
+    fetch_observations_for_rules,
     observations_to_frame,
     render_nowcast_feature_report,
 )
@@ -29,6 +30,27 @@ def test_observations_to_frame_uses_canonical_columns() -> None:
     assert frame.loc[0, "temperature_f"] == 70.0
     assert frame.loc[0, "dewpoint_f"] == 55.0
     assert frame.loc[0, "cloud_cover"] == "CLR"
+
+
+def test_fetch_observations_for_rules_degrades_failed_station(monkeypatch) -> None:
+    def fake_fetch(station, start, end):
+        if station == "KMDW":
+            raise RuntimeError("rate limited")
+        return "station,valid,tmpf\nKNYC,2026-05-24 10:00,70\n"
+
+    monkeypatch.setattr(
+        "src.models.nowcast_features.fetch_asos_observation_csv",
+        fake_fetch,
+    )
+
+    observations = fetch_observations_for_rules(
+        [station_rule_by_key(city="chicago"), station_rule_by_key(city="nyc")],
+        start=datetime(2026, 5, 24).date(),
+        end=datetime(2026, 5, 24).date(),
+    )
+
+    assert observations["station_id"].tolist() == ["KNYC"]
+    assert observations["temperature_f"].tolist() == [70.0]
 
 
 def test_nowcast_features_use_only_observations_available_by_as_of() -> None:

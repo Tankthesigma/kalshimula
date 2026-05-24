@@ -107,9 +107,12 @@ def fetch_observations_for_rules(
     """Fetch ASOS observations for station rules and return canonical rows."""
     all_observations: list[pd.DataFrame] = []
     for rule in rules:
-        text = fetch_asos_observation_csv(rule.settlement_station, start, end)
-        parsed = parse_asos_csv(text, rule.settlement_station)
-        all_observations.append(observations_to_frame(parsed))
+        try:
+            text = fetch_asos_observation_csv(rule.settlement_station, start, end)
+            parsed = parse_asos_csv(text, rule.settlement_station)
+            all_observations.append(observations_to_frame(parsed))
+        except Exception:  # noqa: BLE001
+            all_observations.append(pd.DataFrame(columns=OBSERVATION_COLUMNS))
     if not all_observations:
         return pd.DataFrame(columns=OBSERVATION_COLUMNS)
     return pd.concat(all_observations, ignore_index=True)
