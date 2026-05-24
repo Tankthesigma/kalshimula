@@ -9,9 +9,11 @@ Initial mainline implementation exists in:
 - `src/models/nowcast_features.py`
 - `src/models/nowcast_predictions.py`
 - `src/models/source_provenance.py`
+- `src/models/nowcast_report.py`
 - `src/nowcast_features_cli.py`
 - `src/nowcast_predictions_cli.py`
 - `src/source_provenance_cli.py`
+- `src/nowcast_report_cli.py`
 
 ## Station Rule Table
 
@@ -225,3 +227,14 @@ python -m src.source_provenance_cli \
 The first real provenance run confirms `hrrr` and `gfs_ens` are identical across
 all ten mainline cities in the two-year artifact, so `hrrr` should not be counted
 as an independent source in blends or contrarian diagnostics.
+
+Render a weather-only report from the frozen prediction export:
+
+```text
+python -m src.nowcast_report_cli \
+  --predictions-nowcast reports/overnight_model_intelligence/nowcast_predictions/predictions_nowcast.csv \
+  --out-dir reports/overnight_model_intelligence/nowcast_report
+```
+
+The report is model-readiness triage only. It does not contain market prices,
+order books, private PnL labels, or trading instructions.

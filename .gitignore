@@ -13,6 +13,7 @@ data/*.parquet
 data/runs/
 data/models/
 artifacts/
+reports/overnight_model_intelligence/
 .ipynb_checkpoints/
 *.log
 .DS_Store
