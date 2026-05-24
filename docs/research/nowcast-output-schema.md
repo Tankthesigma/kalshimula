@@ -372,6 +372,7 @@ python -m src.weather_desk_cli \
   --observation-store reports/overnight_model_intelligence/asos_observation_store.csv \
   --fetch-live \
   --update-observation-store \
+  --include-nws-guidance \
   --out-dir reports/overnight_model_intelligence/weather_desk
 ```
 
@@ -382,6 +383,8 @@ nowcast_features/
 predictions_nowcast_raw/
 predictions_nowcast_adjusted/
 nowcast_report/
+guidance/
+guidance_diagnostics/
 weather_desk_manifest.json
 ```
 
@@ -389,3 +392,7 @@ weather_desk_manifest.json
 weather-adjusted model mode for Bobby/private audit. It uses the same frozen
 schema as raw `predictions_nowcast.csv`, so private PnL tooling can compare raw
 versus adjusted without a separate parser.
+When `--include-nws-guidance` is set, the packet also writes
+`guidance/model_vs_nws_guidance.csv`, a weather-only comparison of model point
+versus public NWS guidance point. It is an accuracy/desk diagnostic only, not a
+market signal.
