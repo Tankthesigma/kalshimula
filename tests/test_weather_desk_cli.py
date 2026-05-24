@@ -105,6 +105,7 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     adjusted_path = out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv"
     assert adjusted_path.exists()
     assert (out_dir / "nowcast_report" / "nowcast_report.md").exists()
+    assert (out_dir / "weather_analyst" / "weather_analyst_packet.md").exists()
     assert (out_dir / "guidance" / "nws_guidance_rows.csv").exists()
     assert (out_dir / "guidance_diagnostics" / "guidance_report.md").exists()
     comparison_path = out_dir / "guidance" / "model_vs_nws_guidance.csv"
@@ -123,4 +124,7 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     )
     assert "Weather-only guidance comparison" in comparison_md
     assert "divergent" in comparison_md
+    analyst = pd.read_csv(out_dir / "weather_analyst" / "weather_analyst_packet.csv")
+    assert analyst["desk_priority"].tolist() == ["review"]
+    assert "nws_divergent" in analyst.iloc[0]["risk_flags"]
     assert "Wrote weather desk packet" in capsys.readouterr().out

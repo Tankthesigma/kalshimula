@@ -23,6 +23,7 @@ from src.models.nowcast_predictions import write_nowcast_predictions
 from src.models.nowcast_report import write_nowcast_report
 from src.models.nws_guidance import write_nws_guidance_rows
 from src.models.station_rules import DEFAULT_STATION_RULES_PATH
+from src.models.weather_analyst import write_weather_analyst_packet
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -123,6 +124,16 @@ def main(argv: list[str] | None = None) -> int:
             _render_guidance_comparison(guidance_comparison),
             encoding="utf-8",
         )
+    analyst_result = write_weather_analyst_packet(
+        nowcast_summary_path=out_dir / "nowcast_report" / "nowcast_report_summary.csv",
+        guidance_comparison_path=(
+            out_dir / "guidance" / "model_vs_nws_guidance.csv"
+            if args.include_nws_guidance
+            else None
+        ),
+        output_dir=out_dir / "weather_analyst",
+        git_commit=git_commit,
+    )
     manifest = {
         "schema_version": "1.0",
         "generated_at": datetime.now(UTC).isoformat(),
@@ -138,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
                 "predictions_nowcast_adjusted/predictions_nowcast.csv"
             ),
             "nowcast_report": "nowcast_report/nowcast_report.md",
+            "weather_analyst_packet": "weather_analyst/weather_analyst_packet.md",
             **(
                 {
                     "nws_guidance": "guidance/nws_guidance_rows.csv",
@@ -158,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
             "nws_guidance_rows": int(len(guidance_rows)),
             "nws_latest_rows": int(len(guidance_latest)),
             "model_vs_nws_guidance_rows": int(len(guidance_comparison)),
+            "weather_analyst_rows": int(len(analyst_result.rows)),
         },
         "notes": [
             "Mainline weather-only pipeline. No market prices, order books, private PnL labels, or trade instructions.",

@@ -383,6 +383,7 @@ nowcast_features/
 predictions_nowcast_raw/
 predictions_nowcast_adjusted/
 nowcast_report/
+weather_analyst/
 guidance/
 guidance_diagnostics/
 weather_desk_manifest.json
@@ -400,9 +401,21 @@ model_vs_nws_guidance.md
 weather-adjusted model mode for Bobby/private audit. It uses the same frozen
 schema as raw `predictions_nowcast.csv`, so private PnL tooling can compare raw
 versus adjusted without a separate parser.
+`weather_analyst/weather_analyst_packet.md` is the deterministic report/risk
+flag layer. It does not call an LLM; a local LLM may summarize it later, but all
+numeric probabilities and risk flags come from structured weather-only rows.
 When `--include-nws-guidance` is set, the packet also writes
 `guidance/model_vs_nws_guidance.csv`, a weather-only comparison of model point
 versus public NWS guidance point, plus `guidance/model_vs_nws_guidance.md`.
 Agreement bands are `aligned` within 2F, `watch` above 2F and below 3F, and
 `divergent` at 3F or more. It is an accuracy/desk diagnostic only, not a market
 signal.
+
+The analyst packet can also be regenerated directly:
+
+```text
+python -m src.weather_analyst_cli \
+  --nowcast-summary reports/overnight_model_intelligence/weather_desk/nowcast_report/nowcast_report_summary.csv \
+  --guidance-comparison reports/overnight_model_intelligence/weather_desk/guidance/model_vs_nws_guidance.csv \
+  --out-dir reports/overnight_model_intelligence/weather_desk/weather_analyst
+```
