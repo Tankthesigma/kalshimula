@@ -148,6 +148,55 @@ def test_nowcast_features_use_only_observations_available_by_as_of() -> None:
     assert row["latest_obs_ts_utc"] == "2026-05-24T14:00:00"
 
 
+def test_nowcast_features_accept_epoch_second_observation_timestamps() -> None:
+    rule = station_rule_by_key(city="chicago")
+    observations = pd.DataFrame(
+        [
+            {
+                **_obs("KMDW", "2026-05-24T14:00:00", 72),
+                "obs_ts_utc": 1779631200,
+                "available_ts_utc": 1779631200,
+            }
+        ]
+    )
+
+    features = build_nowcast_features(
+        observations,
+        [rule],
+        target_date=datetime(2026, 5, 24).date(),
+        as_of_ts=datetime(2026, 5, 24, 14, 30),
+        decision_time_label="10",
+    )
+
+    row = features.iloc[0]
+    assert row["latest_temp_f"] == 72
+    assert row["high_so_far_f"] == 72
+    assert row["latest_obs_ts_utc"] == "2026-05-24T14:00:00"
+
+
+def test_nowcast_features_accept_epoch_millisecond_observation_timestamps() -> None:
+    rule = station_rule_by_key(city="chicago")
+    observations = pd.DataFrame(
+        [
+            {
+                **_obs("KMDW", "2026-05-24T14:00:00", 72),
+                "obs_ts_utc": 1779631200000,
+                "available_ts_utc": 1779631200000,
+            }
+        ]
+    )
+
+    features = build_nowcast_features(
+        observations,
+        [rule],
+        target_date=datetime(2026, 5, 24).date(),
+        as_of_ts=datetime(2026, 5, 24, 14, 30),
+        decision_time_label="10",
+    )
+
+    assert features.iloc[0]["latest_obs_ts_utc"] == "2026-05-24T14:00:00"
+
+
 def test_nowcast_features_flags_missing_observations() -> None:
     rule = station_rule_by_key(city="chicago")
 

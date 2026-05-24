@@ -452,10 +452,8 @@ def _clean_observations(observations: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"observations missing required columns: {sorted(missing)}")
     obs["station_id"] = obs["station_id"].astype(str).str.strip().str.upper()
-    obs["obs_ts_utc"] = pd.to_datetime(obs["obs_ts_utc"], errors="coerce").dt.tz_localize(None)
-    obs["available_ts_utc"] = pd.to_datetime(
-        obs["available_ts_utc"], errors="coerce"
-    ).dt.tz_localize(None)
+    obs["obs_ts_utc"] = _parse_utc_timestamp_series(obs["obs_ts_utc"])
+    obs["available_ts_utc"] = _parse_utc_timestamp_series(obs["available_ts_utc"])
     for col in ("temperature_f", "dewpoint_f", "wind_speed_kt", "wind_direction_deg", "gust_kt", "pressure_mb", "precip_in"):
         if col in obs.columns:
             obs[col] = pd.to_numeric(obs[col], errors="coerce")
@@ -466,6 +464,39 @@ def _as_utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _parse_utc_timestamp_series(values: pd.Series) -> pd.Series:
+    """Parse ISO timestamps plus common epoch integer encodings.
+
+    Pandas treats bare integers as nanoseconds by default. That turns epoch
+    seconds like ``1770000000`` into 1970-era timestamps, which can silently make
+    same-day nowcast rows look missing. Canonical stores should write ISO strings,
+    but this accepts seconds, milliseconds, microseconds, and nanoseconds.
+    """
+    text_values = values.astype("string").str.strip()
+    numeric = pd.to_numeric(text_values, errors="coerce")
+    parsed = pd.to_datetime(text_values, errors="coerce", utc=True)
+    numeric_mask = numeric.notna()
+    if numeric_mask.any():
+        parsed.loc[numeric_mask] = [
+            _parse_epoch_numeric(float(value))
+            for value in numeric.loc[numeric_mask].tolist()
+        ]
+    return parsed.dt.tz_localize(None)
+
+
+def _parse_epoch_numeric(value: float) -> pd.Timestamp:
+    magnitude = abs(value)
+    if magnitude < 1e11:
+        unit = "s"
+    elif magnitude < 1e14:
+        unit = "ms"
+    elif magnitude < 1e17:
+        unit = "us"
+    else:
+        unit = "ns"
+    return pd.to_datetime(value, unit=unit, utc=True)
 
 
 def _local_time(as_of_utc: datetime, rule: StationRule) -> datetime:
