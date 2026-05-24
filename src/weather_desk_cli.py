@@ -174,7 +174,8 @@ def main(argv: list[str] | None = None) -> int:
         },
         "notes": [
             "Mainline weather-only pipeline. No market prices, order books, private PnL labels, or trade instructions.",
-            "Bobby/private audit may consume predictions_nowcast_adjusted as a separate model mode.",
+            "Raw and adjusted nowcast predictions are separate model modes; adjusted is a weather-aware candidate, not a promoted default.",
+            "Bobby/private audit may consume predictions_nowcast_adjusted to validate paper PnL before any operational promotion.",
         ],
     }
     out_dir.mkdir(parents=True, exist_ok=True)

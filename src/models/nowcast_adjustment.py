@@ -90,6 +90,7 @@ def write_nowcast_adjusted_predictions(
         "notes": [
             "Weather-only adjustment. No market prices, order books, private PnL labels, or trading instructions.",
             "calibrated_probability and pmf_degree_json are adjusted; model_probability remains the original diagnostic probability by degree.",
+            "Adjusted nowcast is a candidate mode, not a promoted default; private audit must validate it before operational use.",
         ],
     }
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -398,10 +398,13 @@ model_vs_nws_guidance.csv
 model_vs_nws_guidance.md
 ```
 
-`predictions_nowcast_adjusted/predictions_nowcast.csv` is the canonical
-weather-adjusted model mode for Bobby/private audit. It uses the same frozen
-schema as raw `predictions_nowcast.csv`, so private PnL tooling can compare raw
-versus adjusted without a separate parser.
+The desk emits two first-class weather-only model modes:
+`predictions_nowcast_raw/predictions_nowcast.csv` and
+`predictions_nowcast_adjusted/predictions_nowcast.csv`. Adjusted nowcast is a
+weather-aware candidate/diagnostic mode, not a promoted default. It uses the
+same frozen schema as raw `predictions_nowcast.csv`, so private PnL tooling can
+compare raw versus adjusted without a separate parser. Bobby/private audit must
+validate whether adjusted improves paper PnL before any operational promotion.
 `weather_analyst/weather_analyst_packet.md` is the deterministic report/risk
 flag layer. It does not call an LLM; a local LLM may summarize it later, but all
 numeric probabilities and risk flags come from structured weather-only rows.
