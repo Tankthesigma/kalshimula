@@ -323,3 +323,34 @@ guidance_manifest.json
 
 This keeps professional guidance benchmarkable before it is allowed into the
 structured nowcast model stack.
+
+## One-Command Weather Desk Pipeline
+
+For operational use, run the mainline weather-only pipeline in one command:
+
+```text
+python -m src.weather_desk_cli \
+  --predictions-json data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/latest_predictions.json \
+  --target-date 2026-05-24 \
+  --as-of 2026-05-24T15:00:00Z \
+  --decision-time-label morning \
+  --observation-store reports/overnight_model_intelligence/asos_observation_store.csv \
+  --fetch-live \
+  --update-observation-store \
+  --out-dir reports/overnight_model_intelligence/weather_desk
+```
+
+It writes:
+
+```text
+nowcast_features/
+predictions_nowcast_raw/
+predictions_nowcast_adjusted/
+nowcast_report/
+weather_desk_manifest.json
+```
+
+`predictions_nowcast_adjusted/predictions_nowcast.csv` is the canonical
+weather-adjusted model mode for Bobby/private audit. It uses the same frozen
+schema as raw `predictions_nowcast.csv`, so private PnL tooling can compare raw
+versus adjusted without a separate parser.
