@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.models.guidance import write_guidance_diagnostics
+from src.models.lone_outlier_correction import write_lone_outlier_correction
 from src.models.nowcast_adjustment import write_nowcast_adjusted_predictions
 from src.models.nowcast_features import write_nowcast_features
 from src.models.nowcast_predictions import write_nowcast_predictions
@@ -95,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     guidance_rows = pd.DataFrame()
     guidance_latest = pd.DataFrame()
     guidance_comparison = pd.DataFrame()
+    lone_outlier_corrections = pd.DataFrame()
     if args.include_nws_guidance:
         guidance_path = out_dir / "guidance" / "nws_guidance_rows.csv"
         guidance_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,6 +126,14 @@ def main(argv: list[str] | None = None) -> int:
             _render_guidance_comparison(guidance_comparison),
             encoding="utf-8",
         )
+        lone_outlier_result = write_lone_outlier_correction(
+            predictions_path=out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
+            prediction_json_path=args.predictions_json,
+            guidance_path=guidance_path,
+            output_dir=out_dir / "predictions_nowcast_lone_outlier",
+            git_commit=git_commit,
+        )
+        lone_outlier_corrections = lone_outlier_result.corrections
     analyst_result = write_weather_analyst_packet(
         nowcast_summary_path=out_dir / "nowcast_report" / "nowcast_report_summary.csv",
         guidance_comparison_path=(
@@ -156,6 +166,12 @@ def main(argv: list[str] | None = None) -> int:
                     "nws_guidance_diagnostics": "guidance_diagnostics/guidance_report.md",
                     "model_vs_nws_guidance": "guidance/model_vs_nws_guidance.csv",
                     "model_vs_nws_guidance_report": "guidance/model_vs_nws_guidance.md",
+                    "predictions_nowcast_lone_outlier": (
+                        "predictions_nowcast_lone_outlier/predictions_nowcast.csv"
+                    ),
+                    "lone_outlier_corrections": (
+                        "predictions_nowcast_lone_outlier/lone_outlier_corrections.csv"
+                    ),
                 }
                 if args.include_nws_guidance
                 else {}
@@ -170,11 +186,13 @@ def main(argv: list[str] | None = None) -> int:
             "nws_guidance_rows": int(len(guidance_rows)),
             "nws_latest_rows": int(len(guidance_latest)),
             "model_vs_nws_guidance_rows": int(len(guidance_comparison)),
+            "lone_outlier_corrections": int(len(lone_outlier_corrections)),
             "weather_analyst_rows": int(len(analyst_result.rows)),
         },
         "notes": [
             "Mainline weather-only pipeline. No market prices, order books, private PnL labels, or trade instructions.",
             "Raw and adjusted nowcast predictions are separate model modes; adjusted is a weather-aware candidate, not a promoted default.",
+            "Lone-outlier correction is a candidate packet only; it is not a promoted default.",
             "Bobby/private audit may consume predictions_nowcast_adjusted to validate paper PnL before any operational promotion.",
         ],
     }
