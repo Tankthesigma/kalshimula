@@ -257,3 +257,53 @@ python -m src.nowcast_report_cli \
 
 The report is model-readiness triage only. It does not contain market prices,
 order books, private PnL labels, or trading instructions.
+
+## Professional Guidance Contract
+
+Direct LAMP/NBM/NWS guidance fetchers should normalize into this weather-only
+schema before scoring or model use:
+
+```text
+city
+source
+station_id
+market_type
+target_date
+issue_ts_utc
+valid_ts_utc
+available_ts_utc
+guidance_point_f
+guidance_q10_f
+guidance_q50_f
+guidance_q90_f
+actual_high_f
+raw_payload_hash
+```
+
+The no-leak rule is the same as the ASOS store:
+
+```text
+available_ts_utc <= as_of_ts_utc
+```
+
+Build diagnostics from normalized guidance:
+
+```text
+python -m src.guidance_diagnostics_cli \
+  --input path/to/guidance_rows.csv \
+  --as-of 2026-05-24T15:00:00Z \
+  --target-date 2026-05-24 \
+  --out-dir reports/overnight_model_intelligence/guidance
+```
+
+Outputs:
+
+```text
+guidance_latest.csv
+guidance_score_summary.csv
+guidance_report.md
+guidance_manifest.json
+```
+
+This keeps professional guidance benchmarkable before it is allowed into the
+structured nowcast model stack.
