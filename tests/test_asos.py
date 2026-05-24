@@ -11,6 +11,7 @@ from src.fetchers.asos import (
     AsosHourlyObservation,
     daily_high_from_hourly,
     fetch_asos_csv,
+    fetch_asos_observation_csv,
     parse_asos_csv,
 )
 
@@ -60,6 +61,10 @@ CSV_IEM_STRIPPED_K = """station,valid,tmpf
 ORD,2025-01-02 12:53,30.0
 ORD,2025-01-02 13:53,32.5
 ORD,2025-01-02 14:53,31.0
+"""
+
+CSV_RICH_OBS = """station,valid,tmpf,dwpf,sknt,drct,gust,mslp,alti,p01i,skyc1,skyc2
+ORD,2025-01-02 12:53,30.0,20.0,8,270,15,1012.3,29.92,0.00,CLR,
 """
 
 
@@ -158,6 +163,20 @@ class TestParseAsosCsv:
         obs = parse_asos_csv(csv, STATION)
         assert len(obs) == 2
         assert all(o.station == STATION for o in obs)
+
+    def test_rich_observation_fields_are_parsed_when_present(self):
+        obs = parse_asos_csv(CSV_RICH_OBS, STATION)
+
+        assert len(obs) == 1
+        assert obs[0].temp_f == pytest.approx(30.0)
+        assert obs[0].dewpoint_f == pytest.approx(20.0)
+        assert obs[0].wind_speed_kt == pytest.approx(8.0)
+        assert obs[0].wind_direction_deg == pytest.approx(270.0)
+        assert obs[0].gust_kt == pytest.approx(15.0)
+        assert obs[0].pressure_mb == pytest.approx(1012.3)
+        assert obs[0].altimeter_inhg == pytest.approx(29.92)
+        assert obs[0].precip_in == pytest.approx(0.0)
+        assert obs[0].cloud_cover == "CLR"
 
 
 def _obs(valid_time: datetime, temp_f: float | None) -> AsosHourlyObservation:
@@ -277,3 +296,16 @@ class TestFetchAsosCsv:
         monkeypatch.setattr(asos.httpx, "Client", _BoomClient())
         with pytest.raises(RuntimeError, match="asos 500"):
             fetch_asos_csv(STATION, TARGET)
+
+    def test_richer_observation_fetch_requests_weather_desk_fields(self, monkeypatch):
+        client = _FakeClient(text=CSV_RICH_OBS)
+        monkeypatch.setattr(asos.httpx, "Client", client)
+
+        text = fetch_asos_observation_csv(STATION, TARGET, TARGET)
+
+        assert text == CSV_RICH_OBS
+        _, params = client.calls[0]
+        assert ("data", "tmpf") in params
+        assert ("data", "dwpf") in params
+        assert ("data", "sknt") in params
+        assert ("data", "skyc1") in params

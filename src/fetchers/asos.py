@@ -23,6 +23,20 @@ import httpx
 from src.fetchers.common import normalize_station, safe_float
 
 ASOS_CSV_URL = "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
+ASOS_OBSERVATION_FIELDS = (
+    "tmpf",
+    "dwpf",
+    "sknt",
+    "drct",
+    "gust",
+    "mslp",
+    "alti",
+    "p01i",
+    "skyc1",
+    "skyc2",
+    "skyc3",
+    "skyc4",
+)
 
 _TIMESTAMP_FORMATS = (
     "%Y-%m-%d %H:%M",
@@ -37,6 +51,14 @@ class AsosHourlyObservation:
     station: str
     valid_time: datetime
     temp_f: float | None
+    dewpoint_f: float | None = None
+    wind_speed_kt: float | None = None
+    wind_direction_deg: float | None = None
+    gust_kt: float | None = None
+    pressure_mb: float | None = None
+    altimeter_inhg: float | None = None
+    precip_in: float | None = None
+    cloud_cover: str | None = None
     source: str = "asos"
 
 
@@ -109,6 +131,14 @@ def parse_asos_csv(text: str, station: str) -> list[AsosHourlyObservation]:
                 station=station,
                 valid_time=valid_time,
                 temp_f=safe_float(row.get("tmpf")),
+                dewpoint_f=safe_float(row.get("dwpf")),
+                wind_speed_kt=safe_float(row.get("sknt")),
+                wind_direction_deg=safe_float(row.get("drct")),
+                gust_kt=safe_float(row.get("gust")),
+                pressure_mb=safe_float(row.get("mslp")),
+                altimeter_inhg=safe_float(row.get("alti")),
+                precip_in=safe_float(row.get("p01i")),
+                cloud_cover=_cloud_cover(row),
             )
         )
     return out
@@ -156,3 +186,42 @@ def fetch_asos_csv(station: str, target: date) -> str:
         response = client.get(ASOS_CSV_URL, params=params)
         response.raise_for_status()
         return response.text
+
+
+def fetch_asos_observation_csv(station: str, start: date, end: date) -> str:
+    """Fetch a date range of richer ASOS observations as CSV text.
+
+    ``fetch_asos_csv`` is preserved for existing daily-high callers. This
+    richer variant is used by nowcast features and requests weather-desk fields
+    such as dewpoint, wind, pressure, precipitation, and cloud layers.
+    """
+    params: list[tuple[str, object]] = [
+        ("station", station),
+        ("year1", start.year),
+        ("month1", start.month),
+        ("day1", start.day),
+        ("year2", end.year),
+        ("month2", end.month),
+        ("day2", end.day),
+        ("tz", "Etc/UTC"),
+        ("format", "onlycomma"),
+        ("latlon", "no"),
+        ("missing", "M"),
+        ("trace", "T"),
+        ("direct", "no"),
+        ("report_type", 3),
+    ]
+    params.extend(("data", field) for field in ASOS_OBSERVATION_FIELDS)
+    with httpx.Client(timeout=30.0) as client:
+        response = client.get(ASOS_CSV_URL, params=params)
+        response.raise_for_status()
+        return response.text
+
+
+def _cloud_cover(row: dict[str, str]) -> str | None:
+    layers = [
+        str(row.get(key) or "").strip().upper()
+        for key in ("skyc1", "skyc2", "skyc3", "skyc4")
+        if str(row.get(key) or "").strip()
+    ]
+    return ";".join(layers) if layers else None

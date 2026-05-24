@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 import httpx
 
@@ -99,16 +100,27 @@ def fetch_daily_high_forecast(
     station: Station, target: date
 ) -> NwsDailyHighForecast:
     """Fetch NWS daily high for a station/date, resolving gridpoint URL if needed."""
-    url = (
-        station.nws_station
-        if station.nws_station.startswith("http")
-        else resolve_forecast_url(station)
-    )
+    payload, _ = fetch_forecast_payload(station)
+    return parse_daily_high_forecast(payload, target, station.nws_station)
+
+
+def fetch_forecast_payload(station: Station) -> tuple[dict[str, Any], str]:
+    """Fetch the raw NWS forecast payload and return ``(payload, url)``."""
+    url = forecast_url_for_station(station)
     with httpx.Client(timeout=30.0) as client:
         response = client.get(url, headers=_headers())
         response.raise_for_status()
         payload = response.json()
-    return parse_daily_high_forecast(payload, target, station.nws_station)
+    return payload, url
+
+
+def forecast_url_for_station(station: Station) -> str:
+    """Return a configured gridpoint URL or resolve station lat/lon to one."""
+    return (
+        station.nws_station
+        if station.nws_station.startswith("http")
+        else resolve_forecast_url(station)
+    )
 
 
 def _headers() -> dict[str, str]:
