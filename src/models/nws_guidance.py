@@ -28,11 +28,17 @@ def guidance_rows_from_nws_forecast_payload(
     source: str = NWS_GUIDANCE_SOURCE,
 ) -> pd.DataFrame:
     """Return one normalized guidance row from an NWS forecast payload."""
-    point = _daily_high_from_payload(payload, target)
+    market_type = market_type.strip().lower()
+    point = _daily_point_from_payload(payload, target, market_type=market_type)
     if point is None:
         return pd.DataFrame(columns=GUIDANCE_COLUMNS)
     issue_ts = _issue_timestamp(payload, fallback=fetched_at)
-    valid_ts = _valid_timestamp(payload, target, fallback=fetched_at)
+    valid_ts = _valid_timestamp(
+        payload,
+        target,
+        market_type=market_type,
+        fallback=fetched_at,
+    )
     row = {
         "city": city,
         "source": source,
@@ -57,25 +63,29 @@ def fetch_nws_guidance_rows(
     *,
     target: date,
     cities: list[str] | None = None,
+    market_types: list[str] | None = None,
     fetched_at: datetime | str | None = None,
 ) -> pd.DataFrame:
     """Fetch NWS forecast guidance rows for configured cities."""
     station_map = stations or load_stations()
     selected = cities or sorted(station_map)
+    selected_market_types = market_types or ["high"]
     fetched = fetched_at or datetime.now(UTC)
     rows = []
     for city in selected:
         station = station_map[city]
         payload, _ = fetch_forecast_payload(station)
-        rows.append(
-            guidance_rows_from_nws_forecast_payload(
-                payload,
-                city=city,
-                station_id=station.nws_station,
-                target=target,
-                fetched_at=fetched,
+        for market_type in selected_market_types:
+            rows.append(
+                guidance_rows_from_nws_forecast_payload(
+                    payload,
+                    city=city,
+                    station_id=station.nws_station,
+                    target=target,
+                    fetched_at=fetched,
+                    market_type=market_type,
+                )
             )
-        )
     if not rows:
         return pd.DataFrame(columns=GUIDANCE_COLUMNS)
     return normalize_guidance_rows(pd.concat(rows, ignore_index=True))
@@ -86,16 +96,27 @@ def write_nws_guidance_rows(
     output_path: Path,
     target: date,
     cities: list[str] | None = None,
+    market_types: list[str] | None = None,
     fetched_at: datetime | str | None = None,
 ) -> pd.DataFrame:
     """Fetch and write normalized NWS forecast guidance rows."""
-    rows = fetch_nws_guidance_rows(target=target, cities=cities, fetched_at=fetched_at)
+    rows = fetch_nws_guidance_rows(
+        target=target,
+        cities=cities,
+        market_types=market_types,
+        fetched_at=fetched_at,
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     rows.to_csv(output_path, index=False)
     return rows
 
 
-def _daily_high_from_payload(payload: dict[str, Any], target: date) -> float | None:
+def _daily_point_from_payload(
+    payload: dict[str, Any],
+    target: date,
+    *,
+    market_type: str,
+) -> float | None:
     properties = payload.get("properties") if isinstance(payload, dict) else None
     periods = properties.get("periods", []) if isinstance(properties, dict) else []
     if not isinstance(periods, list):
@@ -104,8 +125,13 @@ def _daily_high_from_payload(payload: dict[str, Any], target: date) -> float | N
     for period in periods:
         if not isinstance(period, dict):
             continue
-        if not period.get("isDaytime"):
+        is_daytime = bool(period.get("isDaytime"))
+        if market_type == "high" and not is_daytime:
             continue
+        if market_type == "low" and is_daytime:
+            continue
+        if market_type not in {"high", "low"}:
+            raise ValueError(f"unsupported market_type: {market_type}")
         if not iso_date_prefix_matches(period.get("startTime"), target):
             continue
         value = safe_float(period.get("temperature"))
@@ -116,7 +142,9 @@ def _daily_high_from_payload(payload: dict[str, Any], target: date) -> float | N
             candidates.append(c_to_f(value))
         elif unit == "F" or unit is None:
             candidates.append(value)
-    return max(candidates) if candidates else None
+    if not candidates:
+        return None
+    return max(candidates) if market_type == "high" else min(candidates)
 
 
 def _issue_timestamp(payload: dict[str, Any], *, fallback: datetime | str) -> str:
@@ -132,6 +160,7 @@ def _valid_timestamp(
     payload: dict[str, Any],
     target: date,
     *,
+    market_type: str,
     fallback: datetime | str,
 ) -> str:
     properties = payload.get("properties") if isinstance(payload, dict) else None
@@ -139,10 +168,15 @@ def _valid_timestamp(
     end_times = []
     if isinstance(periods, list):
         for period in periods:
+            if not isinstance(period, dict):
+                continue
+            is_daytime = bool(period.get("isDaytime"))
+            if market_type == "high" and not is_daytime:
+                continue
+            if market_type == "low" and is_daytime:
+                continue
             if (
-                isinstance(period, dict)
-                and period.get("isDaytime")
-                and iso_date_prefix_matches(period.get("startTime"), target)
+                iso_date_prefix_matches(period.get("startTime"), target)
                 and period.get("endTime")
             ):
                 end_times.append(_utc_iso(period["endTime"]))

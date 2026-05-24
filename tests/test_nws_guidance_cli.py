@@ -8,9 +8,10 @@ from src.nws_guidance_cli import main
 def test_nws_guidance_cli_writes_rows(tmp_path: Path, monkeypatch, capsys) -> None:
     out = tmp_path / "nws_guidance.csv"
 
-    def fake_write_nws_guidance_rows(*, output_path, target, cities, fetched_at):
+    def fake_write_nws_guidance_rows(*, output_path, target, cities, market_types, fetched_at):
         assert target.isoformat() == "2026-05-24"
         assert cities == ["nyc", "boston"]
+        assert market_types == ["high", "low"]
         pd.DataFrame(
             [
                 {
@@ -44,6 +45,8 @@ def test_nws_guidance_cli_writes_rows(tmp_path: Path, monkeypatch, capsys) -> No
             "2026-05-24",
             "--cities",
             "nyc,boston",
+            "--market-type",
+            "both",
             "--fetched-at",
             "2026-05-24T07:00:00Z",
             "--out",

@@ -76,6 +76,23 @@ def test_guidance_rows_from_nws_forecast_payload_empty_when_no_target_period() -
     assert rows.empty
 
 
+def test_guidance_rows_from_nws_forecast_payload_can_normalize_low_row() -> None:
+    rows = guidance_rows_from_nws_forecast_payload(
+        _payload(),
+        city="nyc",
+        station_id="KNYC",
+        target=date(2026, 5, 24),
+        fetched_at="2026-05-24T07:00:00Z",
+        market_type="low",
+    )
+
+    assert len(rows) == 1
+    row = rows.iloc[0]
+    assert row["market_type"] == "low"
+    assert row["guidance_point_f"] == 55
+    assert row["valid_ts_utc"] == "2026-05-25T10:00:00+00:00"
+
+
 def test_fetch_nws_guidance_rows_uses_configured_stations(monkeypatch) -> None:
     station = Station(
         slug="nyc",
@@ -102,8 +119,10 @@ def test_fetch_nws_guidance_rows_uses_configured_stations(monkeypatch) -> None:
         {"nyc": station},
         target=date(2026, 5, 24),
         cities=["nyc"],
+        market_types=["high", "low"],
         fetched_at="2026-05-24T07:00:00Z",
     )
 
-    assert rows["city"].tolist() == ["nyc"]
-    assert rows["guidance_point_f"].tolist() == [73]
+    assert rows["city"].tolist() == ["nyc", "nyc"]
+    assert rows["market_type"].tolist() == ["high", "low"]
+    assert rows["guidance_point_f"].tolist() == [73, 55]

@@ -15,6 +15,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--date", required=True)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--cities", help="Comma-separated city slugs. Defaults to all configured cities.")
+    parser.add_argument(
+        "--market-type",
+        choices=["high", "low", "both"],
+        default="high",
+        help="Forecast market type to normalize. Defaults to high.",
+    )
     parser.add_argument("--fetched-at", help="UTC ISO timestamp for deterministic test/backfill rows.")
     return parser
 
@@ -27,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         output_path=args.out,
         target=date.fromisoformat(args.date),
         cities=cities,
+        market_types=_market_types(args.market_type),
         fetched_at=fetched_at,
     )
     print(f"Wrote {len(rows)} NWS guidance rows to {args.out}")
@@ -38,6 +45,12 @@ def _parse_cities(value: str | None) -> list[str] | None:
         return None
     cities = [city.strip().lower() for city in value.split(",") if city.strip()]
     return cities or None
+
+
+def _market_types(value: str) -> list[str]:
+    if value == "both":
+        return ["high", "low"]
+    return [value]
 
 
 def _parse_fetched_at(value: str) -> datetime:

@@ -346,6 +346,7 @@ The first built-in guidance source is the public NWS forecast API:
 ```text
 python -m src.nws_guidance_cli \
   --date 2026-05-24 \
+  --market-type high \
   --cities nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston \
   --out reports/overnight_model_intelligence/guidance/nws_guidance_rows.csv
 ```
@@ -353,6 +354,9 @@ python -m src.nws_guidance_cli \
 This fetches the existing `points -> forecast` API path already used by the NWS
 daily-high fetcher and normalizes the daytime high into the professional
 guidance schema. It is a weather-only source; it does not touch market APIs.
+Use `--market-type low` or `--market-type both` to emit nighttime low guidance
+rows. Low rows are inputs for weather research only until Bobby/private audit
+empirically validates the low-market station and LST/DST settlement behavior.
 
 ## One-Command Weather Desk Pipeline
 
