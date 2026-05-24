@@ -535,6 +535,42 @@ by at least 0.002/0.010. The completed two-year run passes all of those gates.
 
 ## Known limitations and next steps
 
+- **Source contrarian diagnostics.** Use `src.source_contrarian_diagnostics_cli`
+  on an `--openmeteo-mode both` run when source independence matters:
+
+  ```bash
+  python -m src.source_contrarian_diagnostics_cli \
+    --input data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+    --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/source_contrarian \
+    --offsets=-6,-4,-2,0,2,4,6
+  ```
+
+  The output compares individual sources against `openmeteo_naive` consensus
+  and reports whether a source's disagreement was historically directionally
+  right. This is a descriptive source diagnostic, not a trading signal.
+  It becomes market-relevant only if a separate private audit shows market
+  prices resemble the consensus being compared.
+- **Walk-forward evaluation.** Use `src.walkforward_eval_cli` when a policy
+  needs a stricter no-leak check than static train/test artifacts:
+
+  ```bash
+  python -m src.walkforward_eval_cli \
+    --rows data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/rows.csv \
+    --out-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr/walkforward \
+    --cities nyc,chicago,miami,austin,la,denver,philadelphia,phoenix,boston \
+    --sources gfs_ens,openmeteo_naive \
+    --train-window-days 365 \
+    --test-window-days 21 \
+    --step-days 21 \
+    --threshold-offsets=-6,-4,-2,0,2,4,6
+  ```
+
+  Each test window is calibrated only from rows before the test start. The
+  first overnight run produced 6,570 predictions and 45,990 threshold events;
+  `gfs_ens` beat `openmeteo_naive` on MAE, Brier, log loss, and stability.
+- **Climate/trend diagnostics.** `src.climate_feature_diagnostics_cli` writes
+  leakage-safe rolling and seasonal climate features. These features are audit
+  inputs only until a walk-forward policy proves they improve forecasts.
 - **Recommended source is global, not city-specific.** The best completed
   policy is the single global `gfs_ens` source. The per-city validation policy
   remains useful as a diagnostic, but it underperformed the global policy on
