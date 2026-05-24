@@ -324,6 +324,19 @@ guidance_manifest.json
 This keeps professional guidance benchmarkable before it is allowed into the
 structured nowcast model stack.
 
+The first built-in guidance source is the public NWS forecast API:
+
+```text
+python -m src.nws_guidance_cli \
+  --date 2026-05-24 \
+  --cities nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston \
+  --out reports/overnight_model_intelligence/guidance/nws_guidance_rows.csv
+```
+
+This fetches the existing `points -> forecast` API path already used by the NWS
+daily-high fetcher and normalizes the daytime high into the professional
+guidance schema. It is a weather-only source; it does not touch market APIs.
+
 ## One-Command Weather Desk Pipeline
 
 For operational use, run the mainline weather-only pipeline in one command:
