@@ -108,6 +108,12 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     assert (out_dir / "weather_analyst" / "weather_analyst_packet.md").exists()
     assert (out_dir / "guidance" / "nws_guidance_rows.csv").exists()
     assert (out_dir / "guidance_diagnostics" / "guidance_report.md").exists()
+    assert (
+        out_dir / "predictions_nowcast_lone_outlier" / "predictions_nowcast.csv"
+    ).exists()
+    assert (
+        out_dir / "predictions_nowcast_lone_outlier" / "lone_outlier_corrections.csv"
+    ).exists()
     comparison_path = out_dir / "guidance" / "model_vs_nws_guidance.csv"
     assert comparison_path.exists()
     assert (out_dir / "weather_desk_manifest.json").exists()
