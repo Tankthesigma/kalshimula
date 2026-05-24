@@ -8,10 +8,12 @@ Initial mainline implementation exists in:
 - `src/models/station_rules.py`
 - `src/models/nowcast_features.py`
 - `src/models/nowcast_predictions.py`
+- `src/models/nowcast_adjustment.py`
 - `src/models/source_provenance.py`
 - `src/models/nowcast_report.py`
 - `src/nowcast_features_cli.py`
 - `src/nowcast_predictions_cli.py`
+- `src/nowcast_adjustment_cli.py`
 - `src/source_provenance_cli.py`
 - `src/nowcast_report_cli.py`
 
@@ -257,6 +259,20 @@ python -m src.nowcast_report_cli \
 
 The report is model-readiness triage only. It does not contain market prices,
 order books, private PnL labels, or trading instructions.
+
+Apply a conservative weather-only PMF adjustment:
+
+```text
+python -m src.nowcast_adjustment_cli \
+  --predictions-nowcast reports/overnight_model_intelligence/nowcast_predictions/predictions_nowcast.csv \
+  --nowcast-features reports/overnight_model_intelligence/nowcast_features/nowcast_features.csv \
+  --out-dir reports/overnight_model_intelligence/nowcast_predictions_adjusted
+```
+
+For high-temperature markets, this only enforces the physical constraint that
+final high cannot be below `high_so_far_f` as of the prediction time. It
+truncates `pmf_degree_json` and `calibrated_probability` below that observed
+floor, then renormalizes. It does not use market prices or private audit labels.
 
 ## Professional Guidance Contract
 
