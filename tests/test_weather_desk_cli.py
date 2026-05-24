@@ -102,6 +102,12 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     assert exit_code == 0
     assert (out_dir / "nowcast_features" / "nowcast_features.csv").exists()
     assert (out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv").exists()
+    assert (
+        out_dir / "predictions_nowcast_heat_corrected" / "predictions_nowcast.csv"
+    ).exists()
+    assert (
+        out_dir / "predictions_nowcast_heat_corrected" / "heat_corrections.csv"
+    ).exists()
     adjusted_path = out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv"
     assert adjusted_path.exists()
     assert (out_dir / "nowcast_report" / "nowcast_report.md").exists()

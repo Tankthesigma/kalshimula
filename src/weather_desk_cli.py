@@ -17,6 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.models.guidance import write_guidance_diagnostics
+from src.models.heat_regime_correction import write_heat_regime_correction
 from src.models.lone_outlier_correction import write_lone_outlier_correction
 from src.models.nowcast_adjustment import write_nowcast_adjusted_predictions
 from src.models.nowcast_features import write_nowcast_features
@@ -80,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
         as_of_ts_utc=args.as_of,
         market_type=args.market_type,
         model_version=args.model_version,
+        git_commit=git_commit,
+    )
+    heat_result = write_heat_regime_correction(
+        predictions_path=out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
+        output_dir=out_dir / "predictions_nowcast_heat_corrected",
         git_commit=git_commit,
     )
     adjusted_result = write_nowcast_adjusted_predictions(
@@ -158,6 +164,10 @@ def main(argv: list[str] | None = None) -> int:
             "predictions_nowcast_adjusted": (
                 "predictions_nowcast_adjusted/predictions_nowcast.csv"
             ),
+            "predictions_nowcast_heat_corrected": (
+                "predictions_nowcast_heat_corrected/predictions_nowcast.csv"
+            ),
+            "heat_corrections": "predictions_nowcast_heat_corrected/heat_corrections.csv",
             "nowcast_report": "nowcast_report/nowcast_report.md",
             "weather_analyst_packet": "weather_analyst/weather_analyst_packet.md",
             **(
@@ -182,6 +192,8 @@ def main(argv: list[str] | None = None) -> int:
             "features": int(len(feature_result.features)),
             "raw_prediction_rows": int(len(raw_result.predictions)),
             "adjusted_prediction_rows": int(len(adjusted_result.predictions)),
+            "heat_corrected_prediction_rows": int(len(heat_result.predictions)),
+            "heat_corrections": int(len(heat_result.corrections)),
             "report_rows": int(len(report_result.summary)),
             "nws_guidance_rows": int(len(guidance_rows)),
             "nws_latest_rows": int(len(guidance_latest)),
@@ -193,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
             "Mainline weather-only pipeline. No market prices, order books, private PnL labels, or trade instructions.",
             "Raw and adjusted nowcast predictions are separate model modes; adjusted is a weather-aware candidate, not a promoted default.",
             "Lone-outlier correction is a candidate packet only; it is not a promoted default.",
+            "Heat-regime correction is a candidate packet only; it is not a promoted default.",
             "Bobby/private audit may consume predictions_nowcast_adjusted to validate paper PnL before any operational promotion.",
         ],
     }
