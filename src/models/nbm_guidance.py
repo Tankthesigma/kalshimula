@@ -293,8 +293,28 @@ def _percentiles_for_rule(text: str, *, rule: StationRule, target: date) -> dict
             candidates.append((valid_ts, values))
     if not candidates:
         return {}
-    valid_ts, values = max(candidates, key=lambda item: len(item[1]))
+    valid_ts, values = max(candidates, key=_percentile_peak_key)
     return {**values, "issue_ts": issue, "valid_ts": valid_ts}
+
+
+def _percentile_peak_key(candidate: tuple[datetime, dict[str, float]]) -> tuple[float, float, int]:
+    """Rank percentile rows by the target day's high-temperature proxy.
+
+    NBP TXNP rows are hourly temperature percentiles, not daily-high
+    percentiles. For high-temperature markets, use the hour with the highest
+    median temperature in the settlement day. Falling back through q90/q10 and
+    then row completeness keeps malformed/partial rows deterministic without
+    letting an early nighttime row masquerade as the high.
+    """
+    valid_ts, values = candidate
+    peak = values.get("guidance_q50_f")
+    if peak is None:
+        peak = values.get("guidance_q90_f")
+    if peak is None:
+        peak = values.get("guidance_q10_f")
+    if peak is None:
+        peak = float("-inf")
+    return (float(peak), float(valid_ts.timestamp()), len(values))
 
 
 def _station_block(text: str, station_id: str) -> str | None:

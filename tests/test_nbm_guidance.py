@@ -81,6 +81,49 @@ TMP  59 60 61 64 66 68 67 65 63 61 60 59
     assert rows["guidance_q50_f"].tolist() == [68]
 
 
+def test_build_nbm_guidance_rows_uses_peak_percentile_hour_for_highs() -> None:
+    rule = StationRule(
+        city="denver",
+        platform="kalshi",
+        market_type="high",
+        settlement_station="KDEN",
+        ghcnd_id="GHCND:USW00003017",
+        station_name="Denver Intl",
+        timezone="America/Denver",
+        lst_offset=-7,
+        dst_policy="lst_year_round",
+        unit="fahrenheit",
+        rounding_rule="nearest_f",
+        settlement_source="nws_cli",
+        rule_confidence="high",
+    )
+    nbh_text = """KDEN NBM V4.2 GUIDANCE    5/04/2026  0700 UTC
+FHR  01 02 03 04 05 06 07 08 09 10 11 12
+TMP  48 49 51 55 62 69 73 75 72 65 58 52
+"""
+    nbp_text = """KDEN NBM V4.2 GUIDANCE    5/04/2026  0700 UTC
+FHR   01 02 03 04 05 06 07 08 09 10 11 12
+TXNP1 31 33 35 40 49 58 65 67 64 55 48 42
+TXNP5 36 38 41 48 58 68 74 76 73 62 54 47
+TXNP9 44 47 51 58 68 78 84 86 82 70 61 54
+"""
+
+    rows = build_nbm_guidance_rows(
+        nbh_text=nbh_text,
+        nbp_text=nbp_text,
+        target=date(2026, 5, 4),
+        as_of_ts="2026-05-04T07:20:00Z",
+        rules=[rule],
+    )
+
+    assert rows["city"].tolist() == ["denver"]
+    assert rows["guidance_point_f"].tolist() == [76]
+    assert rows["guidance_q10_f"].tolist() == [67]
+    assert rows["guidance_q50_f"].tolist() == [76]
+    assert rows["guidance_q90_f"].tolist() == [86]
+    assert rows["valid_ts_utc"].tolist() == ["2026-05-04T15:00:00+00:00"]
+
+
 def test_build_nbm_guidance_rows_parses_packed_three_digit_temperatures() -> None:
     rule = StationRule(
         city="phoenix",
