@@ -444,3 +444,45 @@ python -m src.weather_desk_refresh_cli \
 This writes `<prefix>_predictions.json`, `<prefix>/` with all weather desk
 artifacts, and `<prefix>_refresh_manifest.json`. It is still weather-only and
 does not call market APIs.
+
+To evaluate intraday edge decay, build scheduled local-time packets as separate
+directories per `decision_time_label/city`:
+
+```text
+python -m src.weather_desk_schedule_cli \
+  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr \
+  --cities nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston \
+  --date 2026-05-24 \
+  --decision-hours 04,07,10,13,15 \
+  --threshold-offsets=-6,-4,-2,0,2,4,6 \
+  --multi-source-mode single \
+  --station-rules config/station_rule_table.csv \
+  --market-type high \
+  --observation-store reports/overnight_model_intelligence/asos_observation_store.csv \
+  --fetch-live \
+  --update-observation-store \
+  --include-nws-guidance \
+  --no-require-gate \
+  --out-dir outputs/weather_desk_schedule/2026-05-24
+```
+
+The layout is:
+
+```text
+outputs/weather_desk_schedule/2026-05-24/
+  weather_desk_schedule_manifest.json
+  04_local/nyc/weather_desk/...
+  07_local/nyc/weather_desk/...
+  10_local/la/weather_desk/...
+```
+
+Each city uses its own station-rule timezone to convert the local decision hour
+to UTC. For example, `07` local is `11:00Z` for New York during EDT and
+`14:00Z` for LA during PDT.
+
+Do not run all future slices at the 7 AM live decision point and interpret them
+as live evidence. For live operation, either run one job at each local decision
+hour, or run the scheduler later in backfill/evaluation mode once the target
+date's ASOS observations are available. The no-leak filter still uses each
+slice's `as_of_ts_utc`, so a post-day backfill can produce valid cross-slice
+diagnostics without pretending future observations were known live.

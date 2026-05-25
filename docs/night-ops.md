@@ -467,6 +467,44 @@ When running the combined refresh command, add `--forward-test-gate` to run this
 check automatically after settlement and record `forward_test_gate_json` in the
 manifest.
 
+## Weather Desk Schedule
+
+Use `src.weather_desk_refresh_cli` for the live morning packet. Use
+`src.weather_desk_schedule_cli` for intraday nowcast evaluation across local
+decision slices such as `04,07,10,13,15`.
+
+Important cadence rule: do not run all scheduled slices at the 7 AM live
+decision point and treat future local slices as real live evidence. Later slices
+would have future `as_of_ts_utc` values with only current observations available.
+For production evaluation, run the schedule command in backfill mode for the
+prior target date after ASOS observations are available, or run separate live
+jobs as each local decision hour arrives.
+
+Backfill/evaluation example:
+
+```bash
+python -m src.weather_desk_schedule_cli \
+  --model-run-dir data/runs/may2024_apr2026_10city_openmeteo_sources_2yr \
+  --cities nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston \
+  --date 2026-05-24 \
+  --decision-hours 04,07,10,13,15 \
+  --threshold-offsets=-6,-4,-2,0,2,4,6 \
+  --multi-source-mode single \
+  --station-rules config/station_rule_table.csv \
+  --market-type high \
+  --observation-store outputs/weather_desk/asos_observation_store.csv \
+  --fetch-live \
+  --update-observation-store \
+  --include-nws-guidance \
+  --no-require-gate \
+  --out-dir outputs/weather_desk_schedule/2026-05-24
+```
+
+The output layout is one weather-desk packet per local time and city:
+`outputs/weather_desk_schedule/<date>/<HH>_local/<city>/weather_desk/`. The
+schedule manifest records the city, local hour, timezone, UTC as-of timestamp,
+packet path, and exit code for each slice.
+
 ## Bridge health
 
 The Discord bridge runs in a WSL tmux session (`bridge`) and forwards
