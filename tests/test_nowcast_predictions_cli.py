@@ -41,7 +41,7 @@ def test_nowcast_predictions_cli_writes_expected_files(tmp_path: Path, capsys) -
                 "target_date": "2026-05-24",
                 "prediction_ts_utc": "2026-05-24T15:00:00+00:00",
                 "prediction_time_local": "2026-05-24T10:00:00-05:00",
-                "decision_time_label": "10",
+                "decision_time_label": "07",
                 "as_of_ts_utc": "2026-05-24T15:00:00+00:00",
                 "latest_obs_ts_utc": "2026-05-24T14:55:00+00:00",
                 "latest_temp_f": 72,
@@ -74,7 +74,7 @@ def test_nowcast_predictions_cli_writes_expected_files(tmp_path: Path, capsys) -
             "--nowcast-features",
             str(features),
             "--decision-time-label",
-            "10",
+            "fallback",
             "--out-dir",
             str(out_dir),
         ]
@@ -85,4 +85,6 @@ def test_nowcast_predictions_cli_writes_expected_files(tmp_path: Path, capsys) -
     assert (out_dir / "predictions_nowcast_manifest.json").exists()
     rows = pd.read_csv(out_dir / "predictions_nowcast.csv")
     assert rows["station_id"].tolist() == ["KMDW", "KMDW"]
+    raw_csv = (out_dir / "predictions_nowcast.csv").read_text(encoding="utf-8")
+    assert ",07,2026-05-24T15:00:00+00:00," in raw_csv
     assert "Wrote 2 nowcast prediction rows" in capsys.readouterr().out

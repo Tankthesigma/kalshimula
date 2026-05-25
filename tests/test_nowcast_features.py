@@ -171,6 +171,7 @@ def test_nowcast_features_use_only_observations_available_by_as_of() -> None:
     assert row["latest_temp_f"] == 72
     assert row["high_so_far_f"] == 72
     assert row["low_so_far_f"] == 70
+    assert row["as_of_ts_utc"] == "2026-05-24T14:30:00+00:00"
     assert row["latest_obs_ts_utc"] == "2026-05-24T14:00:00"
 
 

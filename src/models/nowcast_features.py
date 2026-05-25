@@ -289,7 +289,7 @@ def write_nowcast_features(
         "station_table_hash": station_table_hash(station_rules_path),
         "target_date": target_date.isoformat(),
         "cities": sorted({rule.city for rule in rules}),
-        "as_of_ts_utc": _as_utc_naive(as_of_ts).isoformat(),
+        "as_of_ts_utc": _utc_iso(as_of_ts),
         "decision_time_label": decision_time_label,
         "no_leak_max_observation_ts": _max_obs_ts(features),
         "row_counts": {
@@ -391,10 +391,10 @@ def _feature_row(
         "market_type": rule.market_type,
         "station_id": rule.settlement_station,
         "target_date": target_date.isoformat(),
-        "prediction_ts_utc": as_of_utc.isoformat(),
+        "prediction_ts_utc": _utc_iso(as_of_utc),
         "prediction_time_local": local.isoformat(),
         "decision_time_label": decision_time_label,
-        "as_of_ts_utc": as_of_utc.isoformat(),
+        "as_of_ts_utc": _utc_iso(as_of_utc),
         "latest_obs_ts_utc": latest_obs_ts.isoformat(),
         "latest_temp_f": latest_temp,
         "latest_dewpoint_f": dewpoint,
@@ -432,10 +432,10 @@ def _empty_feature_row(
         "market_type": rule.market_type,
         "station_id": rule.settlement_station,
         "target_date": target_date.isoformat(),
-        "prediction_ts_utc": as_of_utc.isoformat(),
+        "prediction_ts_utc": _utc_iso(as_of_utc),
         "prediction_time_local": local.isoformat(),
         "decision_time_label": decision_time_label,
-        "as_of_ts_utc": as_of_utc.isoformat(),
+        "as_of_ts_utc": _utc_iso(as_of_utc),
         "latest_obs_ts_utc": pd.NA,
         "latest_temp_f": pd.NA,
         "latest_dewpoint_f": pd.NA,
@@ -483,6 +483,12 @@ def _as_utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
     return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _utc_iso(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
 
 
 def _parse_utc_timestamp_series(values: pd.Series) -> pd.Series:
