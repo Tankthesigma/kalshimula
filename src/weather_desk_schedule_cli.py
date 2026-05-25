@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from src import predict, weather_desk_refresh_cli
 from src.config import load_stations
+from src.models.nbm_guidance import NOMADS_BLEND_BASE_URL
 from src.models.station_rules import DEFAULT_STATION_RULES_PATH, station_rule_by_key
 
 DEFAULT_DECISION_HOURS = "04,07,10,13,15"
@@ -69,6 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fetch-live", action="store_true")
     parser.add_argument("--include-nws-guidance", action="store_true")
     parser.add_argument("--include-nbm-guidance", action="store_true")
+    parser.add_argument(
+        "--nbm-base-url",
+        default=NOMADS_BLEND_BASE_URL,
+        help="NBM text product base URL passed through to weather_desk_refresh_cli.",
+    )
     parser.add_argument("--no-require-gate", action="store_true")
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
@@ -136,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                 refresh_args.append("--include-nws-guidance")
             if args.include_nbm_guidance:
                 refresh_args.append("--include-nbm-guidance")
+                refresh_args.extend(["--nbm-base-url", args.nbm_base_url])
             if args.no_require_gate:
                 refresh_args.append("--no-require-gate")
             code = weather_desk_refresh_cli.main(refresh_args)
@@ -163,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
         "decision_minute": decision_minute,
         "include_nws_guidance": bool(args.include_nws_guidance),
         "include_nbm_guidance": bool(args.include_nbm_guidance),
+        "nbm_base_url": args.nbm_base_url if args.include_nbm_guidance else None,
         "packet_layout": "one directory per decision_time_label/city",
         "runs": [asdict(run) for run in runs],
         "exit_code": 0 if all(run.exit_code == 0 for run in runs) else 1,

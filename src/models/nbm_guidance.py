@@ -25,6 +25,7 @@ from src.models.station_rules import (
 
 NBM_TEXT_SOURCE: Final = "nbm_text"
 NOMADS_BLEND_BASE_URL: Final = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod"
+AWS_BLEND_BASE_URL: Final = "https://noaa-nbm-grib2-pds.s3.amazonaws.com"
 NBH_PRODUCT: Final = "nbh"
 NBP_PRODUCT: Final = "nbp"
 NBM_USER_AGENT: Final = "kalshimula-model-longrun/nbm-guidance"

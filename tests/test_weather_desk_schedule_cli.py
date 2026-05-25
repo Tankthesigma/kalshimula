@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from src import weather_desk_schedule_cli
+from src.models.nbm_guidance import NOMADS_BLEND_BASE_URL
 from src.models.station_rules import DEFAULT_STATION_RULES_PATH
 
 
@@ -58,6 +59,7 @@ def test_weather_desk_schedule_cli_runs_city_local_time_slices(
     assert "--threshold-offsets=-2,0,2" in nyc_07
     assert "--include-nws-guidance" in nyc_07
     assert "--include-nbm-guidance" in nyc_07
+    assert nyc_07[nyc_07.index("--nbm-base-url") + 1] == NOMADS_BLEND_BASE_URL
     assert "--no-require-gate" in nyc_07
     assert la_07[la_07.index("--cities") + 1] == "la"
     assert la_07[la_07.index("--as-of") + 1] == "2026-05-24T14:20:00+00:00"
@@ -65,6 +67,7 @@ def test_weather_desk_schedule_cli_runs_city_local_time_slices(
     assert manifest["git_commit"] == "abc123"
     assert manifest["decision_time_labels"] == ["07", "10"]
     assert manifest["decision_minute"] == 20
+    assert manifest["nbm_base_url"] == NOMADS_BLEND_BASE_URL
     assert manifest["packet_layout"] == "one directory per decision_time_label/city"
     assert manifest["runs"][0]["local_minute"] == 20
     assert manifest["runs"][0]["out_dir"] == str(out_dir / "07_local" / "nyc")

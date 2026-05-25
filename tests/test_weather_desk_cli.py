@@ -45,10 +45,12 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
         station_rules_path,
         cities=None,
         market_types=None,
+        base_url=None,
     ):
         assert target.isoformat() == "2026-05-24"
         assert cities == ["chicago"]
         assert market_types == ["high"]
+        assert base_url is not None
         pd.DataFrame(
             [
                 {

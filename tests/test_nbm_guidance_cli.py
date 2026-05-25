@@ -15,10 +15,12 @@ def test_nbm_guidance_cli_writes_rows(tmp_path: Path, monkeypatch, capsys) -> No
         as_of_ts,
         station_rules_path,
         cities=None,
+        base_url=None,
     ):
         assert target.isoformat() == "2026-05-25"
         assert as_of_ts == "2026-05-25T18:00:00Z"
         assert cities == ["nyc"]
+        assert base_url is not None
         rows = pd.DataFrame(
             [
                 {

@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from src import predict
-from src.models.nbm_guidance import write_nbm_guidance_rows
+from src.models.nbm_guidance import NOMADS_BLEND_BASE_URL, write_nbm_guidance_rows
 from src.models.station_rules import DEFAULT_STATION_RULES_PATH
 
 
@@ -17,6 +17,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument("--cities", help="Optional comma-separated city slugs.")
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
+    parser.add_argument(
+        "--base-url",
+        default=NOMADS_BLEND_BASE_URL,
+        help="NBM text product base URL. Use NOAA AWS S3 for historical archive probes.",
+    )
     return parser
 
 
@@ -28,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         as_of_ts=args.as_of,
         station_rules_path=args.station_rules,
         cities=_split_csv(args.cities),
+        base_url=args.base_url,
     )
     print(f"Wrote {len(rows)} NBM guidance rows: {args.out}")
     return 0

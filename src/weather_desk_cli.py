@@ -20,7 +20,7 @@ from src.models.guidance import write_guidance_diagnostics
 from src.models.heat_regime_correction import write_heat_regime_correction
 from src.models.lone_outlier_correction import write_lone_outlier_correction
 from src.models.nbm_candidate import write_nbm_candidate_predictions
-from src.models.nbm_guidance import write_nbm_guidance_rows
+from src.models.nbm_guidance import NOMADS_BLEND_BASE_URL, write_nbm_guidance_rows
 from src.models.nowcast_adjustment import write_nowcast_adjusted_predictions
 from src.models.nowcast_features import write_nowcast_features
 from src.models.nowcast_predictions import write_nowcast_predictions
@@ -56,6 +56,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-nbm-guidance",
         action="store_true",
         help="Fetch public NBM text guidance and emit a candidate NBM packet.",
+    )
+    parser.add_argument(
+        "--nbm-base-url",
+        default=NOMADS_BLEND_BASE_URL,
+        help="NBM text product base URL. Use NOAA AWS S3 for historical archive probes.",
     )
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
@@ -167,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
             station_rules_path=args.station_rules,
             cities=cities,
             market_types=[args.market_type],
+            base_url=args.nbm_base_url,
         )
         nbm_guidance_result = write_guidance_diagnostics(
             input_path=nbm_guidance_path,
@@ -202,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         "market_type": args.market_type,
         "as_of_ts_utc": _parse_as_of(args.as_of).isoformat(),
         "decision_time_label": args.decision_time_label,
+        "nbm_base_url": args.nbm_base_url if args.include_nbm_guidance else None,
         "artifacts": {
             "nowcast_features": "nowcast_features/nowcast_features.csv",
             "predictions_nowcast_raw": "predictions_nowcast_raw/predictions_nowcast.csv",

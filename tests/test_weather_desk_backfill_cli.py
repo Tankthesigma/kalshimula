@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from src import weather_desk_backfill_cli
+from src.models.nbm_guidance import NOMADS_BLEND_BASE_URL
 
 
 def test_weather_desk_backfill_cli_runs_inclusive_date_range(
@@ -60,10 +61,12 @@ def test_weather_desk_backfill_cli_runs_inclusive_date_range(
     assert "--fetch-live" in calls[0]
     assert "--include-nws-guidance" in calls[0]
     assert "--include-nbm-guidance" in calls[0]
+    assert calls[0][calls[0].index("--nbm-base-url") + 1] == NOMADS_BLEND_BASE_URL
     manifest = json.loads((out_dir / "weather_desk_backfill_manifest.json").read_text())
     assert manifest["git_commit"] == "abc123"
     assert manifest["date_range"] == {"start": "2026-05-22", "end": "2026-05-24"}
     assert manifest["decision_minute"] == 20
+    assert manifest["nbm_base_url"] == NOMADS_BLEND_BASE_URL
     assert manifest["exit_code"] == 0
 
 

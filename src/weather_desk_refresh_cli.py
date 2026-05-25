@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src import predict, predict_batch_cli, weather_desk_cli
 from src.config import load_stations
+from src.models.nbm_guidance import NOMADS_BLEND_BASE_URL
 from src.models.station_rules import DEFAULT_STATION_RULES_PATH
 
 
@@ -37,6 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fetch-live", action="store_true")
     parser.add_argument("--include-nws-guidance", action="store_true")
     parser.add_argument("--include-nbm-guidance", action="store_true")
+    parser.add_argument(
+        "--nbm-base-url",
+        default=NOMADS_BLEND_BASE_URL,
+        help="NBM text product base URL passed through to weather_desk_cli.",
+    )
     parser.add_argument("--no-require-gate", action="store_true")
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
@@ -99,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         desk_args.append("--include-nws-guidance")
     if args.include_nbm_guidance:
         desk_args.append("--include-nbm-guidance")
+        desk_args.extend(["--nbm-base-url", args.nbm_base_url])
 
     desk_code = weather_desk_cli.main(desk_args) if prediction_path.exists() else 1
     manifest_path = out_dir / f"{args.prefix}_refresh_manifest.json"
@@ -113,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         "decision_time_label": args.decision_time_label,
         "include_nws_guidance": bool(args.include_nws_guidance),
         "include_nbm_guidance": bool(args.include_nbm_guidance),
+        "nbm_base_url": args.nbm_base_url if args.include_nbm_guidance else None,
         "exit_code": 0 if batch_code == 0 and desk_code == 0 else 1,
         "steps": {
             "predict_batch": {"exit_code": batch_code},
