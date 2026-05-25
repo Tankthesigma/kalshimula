@@ -38,6 +38,7 @@ city
 platform
 market_type
 settlement_station
+ghcnd_id
 station_name
 timezone
 lst_offset

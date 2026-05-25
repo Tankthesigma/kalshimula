@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from src.config import load_stations
 from src.models.station_rules import (
     load_station_rules,
     station_rule_by_key,
@@ -17,6 +18,8 @@ def test_load_station_rules_from_shared_table() -> None:
     assert chicago.platform == "kalshi"
     assert chicago.market_type == "high"
     assert chicago.lst_offset == -6
+    assert chicago.ghcnd_id == "GHCND:USW00014819"
+    assert chicago.ghcnd_bare == "USW00014819"
 
 
 def test_station_rule_by_key_normalizes_lookup() -> None:
@@ -29,7 +32,18 @@ def test_houston_high_uses_hobby_station() -> None:
     rule = station_rule_by_key(city="houston", platform="kalshi", market_type="high")
 
     assert rule.settlement_station == "KHOU"
+    assert rule.ghcnd_id == "GHCND:USW00012918"
     assert rule.rule_confidence == "high"
+
+
+def test_station_rule_ghcnd_ids_match_station_config() -> None:
+    stations = load_stations()
+    rules = load_station_rules()
+
+    for rule in rules:
+        station = stations[rule.city]
+        assert rule.settlement_station == station.nws_station
+        assert rule.ghcnd_id == station.ghcnd_id
 
 
 def test_low_station_rules_are_available_but_not_high_confidence() -> None:

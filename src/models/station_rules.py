@@ -19,6 +19,7 @@ STATION_RULE_COLUMNS = [
     "platform",
     "market_type",
     "settlement_station",
+    "ghcnd_id",
     "station_name",
     "timezone",
     "lst_offset",
@@ -46,6 +47,12 @@ class StationRule:
     settlement_source: str
     rule_confidence: str
     notes: str = ""
+    ghcnd_id: str = ""
+
+    @property
+    def ghcnd_bare(self) -> str:
+        """Station id without the ``GHCND:`` prefix for NCEI Access Data Service."""
+        return self.ghcnd_id.removeprefix("GHCND:")
 
 
 def load_station_rules(path: Path = DEFAULT_STATION_RULES_PATH) -> list[StationRule]:
@@ -96,6 +103,7 @@ def _station_rule_from_row(row: dict[str, str]) -> StationRule:
         platform=str(row["platform"]).strip().lower(),
         market_type=str(row["market_type"]).strip().lower(),
         settlement_station=normalize_station(row["settlement_station"]),
+        ghcnd_id=str(row["ghcnd_id"]).strip(),
         station_name=str(row["station_name"]).strip(),
         timezone=str(row["timezone"]).strip(),
         lst_offset=lst_offset,
