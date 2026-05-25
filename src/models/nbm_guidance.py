@@ -317,11 +317,40 @@ def _issue_ts(block: str) -> datetime | None:
 
 
 def _row_numbers(block: str, row_name: str) -> list[float]:
-    pattern = re.compile(rf"(?m)^\s*{re.escape(row_name)}\s+(.+)$")
+    pattern = re.compile(rf"(?m)^(\s*{re.escape(row_name)}\s+.+)$")
     match = pattern.search(block)
     if match is None:
         return []
-    return [float(value) for value in re.findall(r"-?\d+", match.group(1))]
+    line = match.group(1)
+    values = [float(value) for value in re.findall(r"-?\d+", line[len(row_name) :])]
+    if values and all(abs(value) < 200 for value in values):
+        return values
+
+    # NBM text bulletins use fixed-width 3-character numeric fields. Hot
+    # stations can pack three-digit temperatures without spaces:
+    # ``... 94 97100102103 ...``. Regex tokenization reads that as one giant
+    # number, so fall back to field-width parsing.
+    label_start = line.upper().find(row_name.upper())
+    label_end = label_start + len(row_name)
+    first_number = re.search(r"-?\d", line[label_end:])
+    if first_number is None:
+        return []
+    first_number_index = label_end + first_number.start()
+    first_field_is_three_digits = bool(
+        re.match(r"\d{3}", line[first_number_index : first_number_index + 3])
+    )
+    data_start = first_number_index if first_field_is_three_digits else max(label_end, first_number_index - 1)
+    fields = [line[index : index + 3] for index in range(data_start, len(line), 3)]
+    parsed = []
+    for field in fields:
+        text = field.strip()
+        if not text:
+            continue
+        try:
+            parsed.append(float(text))
+        except ValueError:
+            continue
+    return parsed
 
 
 def _parse_utc(value: datetime | str) -> datetime:
