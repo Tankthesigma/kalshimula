@@ -37,9 +37,47 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
         ).to_csv(output_path, index=False)
         return pd.read_csv(output_path)
 
+    def fake_write_nbm_guidance_rows(
+        *,
+        output_path,
+        target,
+        as_of_ts,
+        station_rules_path,
+        cities=None,
+        market_types=None,
+    ):
+        assert target.isoformat() == "2026-05-24"
+        assert cities == ["chicago"]
+        assert market_types == ["high"]
+        pd.DataFrame(
+            [
+                {
+                    "city": "chicago",
+                    "source": "nbm_text",
+                    "station_id": "KMDW",
+                    "market_type": "high",
+                    "target_date": "2026-05-24",
+                    "issue_ts_utc": "2026-05-24T13:00:00+00:00",
+                    "valid_ts_utc": "2026-05-25T00:00:00+00:00",
+                    "available_ts_utc": "2026-05-24T13:00:00+00:00",
+                    "guidance_point_f": 73,
+                    "guidance_q10_f": 70,
+                    "guidance_q50_f": 73,
+                    "guidance_q90_f": 76,
+                    "actual_high_f": None,
+                    "raw_payload_hash": "nbm",
+                }
+            ]
+        ).to_csv(output_path, index=False)
+        return pd.read_csv(output_path)
+
     monkeypatch.setattr(
         "src.weather_desk_cli.write_nws_guidance_rows",
         fake_write_nws_guidance_rows,
+    )
+    monkeypatch.setattr(
+        "src.weather_desk_cli.write_nbm_guidance_rows",
+        fake_write_nbm_guidance_rows,
     )
     predictions.write_text(
         json.dumps(
@@ -96,6 +134,7 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
             "--observations-csv",
             str(observations),
             "--include-nws-guidance",
+            "--include-nbm-guidance",
             "--out-dir",
             str(out_dir),
         ]
@@ -122,6 +161,9 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     assert (
         out_dir / "predictions_nowcast_lone_outlier" / "lone_outlier_corrections.csv"
     ).exists()
+    assert (out_dir / "guidance" / "nbm_guidance_rows.csv").exists()
+    assert (out_dir / "nbm_guidance_diagnostics" / "guidance_report.md").exists()
+    assert (out_dir / "predictions_nowcast_nbm" / "predictions_nowcast.csv").exists()
     comparison_path = out_dir / "guidance" / "model_vs_nws_guidance.csv"
     assert comparison_path.exists()
     assert (out_dir / "weather_desk_manifest.json").exists()
@@ -141,6 +183,8 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     analyst = pd.read_csv(out_dir / "weather_analyst" / "weather_analyst_packet.csv")
     assert analyst["desk_priority"].tolist() == ["review"]
     assert "nws_divergent" in analyst.iloc[0]["risk_flags"]
+    nbm = pd.read_csv(out_dir / "predictions_nowcast_nbm" / "predictions_nowcast.csv")
+    assert nbm["source_policy"].unique().tolist() == ["nbm_text"]
     assert "Wrote weather desk packet" in capsys.readouterr().out
 
 

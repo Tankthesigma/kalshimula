@@ -40,6 +40,7 @@ def test_weather_desk_schedule_cli_runs_city_local_time_slices(
             "--observation-store",
             str(tmp_path / "obs.csv"),
             "--include-nws-guidance",
+            "--include-nbm-guidance",
             "--no-require-gate",
             "--out-dir",
             str(out_dir),
@@ -56,6 +57,7 @@ def test_weather_desk_schedule_cli_runs_city_local_time_slices(
     assert nyc_07[nyc_07.index("--out-dir") + 1] == str(out_dir / "07_local" / "nyc")
     assert "--threshold-offsets=-2,0,2" in nyc_07
     assert "--include-nws-guidance" in nyc_07
+    assert "--include-nbm-guidance" in nyc_07
     assert "--no-require-gate" in nyc_07
     assert la_07[la_07.index("--cities") + 1] == "la"
     assert la_07[la_07.index("--as-of") + 1] == "2026-05-24T14:20:00+00:00"

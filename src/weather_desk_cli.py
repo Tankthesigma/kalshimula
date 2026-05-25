@@ -19,6 +19,8 @@ import pandas as pd
 from src.models.guidance import write_guidance_diagnostics
 from src.models.heat_regime_correction import write_heat_regime_correction
 from src.models.lone_outlier_correction import write_lone_outlier_correction
+from src.models.nbm_candidate import write_nbm_candidate_predictions
+from src.models.nbm_guidance import write_nbm_guidance_rows
 from src.models.nowcast_adjustment import write_nowcast_adjusted_predictions
 from src.models.nowcast_features import write_nowcast_features
 from src.models.nowcast_predictions import write_nowcast_predictions
@@ -49,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-nws-guidance",
         action="store_true",
         help="Fetch public NWS forecast guidance and compare it to the model packet.",
+    )
+    parser.add_argument(
+        "--include-nbm-guidance",
+        action="store_true",
+        help="Fetch public NBM text guidance and emit a candidate NBM packet.",
     )
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
@@ -109,6 +116,9 @@ def main(argv: list[str] | None = None) -> int:
     guidance_latest = pd.DataFrame()
     guidance_comparison = pd.DataFrame()
     lone_outlier_corrections = pd.DataFrame()
+    nbm_guidance_rows = pd.DataFrame()
+    nbm_latest = pd.DataFrame()
+    nbm_result = None
     if args.include_nws_guidance:
         guidance_path = out_dir / "guidance" / "nws_guidance_rows.csv"
         guidance_path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,6 +157,32 @@ def main(argv: list[str] | None = None) -> int:
             git_commit=git_commit,
         )
         lone_outlier_corrections = lone_outlier_result.corrections
+    if args.include_nbm_guidance:
+        nbm_guidance_path = out_dir / "guidance" / "nbm_guidance_rows.csv"
+        nbm_guidance_path.parent.mkdir(parents=True, exist_ok=True)
+        nbm_guidance_rows = write_nbm_guidance_rows(
+            output_path=nbm_guidance_path,
+            target=date.fromisoformat(args.target_date),
+            as_of_ts=_parse_as_of(args.as_of),
+            station_rules_path=args.station_rules,
+            cities=cities,
+            market_types=[args.market_type],
+        )
+        nbm_guidance_result = write_guidance_diagnostics(
+            input_path=nbm_guidance_path,
+            output_dir=out_dir / "nbm_guidance_diagnostics",
+            as_of_ts=args.as_of,
+            target_date=args.target_date,
+            git_commit=git_commit,
+        )
+        nbm_latest = nbm_guidance_result.latest
+        nbm_result = write_nbm_candidate_predictions(
+            raw_predictions_path=out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
+            guidance_path=nbm_guidance_path,
+            output_dir=out_dir / "predictions_nowcast_nbm",
+            as_of_ts=args.as_of,
+            git_commit=git_commit,
+        )
     analyst_result = write_weather_analyst_packet(
         nowcast_summary_path=out_dir / "nowcast_report" / "nowcast_report_summary.csv",
         guidance_comparison_path=(
@@ -194,6 +230,17 @@ def main(argv: list[str] | None = None) -> int:
                 if args.include_nws_guidance
                 else {}
             ),
+            **(
+                {
+                    "nbm_guidance": "guidance/nbm_guidance_rows.csv",
+                    "nbm_guidance_diagnostics": "nbm_guidance_diagnostics/guidance_report.md",
+                    "predictions_nowcast_nbm": (
+                        "predictions_nowcast_nbm/predictions_nowcast.csv"
+                    ),
+                }
+                if args.include_nbm_guidance
+                else {}
+            ),
         },
         "row_counts": {
             "observations": int(len(feature_result.observations)),
@@ -207,6 +254,9 @@ def main(argv: list[str] | None = None) -> int:
             "nws_latest_rows": int(len(guidance_latest)),
             "model_vs_nws_guidance_rows": int(len(guidance_comparison)),
             "lone_outlier_corrections": int(len(lone_outlier_corrections)),
+            "nbm_guidance_rows": int(len(nbm_guidance_rows)),
+            "nbm_latest_rows": int(len(nbm_latest)),
+            "nbm_prediction_rows": int(len(nbm_result.predictions)) if nbm_result else 0,
             "weather_analyst_rows": int(len(analyst_result.rows)),
         },
         "notes": [
@@ -214,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
             "Raw and adjusted nowcast predictions are separate model modes; adjusted is a weather-aware candidate, not a promoted default.",
             "Lone-outlier correction is a candidate packet only; it is not a promoted default.",
             "Heat-regime correction is a candidate packet only; it is not a promoted default.",
+            "NBM packet is a candidate mode only; it is not a promoted default.",
             "Bobby/private audit may consume predictions_nowcast_adjusted to validate paper PnL before any operational promotion.",
         ],
     }

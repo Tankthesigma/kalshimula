@@ -42,6 +42,7 @@ def test_weather_desk_backfill_cli_runs_inclusive_date_range(
             "--update-observation-store",
             "--fetch-live",
             "--include-nws-guidance",
+            "--include-nbm-guidance",
             "--no-require-gate",
             "--out-dir",
             str(out_dir),
@@ -58,6 +59,7 @@ def test_weather_desk_backfill_cli_runs_inclusive_date_range(
     assert "--update-observation-store" in calls[0]
     assert "--fetch-live" in calls[0]
     assert "--include-nws-guidance" in calls[0]
+    assert "--include-nbm-guidance" in calls[0]
     manifest = json.loads((out_dir / "weather_desk_backfill_manifest.json").read_text())
     assert manifest["git_commit"] == "abc123"
     assert manifest["date_range"] == {"start": "2026-05-22", "end": "2026-05-24"}

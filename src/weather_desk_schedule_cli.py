@@ -68,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--update-observation-store", action="store_true")
     parser.add_argument("--fetch-live", action="store_true")
     parser.add_argument("--include-nws-guidance", action="store_true")
+    parser.add_argument("--include-nbm-guidance", action="store_true")
     parser.add_argument("--no-require-gate", action="store_true")
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
@@ -133,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
                 refresh_args.append("--fetch-live")
             if args.include_nws_guidance:
                 refresh_args.append("--include-nws-guidance")
+            if args.include_nbm_guidance:
+                refresh_args.append("--include-nbm-guidance")
             if args.no_require_gate:
                 refresh_args.append("--no-require-gate")
             code = weather_desk_refresh_cli.main(refresh_args)
@@ -158,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
         "market_type": args.market_type,
         "decision_time_labels": [label for label, _ in labels],
         "decision_minute": decision_minute,
+        "include_nws_guidance": bool(args.include_nws_guidance),
+        "include_nbm_guidance": bool(args.include_nbm_guidance),
         "packet_layout": "one directory per decision_time_label/city",
         "runs": [asdict(run) for run in runs],
         "exit_code": 0 if all(run.exit_code == 0 for run in runs) else 1,

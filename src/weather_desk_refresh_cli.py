@@ -36,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--update-observation-store", action="store_true")
     parser.add_argument("--fetch-live", action="store_true")
     parser.add_argument("--include-nws-guidance", action="store_true")
+    parser.add_argument("--include-nbm-guidance", action="store_true")
     parser.add_argument("--no-require-gate", action="store_true")
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
@@ -96,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         desk_args.append("--fetch-live")
     if args.include_nws_guidance:
         desk_args.append("--include-nws-guidance")
+    if args.include_nbm_guidance:
+        desk_args.append("--include-nbm-guidance")
 
     desk_code = weather_desk_cli.main(desk_args) if prediction_path.exists() else 1
     manifest_path = out_dir / f"{args.prefix}_refresh_manifest.json"
@@ -109,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         "market_type": args.market_type,
         "decision_time_label": args.decision_time_label,
         "include_nws_guidance": bool(args.include_nws_guidance),
+        "include_nbm_guidance": bool(args.include_nbm_guidance),
         "exit_code": 0 if batch_code == 0 and desk_code == 0 else 1,
         "steps": {
             "predict_batch": {"exit_code": batch_code},

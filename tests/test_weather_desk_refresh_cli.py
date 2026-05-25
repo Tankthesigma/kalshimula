@@ -49,6 +49,7 @@ def test_weather_desk_refresh_cli_runs_predictions_then_desk(monkeypatch, tmp_pa
             "--decision-time-label",
             "morning",
             "--include-nws-guidance",
+            "--include-nbm-guidance",
             "--fetch-live",
             "--out-dir",
             str(tmp_path / "out"),
@@ -101,6 +102,7 @@ def test_weather_desk_refresh_cli_runs_predictions_then_desk(monkeypatch, tmp_pa
                 str(desk_dir),
                 "--fetch-live",
                 "--include-nws-guidance",
+                "--include-nbm-guidance",
             ],
         ),
     ]
@@ -108,6 +110,7 @@ def test_weather_desk_refresh_cli_runs_predictions_then_desk(monkeypatch, tmp_pa
     assert manifest["exit_code"] == 0
     assert manifest["steps"]["predict_batch"]["exit_code"] == 0
     assert manifest["steps"]["weather_desk"]["exit_code"] == 0
+    assert manifest["include_nbm_guidance"] is True
     assert manifest["artifacts"]["weather_desk_dir"] == str(desk_dir)
     assert "Wrote weather desk refresh manifest" in capsys.readouterr().out
 

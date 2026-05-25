@@ -54,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--update-observation-store", action="store_true")
     parser.add_argument("--fetch-live", action="store_true")
     parser.add_argument("--include-nws-guidance", action="store_true")
+    parser.add_argument("--include-nbm-guidance", action="store_true")
     parser.add_argument("--no-require-gate", action="store_true")
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     parser.add_argument(
@@ -111,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
             schedule_args.append("--fetch-live")
         if args.include_nws_guidance:
             schedule_args.append("--include-nws-guidance")
+        if args.include_nbm_guidance:
+            schedule_args.append("--include-nbm-guidance")
         if args.no_require_gate:
             schedule_args.append("--no-require-gate")
 
@@ -135,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
         "market_type": args.market_type,
         "decision_hours": args.decision_hours,
         "decision_minute": args.decision_minute,
+        "include_nws_guidance": bool(args.include_nws_guidance),
+        "include_nbm_guidance": bool(args.include_nbm_guidance),
         "continue_on_error": bool(args.continue_on_error),
         "packet_layout": "one schedule directory per date",
         "runs": [asdict(run) for run in runs],
