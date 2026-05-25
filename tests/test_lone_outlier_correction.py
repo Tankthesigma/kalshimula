@@ -94,6 +94,45 @@ def _guidance(nws_point: float = 96.0) -> pd.DataFrame:
     )
 
 
+def _guidance_with_future_row() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "city": "phoenix",
+                "source": "nws_forecast",
+                "station_id": "KPHX",
+                "market_type": "high",
+                "target_date": "2026-05-24",
+                "issue_ts_utc": "2026-05-24T10:00:00+00:00",
+                "valid_ts_utc": "2026-05-25T00:00:00+00:00",
+                "available_ts_utc": "2026-05-24T11:00:00+00:00",
+                "guidance_point_f": 100.0,
+                "guidance_q10_f": None,
+                "guidance_q50_f": 100.0,
+                "guidance_q90_f": None,
+                "actual_high_f": None,
+                "raw_payload_hash": "old",
+            },
+            {
+                "city": "phoenix",
+                "source": "nws_forecast",
+                "station_id": "KPHX",
+                "market_type": "high",
+                "target_date": "2026-05-24",
+                "issue_ts_utc": "2026-05-24T15:00:00+00:00",
+                "valid_ts_utc": "2026-05-25T00:00:00+00:00",
+                "available_ts_utc": "2026-05-24T15:00:00+00:00",
+                "guidance_point_f": 96.0,
+                "guidance_q10_f": None,
+                "guidance_q50_f": 96.0,
+                "guidance_q90_f": None,
+                "actual_high_f": None,
+                "raw_payload_hash": "future",
+            },
+        ]
+    )
+
+
 def test_lone_outlier_correction_blends_gfs_toward_consensus_and_nws() -> None:
     corrected, corrections = apply_lone_outlier_correction(
         _predictions(),
@@ -114,6 +153,19 @@ def test_lone_outlier_correction_blends_gfs_toward_consensus_and_nws() -> None:
     assert "lone_outlier_corrected" in corrected.iloc[0]["weather_reason_codes"]
     assert corrected["calibrated_probability"].sum() == pytest.approx(1.0)
     assert corrected["bin_lower_f"].tolist() == [97, 98, 99]
+
+
+def test_lone_outlier_correction_ignores_future_guidance_rows() -> None:
+    corrected, corrections = apply_lone_outlier_correction(
+        _predictions(),
+        prediction_payload=_payload(consensus_point=96.0),
+        guidance_rows=_guidance_with_future_row(),
+        threshold_f=3.0,
+        blend_weight=0.5,
+    )
+
+    assert corrections.empty
+    assert corrected["bin_lower_f"].tolist() == [99, 100, 101]
 
 
 def test_lone_outlier_correction_requires_same_side_outlier() -> None:

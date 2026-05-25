@@ -90,7 +90,7 @@ def apply_lone_outlier_correction(
     if not 0 <= blend_weight <= 1:
         raise ValueError("blend_weight must be between 0 and 1")
     consensus = _consensus_points(prediction_payload)
-    guidance = _guidance_points(guidance_rows)
+    guidance = _guidance_records(guidance_rows)
     corrected_rows: list[dict[str, Any]] = []
     corrections: list[dict[str, Any]] = []
     group_cols = [
@@ -107,7 +107,15 @@ def apply_lone_outlier_correction(
         source_policy = str(group.iloc[0].get("source_policy") or "")
         original_point = _float_or_none(group.iloc[0].get("point_f"))
         consensus_point = consensus.get((key.city, key.market_type, key.target_date))
-        nws_point = guidance.get((key.city, key.market_type, key.station_id, key.target_date))
+        as_of_ts = _parse_utc(group.iloc[0].get("as_of_ts_utc"))
+        nws_point = _latest_guidance_point(
+            guidance,
+            city=key.city,
+            market_type=key.market_type,
+            station_id=key.station_id,
+            target_date=key.target_date,
+            as_of_ts=as_of_ts,
+        )
         decision = _correction_decision(
             source_policy=source_policy,
             original_point=original_point,
@@ -240,8 +248,8 @@ def _consensus_points(payload: dict[str, Any]) -> dict[tuple[str, str, str], flo
     return output
 
 
-def _guidance_points(rows: pd.DataFrame) -> dict[tuple[str, str, str, str], float]:
-    output = {}
+def _guidance_records(rows: pd.DataFrame) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
     if rows.empty:
         return output
     clean = rows.sort_values("available_ts_utc")
@@ -249,15 +257,45 @@ def _guidance_points(rows: pd.DataFrame) -> dict[tuple[str, str, str, str], floa
         point = _float_or_none(row.get("guidance_point_f"))
         if point is None:
             continue
-        output[
-            (
-                str(row.get("city") or "").strip().lower(),
-                str(row.get("market_type") or "").strip().lower(),
-                str(row.get("station_id") or "").strip().upper(),
-                str(row.get("target_date") or ""),
-            )
-        ] = point
+        available = _parse_utc(row.get("available_ts_utc"))
+        if available is None:
+            continue
+        output.append(
+            {
+                "city": str(row.get("city") or "").strip().lower(),
+                "market_type": str(row.get("market_type") or "").strip().lower(),
+                "station_id": str(row.get("station_id") or "").strip().upper(),
+                "target_date": str(row.get("target_date") or ""),
+                "available_ts": available,
+                "point": point,
+            }
+        )
     return output
+
+
+def _latest_guidance_point(
+    rows: list[dict[str, Any]],
+    *,
+    city: str,
+    market_type: str,
+    station_id: str,
+    target_date: str,
+    as_of_ts: datetime | None,
+) -> float | None:
+    if as_of_ts is None:
+        return None
+    candidates = [
+        row
+        for row in rows
+        if row["city"] == city
+        and row["market_type"] == market_type
+        and row["station_id"] == station_id
+        and row["target_date"] == target_date
+        and row["available_ts"] <= as_of_ts
+    ]
+    if not candidates:
+        return None
+    return float(max(candidates, key=lambda row: row["available_ts"])["point"])
 
 
 def _pmf_from_group(group: pd.DataFrame) -> dict[int, float]:
@@ -326,6 +364,18 @@ def _float_or_none(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_utc(value: Any) -> datetime | None:
+    if value is None or pd.isna(value):
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _sign(value: float) -> int:
