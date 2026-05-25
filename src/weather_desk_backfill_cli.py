@@ -149,12 +149,14 @@ def main(argv: list[str] | None = None) -> int:
         "include_nbm_guidance": bool(args.include_nbm_guidance),
         "nbm_base_url": args.nbm_base_url if args.include_nbm_guidance else None,
         "continue_on_error": bool(args.continue_on_error),
+        "packet_completeness_required": True,
         "packet_layout": "one schedule directory per date",
         "runs": [asdict(run) for run in runs],
         "exit_code": exit_code,
         "notes": [
             "Mainline weather-only backfill. No market prices, order books, private PnL labels, or trade instructions.",
             "Delegates each date to weather_desk_schedule_cli, preserving per-city local as-of cutoffs.",
+            "A date fails if any city/slice packet is missing required non-empty predictions_nowcast_* CSVs.",
         ],
     }
     args.out_dir.mkdir(parents=True, exist_ok=True)

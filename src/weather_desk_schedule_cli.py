@@ -9,6 +9,7 @@ time zones. This command writes one packet directory per city and local slice.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import subprocess
 import sys
@@ -37,6 +38,8 @@ class ScheduledRun:
     as_of_ts_utc: str
     out_dir: str
     exit_code: int
+    packet_complete: bool
+    packet_errors: list[str]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -145,7 +148,17 @@ def main(argv: list[str] | None = None) -> int:
                 refresh_args.extend(["--nbm-base-url", args.nbm_base_url])
             if args.no_require_gate:
                 refresh_args.append("--no-require-gate")
-            code = weather_desk_refresh_cli.main(refresh_args)
+            refresh_code = weather_desk_refresh_cli.main(refresh_args)
+            packet_errors = (
+                _packet_completeness_errors(
+                    packet_dir / args.prefix,
+                    include_nws_guidance=args.include_nws_guidance,
+                    include_nbm_guidance=args.include_nbm_guidance,
+                )
+                if refresh_code == 0
+                else []
+            )
+            code = 1 if refresh_code != 0 or packet_errors else 0
             runs.append(
                 ScheduledRun(
                     city=city,
@@ -157,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
                     as_of_ts_utc=as_of_utc,
                     out_dir=str(packet_dir),
                     exit_code=code,
+                    packet_complete=not packet_errors and refresh_code == 0,
+                    packet_errors=packet_errors,
                 )
             )
     manifest = {
@@ -171,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         "include_nws_guidance": bool(args.include_nws_guidance),
         "include_nbm_guidance": bool(args.include_nbm_guidance),
         "nbm_base_url": args.nbm_base_url if args.include_nbm_guidance else None,
+        "packet_completeness_required": True,
         "packet_layout": "one directory per decision_time_label/city",
         "runs": [asdict(run) for run in runs],
         "exit_code": 0 if all(run.exit_code == 0 for run in runs) else 1,
@@ -213,6 +229,40 @@ def _parse_decision_minute(value: int) -> int:
     if not 0 <= value <= 59:
         raise ValueError(f"decision minute must be 0-59: {value}")
     return value
+
+
+def _packet_completeness_errors(
+    desk_dir: Path,
+    *,
+    include_nws_guidance: bool,
+    include_nbm_guidance: bool,
+) -> list[str]:
+    required_modes = ["raw", "adjusted", "heat_corrected"]
+    if include_nws_guidance:
+        required_modes.append("lone_outlier")
+    if include_nbm_guidance:
+        required_modes.append("nbm")
+
+    errors = []
+    for mode in required_modes:
+        path = desk_dir / f"predictions_nowcast_{mode}" / "predictions_nowcast.csv"
+        if not path.exists():
+            errors.append(f"missing:{path.relative_to(desk_dir).as_posix()}")
+            continue
+        row_count = _csv_data_row_count(path)
+        if row_count <= 0:
+            errors.append(f"empty:{path.relative_to(desk_dir).as_posix()}")
+    return errors
+
+
+def _csv_data_row_count(path: Path) -> int:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.reader(handle)
+        try:
+            next(reader)
+        except StopIteration:
+            return 0
+        return sum(1 for _ in reader)
 
 
 def _git_commit() -> str | None:
