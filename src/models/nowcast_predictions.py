@@ -240,7 +240,7 @@ def _rows_for_prediction(
 def _read_features(path: Path | None) -> pd.DataFrame | None:
     if path is None:
         return None
-    features = pd.read_csv(path)
+    features = pd.read_csv(path, dtype={"decision_time_label": "string"})
     missing = set(NOWCAST_FEATURE_COLUMNS) - set(features.columns)
     if missing:
         raise ValueError(f"nowcast features missing columns: {sorted(missing)}")
