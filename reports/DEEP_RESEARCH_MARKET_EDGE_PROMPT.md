@@ -6,6 +6,8 @@ The goal is not to produce a generic weather forecasting memo. The goal is to an
 
 If the evidence says these markets are efficient and there is no durable small-trader edge after costs, say that plainly. Do not manufacture edges. A negative result is acceptable.
 
+Depth over breadth: go deep on the 2-3 most plausible small-trader edges rather than listing a catalog of shallow possibilities.
+
 ## Current Context
 
 We already have:
@@ -33,6 +35,8 @@ For every claimed mispricing, quantify all of the following in cents:
 - Net expected value after all costs.
 - Sensitivity at low, medium, and high trade size.
 
+Use the actual Kalshi fee formula, not a flat percentage: trading fee = ceil(0.07 x contracts x price x (1 - price)) rounded up to the cent. The fee is largest near 50c and near zero close to 1c or 99c, so a near-coinflip edge must clear the highest fee burden. Include maker rebate treatment where applicable.
+
 If you cannot estimate magnitude, label the idea as an unverified hypothesis or discard it. Do not rank qualitative edges.
 
 For the single strongest claimed edge, provide a worked example:
@@ -59,7 +63,7 @@ For each candidate edge, estimate realistic deployable capacity:
 
 Flag any positive-EV edge as IMMATERIAL if capacity is too small to matter. A positive edge that only supports 1-2 contracts is real but not operationally important unless it scales across many independent markets.
 
-Choose and justify materiality thresholds for a small directional trader, such as minimum contracts/day, minimum expected dollars/day, and minimum expected dollars/season after all costs.
+Choose and justify materiality thresholds for a small directional trader with an approximate bankroll of $1k-$10k, such as minimum contracts/day, minimum expected dollars/day, and minimum expected dollars/season after all costs.
 
 ### 3. Recent Evidence And Persistence
 
@@ -100,8 +104,6 @@ Compare decision windows:
 - 3pm local.
 - Pre-sunrise lows.
 - Late-day lows.
-
-Depth over breadth: go deep on the 2-3 most plausible small-trader edges rather than listing 15 vague biases.
 
 ### 5. Edge Mechanism Taxonomy
 
