@@ -52,6 +52,8 @@ NOWCAST_FEATURE_COLUMNS = [
     "latest_dewpoint_f",
     "high_so_far_f",
     "low_so_far_f",
+    "latest_minus_high_so_far_f",
+    "latest_minus_low_so_far_f",
     "temp_1h_slope_f",
     "temp_3h_slope_f",
     "dewpoint_depression_f",
@@ -438,6 +440,16 @@ def _feature_row(
         if not pd.isna(latest_temp) and not pd.isna(dewpoint)
         else pd.NA
     )
+    latest_minus_high = (
+        latest_temp - high_so_far
+        if not pd.isna(latest_temp) and not pd.isna(high_so_far)
+        else pd.NA
+    )
+    latest_minus_low = (
+        latest_temp - low_so_far
+        if not pd.isna(latest_temp) and not pd.isna(low_so_far)
+        else pd.NA
+    )
     local = _local_time(as_of_utc, rule)
     solar = _solar_features(local)
     remaining_heating = _remaining_heating(local, one_hour_slope)
@@ -466,6 +478,8 @@ def _feature_row(
         "latest_dewpoint_f": dewpoint,
         "high_so_far_f": high_so_far,
         "low_so_far_f": low_so_far,
+        "latest_minus_high_so_far_f": latest_minus_high,
+        "latest_minus_low_so_far_f": latest_minus_low,
         "temp_1h_slope_f": one_hour_slope,
         "temp_3h_slope_f": three_hour_slope,
         "dewpoint_depression_f": dewpoint_depression,
@@ -507,6 +521,8 @@ def _empty_feature_row(
         "latest_dewpoint_f": pd.NA,
         "high_so_far_f": pd.NA,
         "low_so_far_f": pd.NA,
+        "latest_minus_high_so_far_f": pd.NA,
+        "latest_minus_low_so_far_f": pd.NA,
         "temp_1h_slope_f": pd.NA,
         "temp_3h_slope_f": pd.NA,
         "dewpoint_depression_f": pd.NA,

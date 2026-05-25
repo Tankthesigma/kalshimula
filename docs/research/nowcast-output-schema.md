@@ -227,6 +227,21 @@ available row. If a live station fetch is rate-limited or fails, the feature
 builder continues from cached rows and marks missing/stale stations with
 weather-only veto reasons.
 
+The feature file includes two weather-only progress diagnostics:
+
+```text
+latest_minus_high_so_far_f
+latest_minus_low_so_far_f
+```
+
+For high markets, `latest_minus_high_so_far_f` is normally `0` at a new
+intraday high and negative after temperatures have fallen from the day's high
+so far. For low markets, `latest_minus_low_so_far_f` is normally `0` at a new
+intraday low and positive after temperatures have risen from the day's low so
+far. These fields help audit whether the adjusted nowcast is firing while the
+day is still far from a realized extreme. They are weather-only and do not use
+market data.
+
 High markets are the default. Low markets use the same schema and can be built
 explicitly:
 

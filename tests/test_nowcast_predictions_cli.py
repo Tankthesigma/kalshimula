@@ -48,6 +48,8 @@ def test_nowcast_predictions_cli_writes_expected_files(tmp_path: Path, capsys) -
                 "latest_dewpoint_f": 55,
                 "high_so_far_f": 72,
                 "low_so_far_f": 60,
+                "latest_minus_high_so_far_f": 0,
+                "latest_minus_low_so_far_f": 12,
                 "temp_1h_slope_f": 1,
                 "temp_3h_slope_f": 3,
                 "dewpoint_depression_f": 17,

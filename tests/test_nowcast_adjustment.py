@@ -117,6 +117,10 @@ def _features(high_so_far: float | None) -> pd.DataFrame:
                 "latest_dewpoint_f": 55,
                 "high_so_far_f": high_so_far,
                 "low_so_far_f": 60,
+                "latest_minus_high_so_far_f": 0,
+                "latest_minus_low_so_far_f": (
+                    None if high_so_far is None else high_so_far - 60
+                ),
                 "temp_1h_slope_f": 1,
                 "temp_3h_slope_f": 3,
                 "dewpoint_depression_f": 17,
