@@ -202,6 +202,18 @@ class TestDailyHighFromHourly:
         ]
         assert daily_high_from_hourly(obs, TARGET) == pytest.approx(30.0)
 
+    def test_can_filter_by_local_standard_settlement_day(self):
+        obs = [
+            _obs(datetime(2025, 1, 2, 3, 0), 99.0),  # Jan 1 at UTC-5.
+            _obs(datetime(2025, 1, 2, 18, 0), 30.0),
+            _obs(datetime(2025, 1, 3, 3, 0), 40.0),  # Jan 2 at UTC-5.
+        ]
+        assert daily_high_from_hourly(
+            obs,
+            TARGET,
+            lst_offset_hours=-5,
+        ) == pytest.approx(40.0)
+
     def test_ignores_none_temps(self):
         obs = [
             _obs(datetime(2025, 1, 2, 12, 0), None),

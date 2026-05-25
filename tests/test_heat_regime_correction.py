@@ -11,9 +11,15 @@ from src.models.heat_regime_correction import (
 )
 
 
-def _predictions(city: str = "phoenix", point: float = 100.0) -> pd.DataFrame:
+def _predictions(
+    city: str = "phoenix",
+    point: float = 100.0,
+    *,
+    raw_center: int | None = None,
+) -> pd.DataFrame:
     rows = []
-    for degree, probability in [(99, 0.25), (100, 0.5), (101, 0.25)]:
+    center = raw_center if raw_center is not None else round(point)
+    for degree, probability in [(center - 1, 0.25), (center, 0.5), (center + 1, 0.25)]:
         rows.append(
             {
                 "model_version": "mainline-nowcast-v1",
@@ -80,21 +86,23 @@ def test_heat_regime_correction_does_not_fire_below_city_threshold() -> None:
 
 
 def test_heat_regime_correction_fires_for_phoenix_mild_hot_regime() -> None:
-    corrected, corrections = apply_heat_regime_correction(_predictions(point=95.7))
+    corrected, corrections = apply_heat_regime_correction(
+        _predictions(point=95.7, raw_center=94),
+    )
 
     assert len(corrections) == 1
     assert corrections.iloc[0]["warm_threshold_f"] == 95.0
-    assert corrected["point_f"].iloc[0] == pytest.approx(97.6)
+    assert corrected["point_f"].iloc[0] == pytest.approx(95.9)
 
 
 def test_heat_regime_correction_fires_for_miami_warm_regime() -> None:
     corrected, corrections = apply_heat_regime_correction(
-        _predictions(city="miami", point=86.3),
+        _predictions(city="miami", point=86.3, raw_center=85),
     )
 
     assert len(corrections) == 1
     assert corrections.iloc[0]["warm_threshold_f"] == 85.0
-    assert corrected["point_f"].iloc[0] == pytest.approx(87.1)
+    assert corrected["point_f"].iloc[0] == pytest.approx(85.8)
 
 
 def test_heat_regime_correction_does_not_apply_houston_old_station_bias() -> None:
@@ -117,6 +125,19 @@ def test_heat_regime_correction_can_apply_negative_city_bias() -> None:
     assert correction["corrected_point_f"] == pytest.approx(79.9)
     assert corrected["point_f"].nunique() == 1
     assert corrected["point_f"].iloc[0] == pytest.approx(79.9)
+
+
+def test_heat_regime_correction_subtracts_existing_bias_shift() -> None:
+    corrected, corrections = apply_heat_regime_correction(
+        _predictions(city="phoenix", point=100.0, raw_center=98),
+    )
+
+    assert len(corrections) == 1
+    correction = corrections.iloc[0]
+    assert correction["raw_heat_residual_f"] == pytest.approx(1.9)
+    assert correction["existing_bias_shift_f"] == pytest.approx(2.0)
+    assert correction["correction_f"] == pytest.approx(-0.1)
+    assert corrected["point_f"].iloc[0] == pytest.approx(99.9)
 
 
 def test_write_heat_regime_correction_writes_packet(tmp_path: Path) -> None:

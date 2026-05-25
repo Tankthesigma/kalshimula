@@ -77,7 +77,11 @@ def _fetch_observed_high(station: Station, target: date) -> ObservedHigh:
 
     text = asos.fetch_asos_csv(station.nws_station, target)
     observations = asos.parse_asos_csv(text, station.nws_station)
-    high_f = asos.daily_high_from_hourly(observations, target)
+    high_f = asos.daily_high_from_hourly(
+        observations,
+        target,
+        lst_offset_hours=station.lst_offset_hours,
+    )
     if high_f is not None:
         return ObservedHigh(high_f=float(high_f), source="asos")
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import httpx
 
@@ -145,17 +145,21 @@ def parse_asos_csv(text: str, station: str) -> list[AsosHourlyObservation]:
 
 
 def daily_high_from_hourly(
-    observations: list[AsosHourlyObservation], target: date
+    observations: list[AsosHourlyObservation], target: date, *, lst_offset_hours: int = 0
 ) -> float | None:
-    """Max ``temp_f`` across observations whose ``valid_time`` is on ``target``.
+    """Max ``temp_f`` across observations assigned to ``target``.
 
-    Returns None when no observation on ``target`` has a numeric temperature.
+    ``valid_time`` is treated as the timestamp returned by IEM. When the caller
+    supplies a station local-standard-time offset, the date filter uses that
+    settlement day instead of the UTC/calendar date. Returns None when no
+    matching observation has a numeric temperature.
     """
     if not observations:
         return None
     values: list[float] = []
     for obs in observations:
-        if obs.valid_time.date() != target:
+        settlement_time = obs.valid_time + timedelta(hours=lst_offset_hours)
+        if settlement_time.date() != target:
             continue
         if obs.temp_f is None:
             continue

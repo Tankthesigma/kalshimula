@@ -18,7 +18,7 @@ import pandas as pd
 
 from src.models.nowcast_predictions import NOWCAST_PREDICTION_COLUMNS, QUANTILES
 
-HEAT_REGIME_SCHEMA_VERSION = "1.0"
+HEAT_REGIME_SCHEMA_VERSION = "1.1"
 HEAT_CORRECTION_COLUMNS = [
     "city",
     "platform",
@@ -29,13 +29,17 @@ HEAT_CORRECTION_COLUMNS = [
     "correction_reason",
     "warm_threshold_f",
     "original_point_f",
+    "raw_heat_residual_f",
+    "existing_bias_shift_f",
     "correction_f",
     "corrected_point_f",
 ]
 
-# Fixed candidate table from May 2024-Apr 2026 gfs_ens hot-day residuals.
-# Positive means historical actual highs ran hotter than the model; negative
-# means the model ran too hot in that city's hot regime.
+# Fixed candidate table from May 2024-Apr 2026 gfs_ens hot-day residuals before
+# the standard point-bias correction. Positive means historical actual highs ran
+# hotter than the raw model; negative means the raw model ran too hot. The
+# applied correction is this residual minus the bias shift already present in
+# the nowcast packet, so heat_corrected does not double-count the base bias.
 DEFAULT_HEAT_REGIME_CORRECTIONS: dict[str, tuple[float, float]] = {
     "austin": (89.0, 1.4),
     "boston": (75.0, -0.9),
@@ -78,6 +82,7 @@ def write_heat_regime_correction(
         "notes": [
             "Weather-only candidate correction. No market prices, order books, private PnL labels, or trade instructions.",
             "Correction fires when the city point forecast is in that city's historical hot regime.",
+            "The table stores raw hot-regime residuals; emitted correction_f is incremental after subtracting the packet's existing bias shift.",
             "This is not a promoted default; Bobby/private audit must validate paper PnL before operational use.",
         ],
     }
@@ -123,6 +128,7 @@ def apply_heat_regime_correction(
             city=city,
             market_type=market_type,
             original_point=original_point,
+            group=group,
             correction_table=table,
         )
         if decision is None:
@@ -153,6 +159,7 @@ def _correction_decision(
     city: str,
     market_type: str,
     original_point: float | None,
+    group: pd.DataFrame,
     correction_table: dict[str, tuple[float, float]],
 ) -> dict[str, Any] | None:
     if market_type != "high" or original_point is None:
@@ -163,13 +170,36 @@ def _correction_decision(
     warm_threshold, correction = threshold_and_correction
     if original_point < warm_threshold or abs(correction) < 1e-9:
         return None
+    existing_bias_shift = _existing_bias_shift(group, original_point)
+    incremental_correction = float(correction) - existing_bias_shift
+    if abs(incremental_correction) < 1e-9:
+        return None
     return {
         "correction_reason": "city_hot_regime_residual_bias",
         "warm_threshold_f": float(warm_threshold),
         "original_point_f": original_point,
-        "correction_f": float(correction),
-        "corrected_point_f": original_point + float(correction),
+        "raw_heat_residual_f": float(correction),
+        "existing_bias_shift_f": existing_bias_shift,
+        "correction_f": incremental_correction,
+        "corrected_point_f": original_point + incremental_correction,
     }
+
+
+def _existing_bias_shift(group: pd.DataFrame, original_point: float) -> float:
+    """Infer the point shift already applied to the packet's raw PMF."""
+    raw_expected = 0.0
+    total = 0.0
+    for row in group.itertuples(index=False):
+        degree = _float_or_none(getattr(row, "bin_lower_f", None))
+        probability = _float_or_none(getattr(row, "model_probability", None))
+        if degree is None or probability is None:
+            continue
+        raw_expected += float(degree) * float(probability)
+        total += float(probability)
+    if total <= 0:
+        return 0.0
+    raw_expected /= total
+    return original_point - raw_expected
 
 
 def _correct_group(group: pd.DataFrame, decision: dict[str, Any]) -> list[dict[str, Any]]:
