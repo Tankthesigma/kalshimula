@@ -336,10 +336,17 @@ def _row_numbers(block: str, row_name: str) -> list[float]:
     if first_number is None:
         return []
     first_number_index = label_end + first_number.start()
-    first_field_is_three_digits = bool(
-        re.match(r"\d{3}", line[first_number_index : first_number_index + 3])
-    )
-    data_start = first_number_index if first_field_is_three_digits else max(label_end, first_number_index - 1)
+    candidates = [
+        _parse_fixed_width_number_fields(line, first_number_index),
+        _parse_fixed_width_number_fields(line, max(label_end, first_number_index - 1)),
+    ]
+    plausible = [candidate for candidate in candidates if candidate and all(abs(value) < 200 for value in candidate)]
+    if plausible:
+        return max(plausible, key=len)
+    return candidates[0]
+
+
+def _parse_fixed_width_number_fields(line: str, data_start: int) -> list[float]:
     fields = [line[index : index + 3] for index in range(data_start, len(line), 3)]
     parsed = []
     for field in fields:

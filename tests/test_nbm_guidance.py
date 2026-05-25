@@ -112,3 +112,36 @@ TMP  81 86 91 94 97100102103103102101 99
     assert rows["city"].tolist() == ["phoenix"]
     assert rows["guidance_point_f"].tolist() == [103.0]
     assert rows["guidance_q50_f"].tolist() == [103.0]
+
+
+def test_build_nbm_guidance_rows_parses_packed_values_after_two_digit_start() -> None:
+    rule = StationRule(
+        city="phoenix",
+        platform="kalshi",
+        market_type="high",
+        settlement_station="KPHX",
+        ghcnd_id="GHCND:USW00023183",
+        station_name="Phoenix Sky Harbor",
+        timezone="America/Phoenix",
+        lst_offset=-7,
+        dst_policy="no_dst",
+        unit="fahrenheit",
+        rounding_rule="nearest_f",
+        settlement_source="nws_cli",
+        rule_confidence="high",
+    )
+    nbh_text = """KPHX NBM V5.0 NBH GUIDANCE    5/10/2026  1700 UTC
+UTC  18 19 20 21 22 23 00 01 02 03 04 05
+TMP  97100102104105105104104100 96 93 90
+"""
+
+    rows = build_nbm_guidance_rows(
+        nbh_text=nbh_text,
+        target=date(2026, 5, 10),
+        as_of_ts="2026-05-10T17:20:00Z",
+        rules=[rule],
+    )
+
+    assert rows["city"].tolist() == ["phoenix"]
+    assert rows["guidance_point_f"].tolist() == [105.0]
+    assert rows["guidance_q50_f"].tolist() == [105.0]
