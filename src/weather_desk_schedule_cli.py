@@ -22,6 +22,7 @@ from src.config import load_stations
 from src.models.station_rules import DEFAULT_STATION_RULES_PATH, station_rule_by_key
 
 DEFAULT_DECISION_HOURS = "04,07,10,13,15"
+DEFAULT_DECISION_MINUTE = 20
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class ScheduledRun:
     market_type: str
     decision_time_label: str
     local_hour: int
+    local_minute: int
     timezone: str
     as_of_ts_utc: str
     out_dir: str
@@ -46,6 +48,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--date", default="tomorrow")
     parser.add_argument("--decision-hours", default=DEFAULT_DECISION_HOURS)
+    parser.add_argument(
+        "--decision-minute",
+        type=int,
+        default=DEFAULT_DECISION_MINUTE,
+        help=(
+            "Local minute for each scheduled decision hour. Defaults to 20 so "
+            "hourly ASOS observations near :54 clear the 10-minute availability lag."
+        ),
+    )
     parser.add_argument("--threshold-offsets", default="-2,0,2")
     parser.add_argument("--multi-source-mode", default="single")
     parser.add_argument("--out-dir", required=True, type=Path)
@@ -71,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     target = predict._parse_date(args.date)
     cities = _split_csv(args.cities)
     labels = _parse_decision_hours(args.decision_hours)
+    decision_minute = _parse_decision_minute(args.decision_minute)
     runs: list[ScheduledRun] = []
     for label, hour in labels:
         for city in cities:
@@ -81,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             local_dt = datetime.combine(
                 target,
-                time(hour=hour),
+                time(hour=hour, minute=decision_minute),
                 tzinfo=ZoneInfo(rule.timezone),
             )
             as_of_utc = local_dt.astimezone(UTC).isoformat()
@@ -130,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                     market_type=args.market_type,
                     decision_time_label=label,
                     local_hour=hour,
+                    local_minute=decision_minute,
                     timezone=rule.timezone,
                     as_of_ts_utc=as_of_utc,
                     out_dir=str(packet_dir),
@@ -144,12 +157,14 @@ def main(argv: list[str] | None = None) -> int:
         "cities": cities,
         "market_type": args.market_type,
         "decision_time_labels": [label for label, _ in labels],
+        "decision_minute": decision_minute,
         "packet_layout": "one directory per decision_time_label/city",
         "runs": [asdict(run) for run in runs],
         "exit_code": 0 if all(run.exit_code == 0 for run in runs) else 1,
         "notes": [
             "Mainline weather-only schedule. No market prices, order books, private PnL labels, or trade instructions.",
             "Each city uses its own local decision time converted to UTC for no-leak ASOS feature filtering.",
+            "Default :20 local as-of keeps the 10-minute observation availability lag while reducing round-hour ASOS staleness.",
         ],
     }
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -179,6 +194,12 @@ def _parse_decision_hours(value: str) -> list[tuple[str, int]]:
     if not labels:
         raise ValueError("at least one decision hour is required")
     return labels
+
+
+def _parse_decision_minute(value: int) -> int:
+    if not 0 <= value <= 59:
+        raise ValueError(f"decision minute must be 0-59: {value}")
+    return value
 
 
 def _git_commit() -> str | None:

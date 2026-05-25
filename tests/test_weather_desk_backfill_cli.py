@@ -52,6 +52,7 @@ def test_weather_desk_backfill_cli_runs_inclusive_date_range(
     assert len(calls) == 3
     assert calls[0][calls[0].index("--date") + 1] == "2026-05-22"
     assert calls[0][calls[0].index("--out-dir") + 1] == str(out_dir / "2026-05-22")
+    assert calls[0][calls[0].index("--decision-minute") + 1] == "20"
     assert calls[2][calls[2].index("--date") + 1] == "2026-05-24"
     assert "--threshold-offsets=-2,0,2" in calls[0]
     assert "--update-observation-store" in calls[0]
@@ -60,6 +61,7 @@ def test_weather_desk_backfill_cli_runs_inclusive_date_range(
     manifest = json.loads((out_dir / "weather_desk_backfill_manifest.json").read_text())
     assert manifest["git_commit"] == "abc123"
     assert manifest["date_range"] == {"start": "2026-05-22", "end": "2026-05-24"}
+    assert manifest["decision_minute"] == 20
     assert manifest["exit_code"] == 0
 
 

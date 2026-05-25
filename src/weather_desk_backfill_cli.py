@@ -38,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated city slugs. Defaults to all configured cities.",
     )
     parser.add_argument("--decision-hours", default=weather_desk_schedule_cli.DEFAULT_DECISION_HOURS)
+    parser.add_argument(
+        "--decision-minute",
+        type=int,
+        default=weather_desk_schedule_cli.DEFAULT_DECISION_MINUTE,
+        help="Local minute passed through to weather_desk_schedule_cli.",
+    )
     parser.add_argument("--threshold-offsets", default="-2,0,2")
     parser.add_argument("--multi-source-mode", default="single")
     parser.add_argument("--out-dir", required=True, type=Path)
@@ -81,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
             target.isoformat(),
             "--decision-hours",
             args.decision_hours,
+            "--decision-minute",
+            str(args.decision_minute),
             f"--threshold-offsets={args.threshold_offsets}",
             "--multi-source-mode",
             args.multi_source_mode,
@@ -126,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         "cities": args.cities,
         "market_type": args.market_type,
         "decision_hours": args.decision_hours,
+        "decision_minute": args.decision_minute,
         "continue_on_error": bool(args.continue_on_error),
         "packet_layout": "one schedule directory per date",
         "runs": [asdict(run) for run in runs],
