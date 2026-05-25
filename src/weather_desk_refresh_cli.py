@@ -77,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         args.decision_time_label,
         "--station-rules",
         str(args.station_rules),
+        "--cities",
+        args.cities,
         "--market-type",
         args.market_type,
         "--model-version",

@@ -24,6 +24,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
     parser.add_argument(
+        "--cities",
+        help="Comma-separated city slugs to build. Defaults to all cities in the station-rule table.",
+    )
+    parser.add_argument(
         "--market-type",
         choices=["high", "low", "all"],
         default="high",
@@ -58,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         update_observation_store=args.update_observation_store,
         station_rules_path=args.station_rules,
         market_types=["high", "low"] if args.market_type == "all" else [args.market_type],
+        cities=_split_csv(args.cities),
         fetch_live=args.fetch_live,
         git_commit=_git_commit(),
     )
@@ -73,6 +78,12 @@ def _parse_as_of(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _split_csv(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    return [part.strip().lower() for part in value.split(",") if part.strip()]
 
 
 def _git_commit() -> str | None:

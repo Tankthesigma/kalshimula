@@ -13,7 +13,7 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
 
     def fake_write_nws_guidance_rows(*, output_path, target, cities=None, market_types=None, fetched_at=None):
         assert target.isoformat() == "2026-05-24"
-        assert cities is None
+        assert cities == ["chicago"]
         assert market_types == ["high"]
         pd.DataFrame(
             [
@@ -91,6 +91,8 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
             "2026-05-24T15:00:00Z",
             "--decision-time-label",
             "10",
+            "--cities",
+            "chicago",
             "--observations-csv",
             str(observations),
             "--include-nws-guidance",
@@ -140,3 +142,79 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     assert analyst["desk_priority"].tolist() == ["review"]
     assert "nws_divergent" in analyst.iloc[0]["risk_flags"]
     assert "Wrote weather desk packet" in capsys.readouterr().out
+
+
+def test_weather_desk_cli_filters_nowcast_features_to_prediction_cities(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    predictions = tmp_path / "predictions.json"
+    observations = tmp_path / "observations.csv"
+    out_dir = tmp_path / "weather_desk"
+
+    predictions.write_text(
+        json.dumps(
+            {
+                "predictions": [
+                    {
+                        "city": "nyc",
+                        "target_date": "2026-05-24",
+                        "generated_at": "2026-05-24T15:00:00+00:00",
+                        "selected_source": "gfs_ens",
+                        "selected_source_applied": True,
+                        "forecast": {
+                            "point_f": 65.0,
+                            "bin_probabilities": {"64": 1.0},
+                        },
+                        "calibration": {"corrected_point_f": 65.0},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    pd.DataFrame(
+        [
+            {
+                "station_id": "KNYC",
+                "obs_ts_utc": "2026-05-24T14:00:00",
+                "available_ts_utc": "2026-05-24T14:00:00",
+                "temperature_f": 65,
+                "dewpoint_f": 50,
+                "wind_speed_kt": 5,
+                "wind_direction_deg": 90,
+                "gust_kt": None,
+                "cloud_cover": "CLR",
+                "pressure_mb": 1015,
+                "precip_in": 0,
+                "source": "asos",
+            }
+        ]
+    ).to_csv(observations, index=False)
+    monkeypatch.setattr(
+        "src.weather_desk_cli.write_nws_guidance_rows",
+        lambda **kwargs: pd.DataFrame(),
+    )
+
+    exit_code = main(
+        [
+            "--predictions-json",
+            str(predictions),
+            "--target-date",
+            "2026-05-24",
+            "--as-of",
+            "2026-05-24T15:00:00Z",
+            "--decision-time-label",
+            "10",
+            "--cities",
+            "nyc",
+            "--observations-csv",
+            str(observations),
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+
+    assert exit_code == 0
+    features = pd.read_csv(out_dir / "nowcast_features" / "nowcast_features.csv")
+    assert features["city"].tolist() == ["nyc"]
