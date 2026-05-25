@@ -5,6 +5,7 @@ import pandas as pd
 from src.fetchers.asos import AsosHourlyObservation
 from src.models.nowcast_features import (
     build_nowcast_features,
+    build_observation_coverage,
     fetch_observations_for_rules,
     load_observation_store,
     merge_observation_store,
@@ -173,6 +174,56 @@ def test_nowcast_features_use_only_observations_available_by_as_of() -> None:
     assert row["low_so_far_f"] == 70
     assert row["as_of_ts_utc"] == "2026-05-24T14:30:00+00:00"
     assert row["latest_obs_ts_utc"] == "2026-05-24T14:00:00"
+
+
+def test_observation_coverage_flags_sparse_or_stale_store() -> None:
+    rule = station_rule_by_key(city="chicago")
+    observations = pd.DataFrame([_obs("KMDW", "2026-05-24T06:00:00", 60)])
+
+    coverage = build_observation_coverage(
+        observations,
+        [rule],
+        target_date=datetime(2026, 5, 24).date(),
+        as_of_ts=datetime(2026, 5, 24, 14, 30),
+        decision_time_label="10",
+    )
+
+    row = coverage.iloc[0]
+    assert row["obs_count_available"] == 1
+    assert row["temp_obs_count_available"] == 1
+    assert not bool(row["coverage_ok"])
+    assert "stale_observation" in row["coverage_reason_codes"]
+    assert "thin_temperature_coverage" in row["coverage_reason_codes"]
+
+
+def test_write_nowcast_features_writes_observation_coverage(tmp_path) -> None:
+    store = tmp_path / "observations.csv"
+    write_observation_store(
+        store,
+        pd.DataFrame(
+            [
+                _obs("KNYC", "2026-05-24T12:00:00", 60),
+                _obs("KNYC", "2026-05-24T13:00:00", 62),
+                _obs("KNYC", "2026-05-24T14:00:00", 64),
+            ]
+        ),
+    )
+
+    result = write_nowcast_features(
+        output_dir=tmp_path / "out",
+        target_date=datetime(2026, 5, 24).date(),
+        as_of_ts=datetime(2026, 5, 24, 14, 30),
+        decision_time_label="10",
+        observation_store_path=store,
+        cities=["nyc"],
+    )
+
+    coverage_path = tmp_path / "out" / "observation_coverage.csv"
+    assert coverage_path.exists()
+    assert result.coverage["city"].tolist() == ["nyc"]
+    assert result.manifest["row_counts"]["coverage"] == 1
+    written = pd.read_csv(coverage_path)
+    assert written["station_id"].tolist() == ["KNYC"]
 
 
 def test_nowcast_features_accept_epoch_second_observation_timestamps() -> None:
