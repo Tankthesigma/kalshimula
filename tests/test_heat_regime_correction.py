@@ -73,10 +73,28 @@ def test_heat_regime_correction_adds_city_hot_bias() -> None:
 
 
 def test_heat_regime_correction_does_not_fire_below_city_threshold() -> None:
-    corrected, corrections = apply_heat_regime_correction(_predictions(point=99.0))
+    corrected, corrections = apply_heat_regime_correction(_predictions(point=94.0))
 
     assert corrections.empty
-    assert corrected["point_f"].tolist() == [99.0, 99.0, 99.0]
+    assert corrected["point_f"].tolist() == [94.0, 94.0, 94.0]
+
+
+def test_heat_regime_correction_fires_for_phoenix_mild_hot_regime() -> None:
+    corrected, corrections = apply_heat_regime_correction(_predictions(point=95.7))
+
+    assert len(corrections) == 1
+    assert corrections.iloc[0]["warm_threshold_f"] == 95.0
+    assert corrected["point_f"].iloc[0] == pytest.approx(97.6)
+
+
+def test_heat_regime_correction_fires_for_miami_warm_regime() -> None:
+    corrected, corrections = apply_heat_regime_correction(
+        _predictions(city="miami", point=86.3),
+    )
+
+    assert len(corrections) == 1
+    assert corrections.iloc[0]["warm_threshold_f"] == 85.0
+    assert corrected["point_f"].iloc[0] == pytest.approx(87.1)
 
 
 def test_heat_regime_correction_can_apply_negative_city_bias() -> None:
