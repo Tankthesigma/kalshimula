@@ -67,12 +67,31 @@ NOWCAST_FEATURE_COLUMNS = [
     "station_rule_confidence",
     "feature_hash",
 ]
+OBSERVATION_COVERAGE_COLUMNS = [
+    "city",
+    "platform",
+    "market_type",
+    "station_id",
+    "target_date",
+    "decision_time_label",
+    "as_of_ts_utc",
+    "obs_count_available",
+    "temp_obs_count_available",
+    "first_obs_ts_utc",
+    "latest_obs_ts_utc",
+    "minutes_since_latest_obs",
+    "high_so_far_f",
+    "low_so_far_f",
+    "coverage_ok",
+    "coverage_reason_codes",
+]
 
 
 @dataclass(frozen=True)
 class NowcastFeatureResult:
     observations: pd.DataFrame
     features: pd.DataFrame
+    coverage: pd.DataFrame
     report: str
     manifest: dict[str, object]
 
@@ -206,6 +225,40 @@ def build_nowcast_features(
     return pd.DataFrame(rows, columns=NOWCAST_FEATURE_COLUMNS)
 
 
+def build_observation_coverage(
+    observations: pd.DataFrame,
+    rules: list[StationRule],
+    *,
+    target_date: date,
+    as_of_ts: datetime,
+    decision_time_label: str,
+) -> pd.DataFrame:
+    """Summarize ASOS observation coverage without changing feature schema."""
+    as_of_utc = _as_utc_naive(as_of_ts)
+    obs = _clean_observations(observations)
+    obs = obs[obs["available_ts_utc"] <= as_of_utc]
+    rows = []
+    for rule in rules:
+        station_obs = (
+            obs[
+                (obs["station_id"] == rule.settlement_station)
+                & (obs["obs_ts_utc"].dt.date == target_date)
+            ].sort_values("obs_ts_utc")
+            if not obs.empty
+            else obs
+        )
+        rows.append(
+            _coverage_row(
+                rule=rule,
+                station_obs=station_obs,
+                target_date=target_date,
+                as_of_utc=as_of_utc,
+                decision_time_label=decision_time_label,
+            )
+        )
+    return pd.DataFrame(rows, columns=OBSERVATION_COVERAGE_COLUMNS)
+
+
 def render_nowcast_feature_report(features: pd.DataFrame) -> str:
     """Render a compact weather-only nowcast feature report."""
     lines = [
@@ -274,6 +327,13 @@ def write_nowcast_features(
         as_of_ts=as_of_ts,
         decision_time_label=decision_time_label,
     )
+    coverage = build_observation_coverage(
+        observations,
+        rules,
+        target_date=target_date,
+        as_of_ts=as_of_ts,
+        decision_time_label=decision_time_label,
+    )
     report = render_nowcast_feature_report(features)
     manifest = {
         "schema_version": "1.0",
@@ -295,11 +355,14 @@ def write_nowcast_features(
         "row_counts": {
             "observations": int(len(observations)),
             "features": int(len(features)),
+            "coverage": int(len(coverage)),
         },
+        "coverage_summary": _coverage_summary(coverage),
     }
     output_dir.mkdir(parents=True, exist_ok=True)
     observations.to_csv(output_dir / "asos_observations.csv", index=False)
     features.to_csv(output_dir / "nowcast_features.csv", index=False)
+    coverage.to_csv(output_dir / "observation_coverage.csv", index=False)
     (output_dir / "nowcast_features_report.md").write_text(report, encoding="utf-8")
     (output_dir / "nowcast_features_manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
@@ -308,6 +371,7 @@ def write_nowcast_features(
     return NowcastFeatureResult(
         observations=observations,
         features=features,
+        coverage=coverage,
         report=report,
         manifest=manifest,
     )
@@ -459,6 +523,51 @@ def _empty_feature_row(
     }
 
 
+def _coverage_row(
+    *,
+    rule: StationRule,
+    station_obs: pd.DataFrame,
+    target_date: date,
+    as_of_utc: datetime,
+    decision_time_label: str,
+) -> dict[str, object]:
+    reasons: list[str] = []
+    temps = station_obs["temperature_f"].dropna().astype(float) if not station_obs.empty else pd.Series(dtype=float)
+    latest_obs_ts = pd.NA
+    first_obs_ts = pd.NA
+    minutes_since_latest = pd.NA
+    if station_obs.empty:
+        reasons.append("missing_observations")
+    else:
+        first_obs_ts = station_obs["obs_ts_utc"].min()
+        latest_obs_ts = station_obs["obs_ts_utc"].max()
+        minutes_since_latest = round((as_of_utc - latest_obs_ts).total_seconds() / 60, 3)
+        if as_of_utc - latest_obs_ts > timedelta(hours=2):
+            reasons.append("stale_observation")
+    if temps.empty:
+        reasons.append("missing_temperature")
+    elif len(temps) < _expected_min_temp_obs(as_of_utc, rule, target_date):
+        reasons.append("thin_temperature_coverage")
+    return {
+        "city": rule.city,
+        "platform": rule.platform,
+        "market_type": rule.market_type,
+        "station_id": rule.settlement_station,
+        "target_date": target_date.isoformat(),
+        "decision_time_label": decision_time_label,
+        "as_of_ts_utc": _utc_iso(as_of_utc),
+        "obs_count_available": int(len(station_obs)),
+        "temp_obs_count_available": int(len(temps)),
+        "first_obs_ts_utc": first_obs_ts.isoformat() if not pd.isna(first_obs_ts) else pd.NA,
+        "latest_obs_ts_utc": latest_obs_ts.isoformat() if not pd.isna(latest_obs_ts) else pd.NA,
+        "minutes_since_latest_obs": minutes_since_latest,
+        "high_so_far_f": float(temps.max()) if not temps.empty else pd.NA,
+        "low_so_far_f": float(temps.min()) if not temps.empty else pd.NA,
+        "coverage_ok": not reasons,
+        "coverage_reason_codes": ";".join(reasons),
+    }
+
+
 def _clean_observations(observations: pd.DataFrame) -> pd.DataFrame:
     obs = observations.copy()
     if obs.empty:
@@ -580,6 +689,33 @@ def _radiative_cooling_index(wind: object, cloud_cover: object, dewpoint_depress
 
 def _number_or_na(value: object) -> object:
     return pd.NA if pd.isna(value) else float(value)
+
+
+def _expected_min_temp_obs(
+    as_of_utc: datetime,
+    rule: StationRule,
+    target_date: date,
+) -> int:
+    local = _local_time(as_of_utc, rule)
+    if local.date() != target_date:
+        return 1
+    hours_elapsed = max(0, local.hour + (1 if local.minute >= 30 else 0))
+    return max(1, min(24, hours_elapsed // 2))
+
+
+def _coverage_summary(coverage: pd.DataFrame) -> dict[str, object]:
+    if coverage.empty:
+        return {
+            "rows": 0,
+            "coverage_ok_rows": 0,
+            "thin_or_missing_rows": 0,
+        }
+    ok = coverage["coverage_ok"].astype(bool)
+    return {
+        "rows": int(len(coverage)),
+        "coverage_ok_rows": int(ok.sum()),
+        "thin_or_missing_rows": int((~ok).sum()),
+    }
 
 
 def _feature_hash(*values: object) -> str:
