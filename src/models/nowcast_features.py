@@ -212,13 +212,11 @@ def build_nowcast_features(
     obs = obs[obs["available_ts_utc"] <= as_of_utc]
     rows = []
     for rule in rules:
-        if obs.empty:
-            station_obs = obs
-        else:
-            station_obs = obs[
-                (obs["station_id"] == rule.settlement_station)
-                & (obs["obs_ts_utc"].dt.date == target_date)
-            ].sort_values("obs_ts_utc")
+        station_obs = _station_observations_for_target_date(
+            obs,
+            rule=rule,
+            target_date=target_date,
+        )
         rows.append(
             _feature_row(
                 rule=rule,
@@ -245,13 +243,10 @@ def build_observation_coverage(
     obs = obs[obs["available_ts_utc"] <= as_of_utc]
     rows = []
     for rule in rules:
-        station_obs = (
-            obs[
-                (obs["station_id"] == rule.settlement_station)
-                & (obs["obs_ts_utc"].dt.date == target_date)
-            ].sort_values("obs_ts_utc")
-            if not obs.empty
-            else obs
+        station_obs = _station_observations_for_target_date(
+            obs,
+            rule=rule,
+            target_date=target_date,
         )
         rows.append(
             _coverage_row(
@@ -340,6 +335,7 @@ def write_nowcast_features(
         as_of_ts=as_of_ts,
         decision_time_label=decision_time_label,
     )
+    coverage = _reconcile_feature_coverage(features, coverage)
     report = render_nowcast_feature_report(features)
     manifest = {
         "schema_version": "1.0",
@@ -594,6 +590,33 @@ def _clean_observations(observations: pd.DataFrame) -> pd.DataFrame:
     return obs.dropna(subset=["station_id", "obs_ts_utc", "available_ts_utc"])
 
 
+def _station_observations_for_target_date(
+    observations: pd.DataFrame,
+    *,
+    rule: StationRule,
+    target_date: date,
+) -> pd.DataFrame:
+    """Return station rows in the market settlement date, not UTC date.
+
+    Daily weather markets settle on station-local/LST days. Filtering by UTC
+    date leaks prior-evening observations into western cities; e.g. Phoenix
+    00:51Z on May 4 is still May 3 local evening.
+    """
+    if observations.empty:
+        return observations
+    station_obs = observations[observations["station_id"] == rule.settlement_station].copy()
+    if station_obs.empty:
+        return station_obs
+    station_obs["_settlement_date"] = (
+        station_obs["obs_ts_utc"] + timedelta(hours=rule.lst_offset)
+    ).dt.date
+    return (
+        station_obs[station_obs["_settlement_date"] == target_date]
+        .drop(columns=["_settlement_date"])
+        .sort_values("obs_ts_utc")
+    )
+
+
 def _as_utc_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
@@ -722,6 +745,66 @@ def _coverage_summary(coverage: pd.DataFrame) -> dict[str, object]:
         "coverage_ok_rows": int(ok.sum()),
         "thin_or_missing_rows": int((~ok).sum()),
     }
+
+
+def _reconcile_feature_coverage(
+    features: pd.DataFrame,
+    coverage: pd.DataFrame,
+) -> pd.DataFrame:
+    """Mark coverage weak if feature extrema exceed the coverage obs extrema."""
+    if features.empty or coverage.empty:
+        return coverage
+    output = coverage.copy()
+    key_cols = [
+        "city",
+        "platform",
+        "market_type",
+        "station_id",
+        "target_date",
+        "decision_time_label",
+    ]
+    feature_map = {
+        tuple(str(row[col]) for col in key_cols): row
+        for row in features.to_dict(orient="records")
+    }
+    for index, row in output.iterrows():
+        feature = feature_map.get(tuple(str(row[col]) for col in key_cols))
+        if feature is None:
+            continue
+        reasons = [
+            reason
+            for reason in str(row.get("coverage_reason_codes") or "").split(";")
+            if reason
+        ]
+        feature_high = _number_or_none(feature.get("high_so_far_f"))
+        coverage_high = _number_or_none(row.get("high_so_far_f"))
+        if (
+            feature_high is not None
+            and coverage_high is not None
+            and feature_high > coverage_high + 1e-9
+        ):
+            reasons.append("feature_high_so_far_exceeds_observed_max")
+        feature_low = _number_or_none(feature.get("low_so_far_f"))
+        coverage_low = _number_or_none(row.get("low_so_far_f"))
+        if (
+            feature_low is not None
+            and coverage_low is not None
+            and feature_low < coverage_low - 1e-9
+        ):
+            reasons.append("feature_low_so_far_below_observed_min")
+        if reasons:
+            output.at[index, "coverage_ok"] = False
+            output.at[index, "coverage_reason_codes"] = ";".join(dict.fromkeys(reasons))
+    return output
+
+
+def _number_or_none(value: object) -> float | None:
+    if pd.isna(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _feature_hash(*values: object) -> str:

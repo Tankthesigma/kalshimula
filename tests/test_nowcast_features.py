@@ -178,6 +178,36 @@ def test_nowcast_features_use_only_observations_available_by_as_of() -> None:
     assert row["latest_obs_ts_utc"] == "2026-05-24T14:00:00"
 
 
+def test_nowcast_features_filter_target_day_by_station_settlement_date() -> None:
+    rule = station_rule_by_key(city="phoenix")
+    observations = pd.DataFrame(
+        [
+            _obs("KPHX", "2026-05-04T00:51:00", 94),  # May 3 17:51 Phoenix time.
+            _obs("KPHX", "2026-05-04T14:51:00", 75),
+            _obs("KPHX", "2026-05-04T20:51:00", 79),
+        ]
+    )
+
+    features = build_nowcast_features(
+        observations,
+        [rule],
+        target_date=datetime(2026, 5, 4).date(),
+        as_of_ts=datetime(2026, 5, 4, 21, 30),
+        decision_time_label="15",
+    )
+    coverage = build_observation_coverage(
+        observations,
+        [rule],
+        target_date=datetime(2026, 5, 4).date(),
+        as_of_ts=datetime(2026, 5, 4, 21, 30),
+        decision_time_label="15",
+    )
+
+    assert features.iloc[0]["latest_temp_f"] == 79
+    assert features.iloc[0]["high_so_far_f"] == 79
+    assert coverage.iloc[0]["high_so_far_f"] == 79
+
+
 def test_observation_coverage_flags_sparse_or_stale_store() -> None:
     rule = station_rule_by_key(city="chicago")
     observations = pd.DataFrame([_obs("KMDW", "2026-05-24T06:00:00", 60)])
