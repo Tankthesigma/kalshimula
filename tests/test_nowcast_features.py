@@ -32,6 +32,8 @@ def test_observations_to_frame_uses_canonical_columns() -> None:
     )
 
     assert frame.loc[0, "station_id"] == "KMDW"
+    assert frame.loc[0, "obs_ts_utc"] == "2026-05-24T14:53:00"
+    assert frame.loc[0, "available_ts_utc"] == "2026-05-24T15:03:00"
     assert frame.loc[0, "temperature_f"] == 70.0
     assert frame.loc[0, "dewpoint_f"] == 55.0
     assert frame.loc[0, "cloud_cover"] == "CLR"

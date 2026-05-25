@@ -36,6 +36,7 @@ OBSERVATION_COLUMNS = [
     "precip_in",
     "source",
 ]
+DEFAULT_OBSERVATION_AVAILABILITY_LAG_MINUTES = 10
 NOWCAST_FEATURE_COLUMNS = [
     "city",
     "platform",
@@ -96,16 +97,21 @@ class NowcastFeatureResult:
     manifest: dict[str, object]
 
 
-def observations_to_frame(observations: list[AsosHourlyObservation]) -> pd.DataFrame:
+def observations_to_frame(
+    observations: list[AsosHourlyObservation],
+    *,
+    availability_lag_minutes: int = DEFAULT_OBSERVATION_AVAILABILITY_LAG_MINUTES,
+) -> pd.DataFrame:
     """Convert parsed ASOS observations to the canonical observation store shape."""
     rows = []
     for obs in observations:
         obs_ts = _as_utc_naive(obs.valid_time)
+        available_ts = obs_ts + timedelta(minutes=availability_lag_minutes)
         rows.append(
             {
                 "station_id": obs.station,
                 "obs_ts_utc": obs_ts.isoformat(),
-                "available_ts_utc": obs_ts.isoformat(),
+                "available_ts_utc": available_ts.isoformat(),
                 "temperature_f": obs.temp_f,
                 "dewpoint_f": obs.dewpoint_f,
                 "wind_speed_kt": obs.wind_speed_kt,
