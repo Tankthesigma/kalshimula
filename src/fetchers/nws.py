@@ -90,7 +90,7 @@ def resolve_forecast_url(station: Station) -> str:
     """Resolve a station's lat/lon to the NWS forecast URL."""
     headers = _headers()
     url = NWS_POINTS_URL.format(lat=station.lat, lon=station.lon)
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=30.0, follow_redirects=True) as client:
         response = client.get(url, headers=headers)
         response.raise_for_status()
         return forecast_url_from_points_payload(response.json())
@@ -107,7 +107,7 @@ def fetch_daily_high_forecast(
 def fetch_forecast_payload(station: Station) -> tuple[dict[str, Any], str]:
     """Fetch the raw NWS forecast payload and return ``(payload, url)``."""
     url = forecast_url_for_station(station)
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=30.0, follow_redirects=True) as client:
         response = client.get(url, headers=_headers())
         response.raise_for_status()
         payload = response.json()

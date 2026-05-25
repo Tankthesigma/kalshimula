@@ -41,7 +41,6 @@ DEFAULT_HEAT_REGIME_CORRECTIONS: dict[str, tuple[float, float]] = {
     "boston": (75.0, -0.9),
     "chicago": (80.0, 1.5),
     "denver": (84.0, 2.0),
-    "houston": (88.0, 1.9),
     "la": (73.0, 0.5),
     "miami": (85.0, 0.8),
     "nyc": (80.0, -1.1),

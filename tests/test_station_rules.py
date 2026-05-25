@@ -25,6 +25,13 @@ def test_station_rule_by_key_normalizes_lookup() -> None:
     assert rule.settlement_station == "KMDW"
 
 
+def test_houston_high_uses_hobby_station() -> None:
+    rule = station_rule_by_key(city="houston", platform="kalshi", market_type="high")
+
+    assert rule.settlement_station == "KHOU"
+    assert rule.rule_confidence == "high"
+
+
 def test_low_station_rules_are_available_but_not_high_confidence() -> None:
     rule = station_rule_by_key(city="nyc", platform="kalshi", market_type="low")
 

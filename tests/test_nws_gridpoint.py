@@ -52,8 +52,9 @@ def test_resolve_forecast_url_uses_points_endpoint(monkeypatch) -> None:
             return {"properties": {"forecast": "https://example.test/forecast"}}
 
     class FakeClient:
-        def __init__(self, timeout):
+        def __init__(self, timeout, follow_redirects=False):
             self.timeout = timeout
+            self.follow_redirects = follow_redirects
 
         def __enter__(self):
             return self

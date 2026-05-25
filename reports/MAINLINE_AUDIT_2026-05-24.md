@@ -80,12 +80,12 @@ Patch:
 - `miami`: threshold `89.0 -> 85.0`, correction stays `+0.8F`
 - Added tests proving PHX 95.7 and MIA 86.3 now fire in the candidate packet.
 
-Smoke result for May 25 after patch:
+Smoke result for May 25 after patch, before the later Houston station correction:
 
 - CHI 80.9 -> 82.4
 - MIA 86.5 -> 87.3
 - AUS 90.6 -> 92.0
-- HOU 91.8 -> 93.7
+- HOU 91.8 -> 93.7 under the old KIAH artifact; this should no longer be used after the KHOU station correction.
 - PHX 95.1 -> 97.0
 
 Raw remains the default. Heat-corrected remains candidate-only until private paper PnL validates it.
@@ -121,6 +121,7 @@ Mainline response:
 3. Low-temperature markets are not validated enough for promotion.
 4. `hrrr` duplication can still mislead any downstream analysis that ignores `source_independence_score`.
 5. Heat-correction residuals are fixed from historical rows; future research should make them train-window-specific for historical backtests.
+6. Houston was corrected from KIAH to KHOU after this audit. Any Houston calibration or residual table fit on the old KIAH artifact must be treated as stale until KHOU historical rows are regenerated.
 
 ## Next Actions
 

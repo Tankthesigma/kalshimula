@@ -65,10 +65,10 @@ cities:
     lst_offset_hours: -5
   houston:
     name: Houston
-    nws_station: KIAH
-    ghcnd_id: GHCND:USW00012960
-    lat: 29.9844
-    lon: -95.3414
+    nws_station: KHOU
+    ghcnd_id: GHCND:USW00012918
+    lat: 29.63747
+    lon: -95.28245
     tz: America/Chicago
     lst_offset_hours: -6
   phoenix:
