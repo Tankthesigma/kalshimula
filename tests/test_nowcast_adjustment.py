@@ -170,6 +170,16 @@ def test_adjustment_keeps_rows_without_high_so_far() -> None:
     assert adjusted["calibrated_probability"].tolist() == [0.25, 0.5, 0.25]
 
 
+def test_adjustment_reweights_high_pmf_toward_remaining_heating_path() -> None:
+    adjusted = apply_nowcast_adjustments(_prediction_rows(), _features(68.0))
+
+    probabilities = dict(zip(adjusted["bin_lower_f"], adjusted["calibrated_probability"], strict=True))
+    assert probabilities[71] > 0.25
+    assert probabilities[69] < 0.25
+    assert adjusted["point_f"].iloc[0] > 70.0
+    assert "pmf_conditioned_to_nowcast_center:71.00" in adjusted.iloc[0]["weather_reason_codes"]
+
+
 def test_adjustment_truncates_low_pmf_above_low_so_far() -> None:
     adjusted = apply_nowcast_adjustments(_low_prediction_rows(), _low_features(49.4))
 
