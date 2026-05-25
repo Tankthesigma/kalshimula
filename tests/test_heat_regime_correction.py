@@ -97,6 +97,15 @@ def test_heat_regime_correction_fires_for_miami_warm_regime() -> None:
     assert corrected["point_f"].iloc[0] == pytest.approx(87.1)
 
 
+def test_heat_regime_correction_does_not_apply_houston_old_station_bias() -> None:
+    corrected, corrections = apply_heat_regime_correction(
+        _predictions(city="houston", point=92.0),
+    )
+
+    assert corrections.empty
+    assert corrected["point_f"].tolist() == [92.0, 92.0, 92.0]
+
+
 def test_heat_regime_correction_can_apply_negative_city_bias() -> None:
     corrected, corrections = apply_heat_regime_correction(
         _predictions(city="nyc", point=81.0),

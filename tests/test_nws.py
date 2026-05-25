@@ -74,8 +74,9 @@ class _FakeClient:
         self.calls: list[tuple[str, dict | None]] = []
         self._payloads = list(payloads)
 
-    def __call__(self, timeout):  # used as httpx.Client(timeout=...)
+    def __call__(self, timeout, follow_redirects=False):  # used as httpx.Client(...)
         self.timeout = timeout
+        self.follow_redirects = follow_redirects
         return self
 
     def __enter__(self):
@@ -249,6 +250,7 @@ class TestResolveForecastUrl:
         monkeypatch.setattr(nws.httpx, "Client", client)
         url = resolve_forecast_url(_station())
         assert url == "https://example.test/fc"
+        assert client.follow_redirects is True
         assert client.calls[0][0] == "https://api.weather.gov/points/39.8328,-104.6575"
         headers = client.calls[0][1]
         assert "User-Agent" in headers and "Accept" in headers
@@ -266,6 +268,7 @@ class TestFetchDailyHighForecast:
         assert result.high_f == pytest.approx(72.0)
         # First call: /points. Second call: the resolved forecast URL.
         assert len(client.calls) == 2
+        assert client.follow_redirects is True
         assert client.calls[0][0].startswith("https://api.weather.gov/points/")
         assert client.calls[1][0] == "https://example.test/forecast"
 
@@ -280,6 +283,7 @@ class TestFetchDailyHighForecast:
         result = fetch_daily_high_forecast(url_station, TARGET)
 
         assert result.high_f == pytest.approx(72.0)
+        assert client.follow_redirects is True
         assert len(client.calls) == 1
         assert client.calls[0][0] == url_station.nws_station
 
@@ -292,7 +296,7 @@ class TestFetchDailyHighForecast:
                 raise AssertionError("should not be called")
 
         class _BoomClient:
-            def __call__(self, timeout):
+            def __call__(self, timeout, follow_redirects=False):
                 return self
 
             def __enter__(self):

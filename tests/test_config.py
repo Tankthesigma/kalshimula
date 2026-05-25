@@ -19,6 +19,13 @@ def test_get_station_returns_configured_station() -> None:
     assert station.ghcnd_bare == station.ghcnd_id.removeprefix("GHCND:")
 
 
+def test_houston_config_uses_hobby_station() -> None:
+    station = get_station("houston")
+
+    assert station.nws_station == "KHOU"
+    assert station.ghcnd_bare == "USW00012918"
+
+
 def test_get_station_rejects_unknown_slug() -> None:
     with pytest.raises(KeyError):
         get_station("__missing_city__")
