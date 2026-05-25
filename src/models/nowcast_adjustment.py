@@ -30,7 +30,10 @@ def apply_nowcast_adjustments(
     For high-temperature markets, final high cannot be below the observed
     ``high_so_far_f`` available at prediction time. For low-temperature markets,
     final low cannot be above the observed ``low_so_far_f``. The adjustment
-    truncates physically impossible degree mass and renormalizes.
+    first truncates physically impossible degree mass, then reweights the
+    remaining PMF toward a simple weather-only path estimate:
+    ``high_so_far_f + remaining_heating_estimate_f`` for highs and
+    ``low_so_far_f - remaining_cooling_estimate_f`` for lows.
     """
     _validate_predictions(predictions)
     _validate_features(features)
@@ -55,13 +58,25 @@ def apply_nowcast_adjustments(
             if high_so_far is None:
                 output.extend(group.to_dict(orient="records"))
                 continue
-            adjusted = _truncate_high_pmf(group, int(math.floor(high_so_far + 0.5)))
+            remaining_heating = _float_or_none(feature.get("remaining_heating_estimate_f"))
+            adjusted = _condition_high_pmf(
+                group,
+                min_degree=int(math.floor(high_so_far + 0.5)),
+                center_f=high_so_far + (remaining_heating or 0.0),
+                remaining_f=remaining_heating,
+            )
         else:
             low_so_far = _float_or_none(feature.get("low_so_far_f"))
             if low_so_far is None:
                 output.extend(group.to_dict(orient="records"))
                 continue
-            adjusted = _truncate_low_pmf(group, int(math.floor(low_so_far + 0.5)))
+            remaining_cooling = _float_or_none(feature.get("remaining_cooling_estimate_f"))
+            adjusted = _condition_low_pmf(
+                group,
+                max_degree=int(math.floor(low_so_far + 0.5)),
+                center_f=low_so_far - (remaining_cooling or 0.0),
+                remaining_f=remaining_cooling,
+            )
         output.extend(adjusted)
     return pd.DataFrame(output, columns=NOWCAST_PREDICTION_COLUMNS)
 
@@ -74,8 +89,8 @@ def write_nowcast_adjusted_predictions(
     git_commit: str | None = None,
 ) -> NowcastAdjustmentResult:
     """Read prediction/features rows and write adjusted frozen-schema output."""
-    predictions = pd.read_csv(predictions_path)
-    features = pd.read_csv(features_path)
+    predictions = pd.read_csv(predictions_path, dtype={"decision_time_label": "string"})
+    features = pd.read_csv(features_path, dtype={"decision_time_label": "string"})
     adjusted = apply_nowcast_adjustments(predictions, features)
     manifest = {
         "schema_version": "1.0",
@@ -86,7 +101,11 @@ def write_nowcast_adjusted_predictions(
             "nowcast_features": _sha256(features_path),
         },
         "row_count": int(len(adjusted)),
-        "adjustment": "truncate high PMF below high_so_far_f and low PMF above low_so_far_f",
+        "adjustment": (
+            "truncate physically impossible PMF mass, then reweight toward "
+            "high_so_far_f + remaining_heating_estimate_f for highs and "
+            "low_so_far_f - remaining_cooling_estimate_f for lows"
+        ),
         "notes": [
             "Weather-only adjustment. No market prices, order books, private PnL labels, or trading instructions.",
             "calibrated_probability and pmf_degree_json are adjusted; model_probability remains the original diagnostic probability by degree.",
@@ -102,16 +121,16 @@ def write_nowcast_adjusted_predictions(
     return NowcastAdjustmentResult(predictions=adjusted, manifest=manifest)
 
 
-def _truncate_high_pmf(group: pd.DataFrame, min_degree: int) -> list[dict[str, Any]]:
+def _condition_high_pmf(
+    group: pd.DataFrame,
+    *,
+    min_degree: int,
+    center_f: float,
+    remaining_f: float | None,
+) -> list[dict[str, Any]]:
     original = _pmf_from_group(group)
     adjusted = {degree: prob for degree, prob in original.items() if degree >= min_degree}
-    adjusted = {min_degree: 1.0} if not adjusted else _normalize(adjusted)
-    quantiles = _quantiles(adjusted)
-    point = sum(degree * probability for degree, probability in adjusted.items())
-    pmf_json = json.dumps(
-        {str(degree): probability for degree, probability in sorted(adjusted.items())},
-        sort_keys=True,
-    )
+    adjusted = {min_degree: 1.0} if not adjusted else _condition(adjusted, center_f, remaining_f)
     base = group.iloc[0].to_dict()
     original_model_probability = {
         int(float(row.bin_lower_f)): float(row.model_probability)
@@ -122,36 +141,20 @@ def _truncate_high_pmf(group: pd.DataFrame, min_degree: int) -> list[dict[str, A
         base.get("weather_reason_codes"),
         f"pmf_truncated_below_high_so_far:{min_degree}",
     )
-    rows = []
-    for degree, probability in sorted(adjusted.items()):
-        row = dict(base)
-        row.update(
-            {
-                "bin_lower_f": degree,
-                "bin_upper_f": degree,
-                "bin_label": str(degree),
-                "model_probability": original_model_probability.get(degree, 0.0),
-                "calibrated_probability": probability,
-                "point_f": point,
-                **{f"q{q:02d}_f": quantiles[q] for q in QUANTILES},
-                "pmf_degree_json": pmf_json,
-                "weather_reason_codes": reasons,
-            }
-        )
-        rows.append(row)
-    return rows
+    reasons = _append_reason(reasons, f"pmf_conditioned_to_nowcast_center:{center_f:.2f}")
+    return _rows_from_adjusted_pmf(base, adjusted, original_model_probability, reasons)
 
 
-def _truncate_low_pmf(group: pd.DataFrame, max_degree: int) -> list[dict[str, Any]]:
+def _condition_low_pmf(
+    group: pd.DataFrame,
+    *,
+    max_degree: int,
+    center_f: float,
+    remaining_f: float | None,
+) -> list[dict[str, Any]]:
     original = _pmf_from_group(group)
     adjusted = {degree: prob for degree, prob in original.items() if degree <= max_degree}
-    adjusted = {max_degree: 1.0} if not adjusted else _normalize(adjusted)
-    quantiles = _quantiles(adjusted)
-    point = sum(degree * probability for degree, probability in adjusted.items())
-    pmf_json = json.dumps(
-        {str(degree): probability for degree, probability in sorted(adjusted.items())},
-        sort_keys=True,
-    )
+    adjusted = {max_degree: 1.0} if not adjusted else _condition(adjusted, center_f, remaining_f)
     base = group.iloc[0].to_dict()
     original_model_probability = {
         int(float(row.bin_lower_f)): float(row.model_probability)
@@ -161,6 +164,40 @@ def _truncate_low_pmf(group: pd.DataFrame, max_degree: int) -> list[dict[str, An
     reasons = _append_reason(
         base.get("weather_reason_codes"),
         f"pmf_truncated_above_low_so_far:{max_degree}",
+    )
+    reasons = _append_reason(reasons, f"pmf_conditioned_to_nowcast_center:{center_f:.2f}")
+    return _rows_from_adjusted_pmf(base, adjusted, original_model_probability, reasons)
+
+
+def _condition(
+    pmf: dict[int, float],
+    center_f: float,
+    remaining_f: float | None,
+) -> dict[int, float]:
+    """Reweight a PMF toward a weather-only expected remaining path.
+
+    This is intentionally simple and transparent. The spread is wider when
+    more heating/cooling remains and tighter late in the day.
+    """
+    sigma = max(1.25, min(4.0, 1.0 + abs(remaining_f or 0.0) * 0.5))
+    weighted = {
+        degree: probability * math.exp(-((degree - center_f) ** 2) / (2 * sigma**2))
+        for degree, probability in pmf.items()
+    }
+    return _normalize(weighted)
+
+
+def _rows_from_adjusted_pmf(
+    base: dict[str, Any],
+    adjusted: dict[int, float],
+    original_model_probability: dict[int, float],
+    reasons: str,
+) -> list[dict[str, Any]]:
+    quantiles = _quantiles(adjusted)
+    point = sum(degree * probability for degree, probability in adjusted.items())
+    pmf_json = json.dumps(
+        {str(degree): probability for degree, probability in sorted(adjusted.items())},
+        sort_keys=True,
     )
     rows = []
     for degree, probability in sorted(adjusted.items()):
