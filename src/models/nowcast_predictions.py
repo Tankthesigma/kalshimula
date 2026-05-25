@@ -84,6 +84,12 @@ def build_nowcast_prediction_rows(
     model_version: str = "mainline-nowcast-v1",
 ) -> pd.DataFrame:
     """Convert prediction JSON into the frozen ``predictions_nowcast.csv`` schema."""
+    if market_type.strip().lower() != "high":
+        raise ValueError(
+            "nowcast prediction export currently supports only high-temperature "
+            "model packets; low-market rows require a separately trained low "
+            "temperature model"
+        )
     rules = station_rules or load_station_rules(station_rules_path)
     rule_map = {(rule.city, rule.platform, rule.market_type): rule for rule in rules}
     feature_map = _feature_map(features)

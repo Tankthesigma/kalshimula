@@ -9,7 +9,7 @@ import json
 import os
 import tempfile
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -75,7 +75,11 @@ def _fetch_observed_high(station: Station, target: date) -> ObservedHigh:
     if actual.high_f is not None:
         return ObservedHigh(high_f=float(actual.high_f), source=actual.source)
 
-    text = asos.fetch_asos_csv(station.nws_station, target)
+    text = asos.fetch_asos_observation_csv(
+        station.nws_station,
+        target,
+        target + timedelta(days=1),
+    )
     observations = asos.parse_asos_csv(text, station.nws_station)
     high_f = asos.daily_high_from_hourly(
         observations,

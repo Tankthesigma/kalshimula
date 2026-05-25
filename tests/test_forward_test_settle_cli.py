@@ -55,8 +55,8 @@ def test_build_settlement_payload_prefers_ncei(monkeypatch, tmp_path) -> None:
 
     monkeypatch.setattr("src.forward_test_settle_cli.ncei.fetch_daily_high", fake_ncei)
     monkeypatch.setattr(
-        "src.forward_test_settle_cli.asos.fetch_asos_csv",
-        lambda station, target: (_ for _ in ()).throw(AssertionError("ASOS unused")),
+        "src.forward_test_settle_cli.asos.fetch_asos_observation_csv",
+        lambda station, start, end: (_ for _ in ()).throw(AssertionError("ASOS unused")),
     )
 
     payload, code = forward_test_settle_cli.build_settlement_payload(
@@ -107,13 +107,18 @@ def test_build_settlement_payload_falls_back_to_asos(monkeypatch, tmp_path) -> N
         )
 
     monkeypatch.setattr("src.forward_test_settle_cli.ncei.fetch_daily_high", fake_ncei)
-    monkeypatch.setattr(
-        "src.forward_test_settle_cli.asos.fetch_asos_csv",
-        lambda station, target: (
+    def fake_asos(station, start, end):
+        assert start == date(2026, 5, 22)
+        assert end == date(2026, 5, 23)
+        return (
             "station,valid,tmpf\n"
             "DEN,2026-05-22 12:00,71.0\n"
             "DEN,2026-05-22 15:00,73.5\n"
-        ),
+        )
+
+    monkeypatch.setattr(
+        "src.forward_test_settle_cli.asos.fetch_asos_observation_csv",
+        fake_asos,
     )
 
     payload, code = forward_test_settle_cli.build_settlement_payload(

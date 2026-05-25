@@ -18,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--decision-time-label", required=True)
     parser.add_argument("--nowcast-features", type=Path, default=None)
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
-    parser.add_argument("--market-type", choices=["high", "low"], default="high")
+    parser.add_argument("--market-type", choices=["high"], default="high")
     parser.add_argument("--as-of", default=None, help="UTC timestamp fallback when no feature file is provided")
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser

@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--prefix", default="weather_desk")
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
-    parser.add_argument("--market-type", choices=["high", "low"], default="high")
+    parser.add_argument("--market-type", choices=["high"], default="high")
     parser.add_argument("--as-of", help="UTC ISO timestamp. Defaults to now.")
     parser.add_argument("--decision-time-label", default="morning")
     parser.add_argument("--observations-csv", type=Path)

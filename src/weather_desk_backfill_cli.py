@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--multi-source-mode", default="single")
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
-    parser.add_argument("--market-type", choices=["high", "low"], default="high")
+    parser.add_argument("--market-type", choices=["high"], default="high")
     parser.add_argument("--observations-csv", type=Path)
     parser.add_argument("--observation-store", type=Path)
     parser.add_argument("--update-observation-store", action="store_true")

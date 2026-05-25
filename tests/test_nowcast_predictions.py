@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import pytest
 
 from src.models.nowcast_predictions import build_nowcast_prediction_rows
 from src.models.station_rules import StationRule
@@ -111,14 +112,12 @@ def test_build_nowcast_prediction_rows_carries_weather_only_feature_flags() -> N
     assert set(rows["feature_hash"]) == {"abc123"}
 
 
-def test_build_nowcast_prediction_rows_can_emit_low_market_rows() -> None:
-    rows = build_nowcast_prediction_rows(
-        _payload(),
-        station_rules=[_rule("low")],
-        decision_time_label="evening",
-        as_of_ts_utc="2026-05-24T23:00:00Z",
-        market_type="low",
-    )
-
-    assert set(rows["market_type"]) == {"low"}
-    assert set(rows["station_id"]) == {"KNYC"}
+def test_build_nowcast_prediction_rows_rejects_low_market_rows() -> None:
+    with pytest.raises(ValueError, match="supports only high-temperature"):
+        build_nowcast_prediction_rows(
+            _payload(),
+            station_rules=[_rule("low")],
+            decision_time_label="evening",
+            as_of_ts_utc="2026-05-24T23:00:00Z",
+            market_type="low",
+        )

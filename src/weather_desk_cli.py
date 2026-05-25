@@ -40,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--cities",
         help="Comma-separated city slugs to build weather-desk rows for. Defaults to all station rules.",
     )
-    parser.add_argument("--market-type", choices=["high", "low"], default="high")
+    parser.add_argument("--market-type", choices=["high"], default="high")
     parser.add_argument("--observations-csv", type=Path)
     parser.add_argument("--observation-store", type=Path)
     parser.add_argument("--update-observation-store", action="store_true")

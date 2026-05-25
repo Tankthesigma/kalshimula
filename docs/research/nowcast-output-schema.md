@@ -242,8 +242,9 @@ far. These fields help audit whether the adjusted nowcast is firing while the
 day is still far from a realized extreme. They are weather-only and do not use
 market data.
 
-High markets are the default. Low markets use the same schema and can be built
-explicitly:
+High markets are the default and are the only supported prediction export today.
+Low-market features can be built for research, but low-market prediction rows
+must stay disabled until a separately trained low-temperature model exists.
 
 ```text
 python -m src.nowcast_features_cli \
@@ -255,7 +256,7 @@ python -m src.nowcast_features_cli \
   --out-dir reports/overnight_model_intelligence/low_nowcast_features
 ```
 
-Build Bobby's frozen prediction input:
+Build Bobby's frozen high-temperature prediction input:
 
 ```text
 python -m src.nowcast_predictions_cli \
@@ -370,8 +371,10 @@ This fetches the existing `points -> forecast` API path already used by the NWS
 daily-high fetcher and normalizes the daytime high into the professional
 guidance schema. It is a weather-only source; it does not touch market APIs.
 Use `--market-type low` or `--market-type both` to emit nighttime low guidance
-rows. Low rows are inputs for weather research only until Bobby/private audit
-empirically validates the low-market station and LST/DST settlement behavior.
+rows. These are guidance rows only, not model prediction rows. Low rows are
+inputs for weather research only until mainline has a trained low-temperature
+model and Bobby/private audit empirically validates the low-market station and
+LST/DST settlement behavior.
 
 ## One-Command Weather Desk Pipeline
 

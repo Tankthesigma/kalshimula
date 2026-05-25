@@ -19,7 +19,8 @@ def _predictions(
 ) -> pd.DataFrame:
     rows = []
     center = raw_center if raw_center is not None else round(point)
-    for degree, probability in [(center - 1, 0.25), (center, 0.5), (center + 1, 0.25)]:
+    raw_pmf = {center - 1: 0.25, center: 0.5, center + 1: 0.25}
+    for degree, probability in raw_pmf.items():
         rows.append(
             {
                 "model_version": "mainline-nowcast-v1",
@@ -51,7 +52,9 @@ def _predictions(
                 "q80_f": 101,
                 "q90_f": 101,
                 "q95_f": 101,
-                "pmf_degree_json": json.dumps({"99": 0.25, "100": 0.5, "101": 0.25}),
+                "pmf_degree_json": json.dumps(
+                    {str(degree): probability for degree, probability in raw_pmf.items()}
+                ),
                 "source_policy": "gfs_ens",
                 "nowcast_veto_flag": False,
                 "weather_reason_codes": "",
