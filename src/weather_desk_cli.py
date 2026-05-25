@@ -36,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--decision-time-label", required=True)
     parser.add_argument("--out-dir", required=True, type=Path)
     parser.add_argument("--station-rules", type=Path, default=DEFAULT_STATION_RULES_PATH)
+    parser.add_argument(
+        "--cities",
+        help="Comma-separated city slugs to build weather-desk rows for. Defaults to all station rules.",
+    )
     parser.add_argument("--market-type", choices=["high", "low"], default="high")
     parser.add_argument("--observations-csv", type=Path)
     parser.add_argument("--observation-store", type=Path)
@@ -59,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.observations_csv is not None
         else None
     )
+    cities = _split_csv(args.cities)
     feature_result = write_nowcast_features(
         output_dir=out_dir / "nowcast_features",
         target_date=date.fromisoformat(args.target_date),
@@ -69,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         update_observation_store=args.update_observation_store,
         station_rules_path=args.station_rules,
         market_types=[args.market_type],
+        cities=cities,
         fetch_live=args.fetch_live,
         git_commit=git_commit,
     )
@@ -109,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         guidance_rows = write_nws_guidance_rows(
             output_path=guidance_path,
             target=date.fromisoformat(args.target_date),
+            cities=cities,
             market_types=[args.market_type],
             fetched_at=_parse_as_of(args.as_of),
         )
@@ -155,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         "generated_at": datetime.now(UTC).isoformat(),
         "git_commit": git_commit,
         "target_date": args.target_date,
+        "cities": cities,
         "market_type": args.market_type,
         "as_of_ts_utc": _parse_as_of(args.as_of).isoformat(),
         "decision_time_label": args.decision_time_label,
@@ -227,6 +235,12 @@ def _parse_as_of(value: str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
+
+
+def _split_csv(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    return [part.strip().lower() for part in value.split(",") if part.strip()]
 
 
 def _guidance_comparison(summary: pd.DataFrame, latest: pd.DataFrame) -> pd.DataFrame:

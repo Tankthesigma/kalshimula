@@ -123,6 +123,32 @@ def test_write_nowcast_features_can_target_low_market_rules(tmp_path) -> None:
     assert chicago["station_id"] == "KMDW"
 
 
+def test_write_nowcast_features_can_filter_cities(tmp_path) -> None:
+    store = tmp_path / "observations.csv"
+    write_observation_store(
+        store,
+        pd.DataFrame(
+            [
+                _obs("KMDW", "2026-05-24T14:00:00", 72),
+                _obs("KNYC", "2026-05-24T14:00:00", 65),
+            ]
+        ),
+    )
+
+    result = write_nowcast_features(
+        output_dir=tmp_path / "out",
+        target_date=datetime(2026, 5, 24).date(),
+        as_of_ts=datetime(2026, 5, 24, 14, 30),
+        decision_time_label="10",
+        observation_store_path=store,
+        cities=["nyc"],
+    )
+
+    assert result.features["city"].tolist() == ["nyc"]
+    assert result.features["station_id"].tolist() == ["KNYC"]
+    assert result.manifest["cities"] == ["nyc"]
+
+
 def test_nowcast_features_use_only_observations_available_by_as_of() -> None:
     rule = station_rule_by_key(city="chicago")
     observations = pd.DataFrame(

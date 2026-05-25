@@ -91,6 +91,8 @@ def test_weather_desk_refresh_cli_runs_predictions_then_desk(monkeypatch, tmp_pa
                 "morning",
                 "--station-rules",
                 str(DEFAULT_STATION_RULES_PATH),
+                "--cities",
+                "nyc,boston",
                 "--market-type",
                 "high",
                 "--model-version",
