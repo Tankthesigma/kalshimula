@@ -337,33 +337,40 @@ def _issue_ts(block: str) -> datetime | None:
 
 
 def _row_numbers(block: str, row_name: str) -> list[float]:
-    pattern = re.compile(rf"(?m)^(\s*{re.escape(row_name)}\s+.+)$")
+    pattern = re.compile(rf"(?m)^(\s*{re.escape(row_name)}\s+(.+))$")
     match = pattern.search(block)
     if match is None:
         return []
     line = match.group(1)
-    values = [float(value) for value in re.findall(r"-?\d+", line[len(row_name) :])]
-    if values and all(abs(value) < 200 for value in values):
+    data = match.group(2)
+    values = [float(value) for value in re.findall(r"-?\d+", data)]
+    if values and all(abs(value) < _row_abs_limit(row_name) for value in values):
         return values
 
     # NBM text bulletins use fixed-width 3-character numeric fields. Hot
     # stations can pack three-digit temperatures without spaces:
     # ``... 94 97100102103 ...``. Regex tokenization reads that as one giant
     # number, so fall back to field-width parsing.
-    label_start = line.upper().find(row_name.upper())
-    label_end = label_start + len(row_name)
-    first_number = re.search(r"-?\d", line[label_end:])
-    if first_number is None:
-        return []
-    first_number_index = label_end + first_number.start()
+    data_start = match.start(2) - match.start(1)
     candidates = [
-        _parse_fixed_width_number_fields(line, first_number_index),
-        _parse_fixed_width_number_fields(line, max(label_end, first_number_index - 1)),
+        _parse_fixed_width_number_fields(line, data_start),
+        _parse_fixed_width_number_fields(line, max(0, data_start - 1)),
     ]
-    plausible = [candidate for candidate in candidates if candidate and all(abs(value) < 200 for value in candidate)]
+    limit = _row_abs_limit(row_name)
+    plausible = [
+        candidate
+        for candidate in candidates
+        if candidate and all(abs(value) < limit for value in candidate)
+    ]
     if plausible:
         return max(plausible, key=len)
     return candidates[0]
+
+
+def _row_abs_limit(row_name: str) -> float:
+    if row_name.upper() == "FHR":
+        return 1000
+    return 200
 
 
 def _parse_fixed_width_number_fields(line: str, data_start: int) -> list[float]:
