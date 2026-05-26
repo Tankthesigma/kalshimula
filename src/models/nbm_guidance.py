@@ -89,17 +89,18 @@ def build_nbm_guidance_rows(
     nbp_text: str | None = None,
     source: str = NBM_TEXT_SOURCE,
 ) -> pd.DataFrame:
-    """Build normalized NBM guidance rows for all high-temperature station rules.
+    """Build normalized NBM guidance rows for high- or low-temperature station rules.
 
     ``NBH`` hourly station guidance is used as the deterministic point. If
     ``NBP`` percentile guidance is present for the same target settlement date,
     q10/q50/q90 are attached and q50 becomes the point. Otherwise the point is
-    the max of hourly NBM temperature over the station's LST settlement date.
+    the max/min of hourly NBM temperature over the station's LST settlement
+    date, depending on ``rule.market_type``.
     """
     selected_rules = [
         rule
         for rule in (rules or load_station_rules(DEFAULT_STATION_RULES_PATH))
-        if rule.platform == "kalshi" and rule.market_type == "high"
+        if rule.platform == "kalshi" and rule.market_type in {"high", "low"}
     ]
     as_of = _parse_utc(as_of_ts)
     rows = []
@@ -265,7 +266,8 @@ def _hourly_point_for_rule(text: str, *, rule: StationRule, target: date) -> dic
             valid_points.append((valid_ts, temp_f))
     if not valid_points:
         return {}
-    valid_ts, point = max(valid_points, key=lambda item: item[1])
+    selector = max if rule.market_type == "high" else min
+    valid_ts, point = selector(valid_points, key=lambda item: item[1])
     return {"point": point, "issue_ts": issue, "valid_ts": valid_ts}
 
 
@@ -293,28 +295,28 @@ def _percentiles_for_rule(text: str, *, rule: StationRule, target: date) -> dict
             candidates.append((valid_ts, values))
     if not candidates:
         return {}
-    valid_ts, values = max(candidates, key=_percentile_peak_key)
+    selector = max if rule.market_type == "high" else min
+    valid_ts, values = selector(candidates, key=_percentile_temperature_key)
     return {**values, "issue_ts": issue, "valid_ts": valid_ts}
 
 
-def _percentile_peak_key(candidate: tuple[datetime, dict[str, float]]) -> tuple[float, float, int]:
-    """Rank percentile rows by the target day's high-temperature proxy.
+def _percentile_temperature_key(candidate: tuple[datetime, dict[str, float]]) -> tuple[float, float, int]:
+    """Rank percentile rows by the target hour's median-temperature proxy.
 
-    NBP TXNP rows are hourly temperature percentiles, not daily-high
-    percentiles. For high-temperature markets, use the hour with the highest
-    median temperature in the settlement day. Falling back through q90/q10 and
-    then row completeness keeps malformed/partial rows deterministic without
-    letting an early nighttime row masquerade as the high.
+    NBP TXNP rows are hourly temperature percentiles, not daily extrema
+    percentiles. Callers choose max for high markets and min for low markets.
+    Falling back through q90/q10 and then row completeness keeps
+    malformed/partial rows deterministic.
     """
     valid_ts, values = candidate
-    peak = values.get("guidance_q50_f")
-    if peak is None:
-        peak = values.get("guidance_q90_f")
-    if peak is None:
-        peak = values.get("guidance_q10_f")
-    if peak is None:
-        peak = float("-inf")
-    return (float(peak), float(valid_ts.timestamp()), len(values))
+    value = values.get("guidance_q50_f")
+    if value is None:
+        value = values.get("guidance_q90_f")
+    if value is None:
+        value = values.get("guidance_q10_f")
+    if value is None:
+        value = float("-inf")
+    return (float(value), float(valid_ts.timestamp()), len(values))
 
 
 def _station_block(text: str, station_id: str) -> str | None:
