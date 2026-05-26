@@ -78,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=NOMADS_BLEND_BASE_URL,
         help="NBM text product base URL passed through to weather_desk_refresh_cli.",
     )
+    parser.add_argument("--nbm-calibration-params", type=Path)
     parser.add_argument("--no-require-gate", action="store_true")
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
@@ -146,6 +147,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.include_nbm_guidance:
                 refresh_args.append("--include-nbm-guidance")
                 refresh_args.extend(["--nbm-base-url", args.nbm_base_url])
+                if args.nbm_calibration_params is not None:
+                    refresh_args.extend(
+                        ["--nbm-calibration-params", str(args.nbm_calibration_params)]
+                    )
             if args.no_require_gate:
                 refresh_args.append("--no-require-gate")
             refresh_code = weather_desk_refresh_cli.main(refresh_args)
@@ -154,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
                     packet_dir / args.prefix,
                     include_nws_guidance=args.include_nws_guidance,
                     include_nbm_guidance=args.include_nbm_guidance,
+                    include_nbm_calibrated=args.nbm_calibration_params is not None,
                 )
                 if refresh_code == 0
                 else []
@@ -186,6 +192,11 @@ def main(argv: list[str] | None = None) -> int:
         "include_nws_guidance": bool(args.include_nws_guidance),
         "include_nbm_guidance": bool(args.include_nbm_guidance),
         "nbm_base_url": args.nbm_base_url if args.include_nbm_guidance else None,
+        "nbm_calibration_params": (
+            str(args.nbm_calibration_params)
+            if args.include_nbm_guidance and args.nbm_calibration_params is not None
+            else None
+        ),
         "packet_completeness_required": True,
         "packet_layout": "one directory per decision_time_label/city",
         "runs": [asdict(run) for run in runs],
@@ -236,12 +247,15 @@ def _packet_completeness_errors(
     *,
     include_nws_guidance: bool,
     include_nbm_guidance: bool,
+    include_nbm_calibrated: bool = False,
 ) -> list[str]:
     required_modes = ["raw", "adjusted", "heat_corrected"]
     if include_nws_guidance:
         required_modes.append("lone_outlier")
     if include_nbm_guidance:
         required_modes.append("nbm")
+        if include_nbm_calibrated:
+            required_modes.append("nbm_calibrated")
 
     errors = []
     for mode in required_modes:

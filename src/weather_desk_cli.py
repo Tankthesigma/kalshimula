@@ -21,6 +21,7 @@ from src.models.heat_regime_correction import write_heat_regime_correction
 from src.models.lone_outlier_correction import write_lone_outlier_correction
 from src.models.nbm_candidate import write_nbm_candidate_predictions
 from src.models.nbm_guidance import NOMADS_BLEND_BASE_URL, write_nbm_guidance_rows
+from src.models.nbm_probability_calibration import write_nbm_calibrated_predictions
 from src.models.nowcast_adjustment import write_nowcast_adjusted_predictions
 from src.models.nowcast_features import write_nowcast_features
 from src.models.nowcast_predictions import write_nowcast_predictions
@@ -61,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--nbm-base-url",
         default=NOMADS_BLEND_BASE_URL,
         help="NBM text product base URL. Use NOAA AWS S3 for historical archive probes.",
+    )
+    parser.add_argument(
+        "--nbm-calibration-params",
+        type=Path,
+        help="Market-free NBM PMF calibration params JSON; emits predictions_nowcast_nbm_calibrated.",
     )
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
@@ -124,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     nbm_guidance_rows = pd.DataFrame()
     nbm_latest = pd.DataFrame()
     nbm_result = None
+    nbm_calibrated_rows = pd.DataFrame()
     if args.include_nws_guidance:
         guidance_path = out_dir / "guidance" / "nws_guidance_rows.csv"
         guidance_path.parent.mkdir(parents=True, exist_ok=True)
@@ -189,6 +196,15 @@ def main(argv: list[str] | None = None) -> int:
             as_of_ts=args.as_of,
             git_commit=git_commit,
         )
+        if args.nbm_calibration_params is not None:
+            nbm_calibrated_rows = write_nbm_calibrated_predictions(
+                input_predictions_path=(
+                    out_dir / "predictions_nowcast_nbm" / "predictions_nowcast.csv"
+                ),
+                output_dir=out_dir / "predictions_nowcast_nbm_calibrated",
+                calibration_params_path=args.nbm_calibration_params,
+                git_commit=git_commit,
+            )
     analyst_result = write_weather_analyst_packet(
         nowcast_summary_path=out_dir / "nowcast_report" / "nowcast_report_summary.csv",
         guidance_comparison_path=(
@@ -244,6 +260,15 @@ def main(argv: list[str] | None = None) -> int:
                     "predictions_nowcast_nbm": (
                         "predictions_nowcast_nbm/predictions_nowcast.csv"
                     ),
+                    **(
+                        {
+                            "predictions_nowcast_nbm_calibrated": (
+                                "predictions_nowcast_nbm_calibrated/predictions_nowcast.csv"
+                            ),
+                        }
+                        if args.nbm_calibration_params is not None
+                        else {}
+                    ),
                 }
                 if args.include_nbm_guidance
                 else {}
@@ -264,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
             "nbm_guidance_rows": int(len(nbm_guidance_rows)),
             "nbm_latest_rows": int(len(nbm_latest)),
             "nbm_prediction_rows": int(len(nbm_result.predictions)) if nbm_result else 0,
+            "nbm_calibrated_prediction_rows": int(len(nbm_calibrated_rows)),
             "weather_analyst_rows": int(len(analyst_result.rows)),
         },
         "notes": [
@@ -272,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
             "Lone-outlier correction is a candidate packet only; it is not a promoted default.",
             "Heat-regime correction is a candidate packet only; it is not a promoted default.",
             "NBM packet is a candidate mode only; it is not a promoted default.",
+            "NBM calibrated packet is a candidate mode only; it is not a promoted default.",
             "Bobby/private audit may consume predictions_nowcast_adjusted to validate paper PnL before any operational promotion.",
         ],
     }

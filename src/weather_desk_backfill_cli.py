@@ -61,6 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=NOMADS_BLEND_BASE_URL,
         help="NBM text product base URL passed through to weather_desk_schedule_cli.",
     )
+    parser.add_argument("--nbm-calibration-params", type=Path)
     parser.add_argument("--no-require-gate", action="store_true")
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     parser.add_argument(
@@ -121,6 +122,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.include_nbm_guidance:
             schedule_args.append("--include-nbm-guidance")
             schedule_args.extend(["--nbm-base-url", args.nbm_base_url])
+            if args.nbm_calibration_params is not None:
+                schedule_args.extend(["--nbm-calibration-params", str(args.nbm_calibration_params)])
         if args.no_require_gate:
             schedule_args.append("--no-require-gate")
 
@@ -148,6 +151,11 @@ def main(argv: list[str] | None = None) -> int:
         "include_nws_guidance": bool(args.include_nws_guidance),
         "include_nbm_guidance": bool(args.include_nbm_guidance),
         "nbm_base_url": args.nbm_base_url if args.include_nbm_guidance else None,
+        "nbm_calibration_params": (
+            str(args.nbm_calibration_params)
+            if args.include_nbm_guidance and args.nbm_calibration_params is not None
+            else None
+        ),
         "continue_on_error": bool(args.continue_on_error),
         "packet_completeness_required": True,
         "packet_layout": "one schedule directory per date",
