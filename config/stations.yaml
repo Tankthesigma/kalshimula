@@ -87,3 +87,83 @@ cities:
     lon: -71.0097
     tz: America/New_York
     lst_offset_hours: -5
+  dc:
+    name: Washington DC
+    nws_station: KDCA
+    ghcnd_id: GHCND:USW00013743
+    lat: 38.8512
+    lon: -77.0342
+    tz: America/New_York
+    lst_offset_hours: -5
+  atlanta:
+    name: Atlanta
+    nws_station: KATL
+    ghcnd_id: GHCND:USW00013874
+    lat: 33.6301
+    lon: -84.4418
+    tz: America/New_York
+    lst_offset_hours: -5
+  las_vegas:
+    name: Las Vegas
+    nws_station: KLAS
+    ghcnd_id: GHCND:USW00023169
+    lat: 36.0719
+    lon: -115.1634
+    tz: America/Los_Angeles
+    lst_offset_hours: -8
+  sf:
+    name: San Francisco
+    nws_station: KSFO
+    ghcnd_id: GHCND:USW00023234
+    lat: 37.6196
+    lon: -122.3656
+    tz: America/Los_Angeles
+    lst_offset_hours: -8
+  dallas:
+    name: Dallas
+    nws_station: KDFW
+    ghcnd_id: GHCND:USW00003927
+    lat: 32.8975
+    lon: -97.0189
+    tz: America/Chicago
+    lst_offset_hours: -6
+  seattle:
+    name: Seattle
+    nws_station: KSEA
+    ghcnd_id: GHCND:USW00024233
+    lat: 47.4447
+    lon: -122.3136
+    tz: America/Los_Angeles
+    lst_offset_hours: -8
+  minneapolis:
+    name: Minneapolis
+    nws_station: KMSP
+    ghcnd_id: GHCND:USW00014922
+    lat: 44.8831
+    lon: -93.2289
+    tz: America/Chicago
+    lst_offset_hours: -6
+  new_orleans:
+    name: New Orleans
+    nws_station: KMSY
+    ghcnd_id: GHCND:USW00012916
+    lat: 29.9934
+    lon: -90.2580
+    tz: America/Chicago
+    lst_offset_hours: -6
+  okc:
+    name: Oklahoma City
+    nws_station: KOKC
+    ghcnd_id: GHCND:USW00013967
+    lat: 35.3931
+    lon: -97.6007
+    tz: America/Chicago
+    lst_offset_hours: -6
+  san_antonio:
+    name: San Antonio
+    nws_station: KSAT
+    ghcnd_id: GHCND:USW00012921
+    lat: 29.5337
+    lon: -98.4698
+    tz: America/Chicago
+    lst_offset_hours: -6
