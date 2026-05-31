@@ -20,6 +20,18 @@ def test_load_selected_source_matches_city_case_insensitively(tmp_path) -> None:
     assert predict._load_selected_source(selected_sources, "chicago") is None
 
 
+def test_load_selected_source_uses_global_recommended_policy_for_missing_city(tmp_path) -> None:
+    selected_sources = tmp_path / "recommended_sources.csv"
+    selected_sources.write_text(
+        "city,selected_source,recommended_policy\n"
+        "austin,gfs_ens,best_global_validation_source\n"
+        "boston,gfs_ens,best_global_validation_source\n",
+        encoding="utf-8",
+    )
+
+    assert predict._load_selected_source(selected_sources, "chicago") == "gfs_ens"
+
+
 def test_members_for_selected_source_filters_individual_source() -> None:
     members = pd.DataFrame(
         {

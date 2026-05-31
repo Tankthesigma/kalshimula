@@ -103,10 +103,26 @@ def _load_selected_source(path: Path, city: str) -> str | None:
             raise ValueError(f"selected sources CSV missing columns: {sorted(missing)}")
 
         city_key = city.strip().lower()
-        for row in reader:
+        rows = list(reader)
+        global_sources = {
+            row.get("selected_source", "").strip()
+            for row in rows
+            if row.get("selected_source", "").strip()
+        }
+        for row in rows:
             if row.get("city", "").strip().lower() == city_key:
                 selected = row.get("selected_source", "").strip()
                 return selected or None
+        if (
+            "recommended_policy" in fieldnames
+            and len(global_sources) == 1
+            and any(
+                row.get("recommended_policy", "").strip()
+                == "best_global_validation_source"
+                for row in rows
+            )
+        ):
+            return next(iter(global_sources))
     return None
 
 
