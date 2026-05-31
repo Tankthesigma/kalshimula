@@ -69,6 +69,21 @@ def test_weather_analyst_marks_uncalibrated_source_policy_as_review() -> None:
     assert "lacks bias/interval calibration coverage" in rows.iloc[0]["analyst_note"]
 
 
+def test_weather_analyst_marks_selected_source_fallback_as_review() -> None:
+    summary = _summary()
+    summary.loc[0, "weather_reason_codes"] = "selected_source_fallback"
+
+    rows = summarize_weather_analyst_rows(
+        summary,
+        guidance_comparison=_guidance(1.0),
+        calibration_coverage={("chicago", "gfs_ens")},
+    )
+
+    assert rows.iloc[0]["desk_priority"] == "review"
+    assert "source_selection_fallback" in rows.iloc[0]["risk_flags"]
+    assert "fell back to pooled Open-Meteo" in rows.iloc[0]["analyst_note"]
+
+
 def test_weather_analyst_keeps_calibrated_source_policy_clean() -> None:
     rows = summarize_weather_analyst_rows(
         _summary(),

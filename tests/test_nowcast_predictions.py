@@ -124,6 +124,7 @@ def test_build_nowcast_prediction_rows_reports_fallback_source_when_selected_not
     )
 
     assert set(rows["source_policy"]) == {"openmeteo_naive"}
+    assert set(rows["weather_reason_codes"]) == {"selected_source_fallback"}
 
 
 def test_build_nowcast_prediction_rows_rejects_low_market_rows() -> None:

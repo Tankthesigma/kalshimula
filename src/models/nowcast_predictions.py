@@ -209,6 +209,12 @@ def _rows_for_prediction(
     )
     source_policy = _source_policy(prediction)
     raw_by_degree = {int(k): float(v) for k, v in raw_pmf.items()}
+    weather_reason_codes = _append_reason(
+        feature_values["weather_reason_codes"],
+        "selected_source_fallback"
+        if _selected_source_fallback(prediction)
+        else "",
+    )
 
     rows = []
     for degree, probability in sorted(calibrated_pmf.items()):
@@ -234,7 +240,7 @@ def _rows_for_prediction(
                 "pmf_degree_json": pmf_json,
                 "source_policy": source_policy,
                 "nowcast_veto_flag": feature_values["nowcast_veto_flag"],
-                "weather_reason_codes": feature_values["weather_reason_codes"],
+                "weather_reason_codes": weather_reason_codes,
                 "station_rule_confidence": rule.rule_confidence,
                 "source_independence_score": _source_independence_score(source_policy),
                 "feature_hash": feature_values["feature_hash"],
@@ -347,6 +353,11 @@ def _source_policy(prediction: dict[str, Any]) -> str:
     return "openmeteo_naive"
 
 
+def _selected_source_fallback(prediction: dict[str, Any]) -> bool:
+    selected = str(prediction.get("selected_source") or "").strip()
+    return bool(selected) and not bool(prediction.get("selected_source_applied"))
+
+
 def _source_independence_score(source_policy: str) -> float:
     return 0.0 if source_policy == "hrrr" else 1.0
 
@@ -378,6 +389,13 @@ def _normalize_ts(value: datetime | str | None) -> str:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC).isoformat()
+
+
+def _append_reason(existing: Any, reason: str) -> str:
+    reasons = [part.strip() for part in str(existing or "").split(";") if part.strip()]
+    if reason and reason not in reasons:
+        reasons.append(reason)
+    return ";".join(reasons)
 
 
 def _prediction_date_range(predictions: pd.DataFrame) -> dict[str, str | None]:

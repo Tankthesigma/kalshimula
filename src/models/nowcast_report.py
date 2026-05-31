@@ -151,6 +151,7 @@ def summarize_nowcast_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
                 "source_independence_score": independence,
                 "priority": _priority(
                     nowcast_veto_flag=veto,
+                    weather_reason_codes=_text(base["weather_reason_codes"]),
                     station_rule_confidence=station_confidence,
                     source_independence_score=independence,
                 ),
@@ -227,11 +228,14 @@ def write_nowcast_report(
 def _priority(
     *,
     nowcast_veto_flag: bool,
+    weather_reason_codes: str,
     station_rule_confidence: str,
     source_independence_score: float,
 ) -> str:
     if nowcast_veto_flag:
         return "veto"
+    if "selected_source_fallback" in weather_reason_codes.split(";"):
+        return "review"
     if station_rule_confidence != "high" or source_independence_score < 0.5:
         return "review"
     return "high"

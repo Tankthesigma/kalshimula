@@ -250,6 +250,8 @@ def _risk_flags(
         flags.append("station_rule_review")
     if _num(row.get("source_independence_score")) < 0.5:
         flags.append("source_not_independent")
+    if "selected_source_fallback" in str(row.get("weather_reason_codes", "")).split(";"):
+        flags.append("source_selection_fallback")
     if calibration_coverage is not None:
         city = str(row.get("city", "")).lower()
         source_policy = str(row.get("source_policy", "")).strip()
@@ -300,6 +302,8 @@ def _analyst_note(priority: str, flags: list[str]) -> str:
         return "Weather checks are clean, but the distribution is broad; private audit still decides market relevance."
     if "uncalibrated_source_policy" in flags:
         return "Selected source lacks bias/interval calibration coverage; keep this row out of clean promotion."
+    if "source_selection_fallback" in flags:
+        return "Selected source could not be applied live; this row fell back to pooled Open-Meteo and stays out of clean promotion."
     if "nws_watch" in flags:
         return "Model differs from NWS by more than 2F; inspect before relying on it."
     if "station_rule_review" in flags:

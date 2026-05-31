@@ -76,3 +76,12 @@ def test_build_nowcast_report_marks_weather_only() -> None:
     assert "Weather-Only Nowcast Report" in result.markdown
     assert "not a trading signal" in result.markdown
     assert result.manifest["row_counts"]["summary_rows"] == 1
+
+
+def test_summarize_nowcast_predictions_reviews_selected_source_fallback() -> None:
+    rows = _rows()
+    rows["weather_reason_codes"] = "selected_source_fallback"
+
+    summary = summarize_nowcast_predictions(rows)
+
+    assert summary.iloc[0]["priority"] == "review"
