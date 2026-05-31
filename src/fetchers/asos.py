@@ -107,26 +107,45 @@ def parse_asos_csv(text: str, station: str) -> list[AsosHourlyObservation]:
     Station filtering is case-insensitive and tolerant of the leading-``K``
     stripping that IEM applies to US ICAO codes in CSV output.
     """
-    if not isinstance(text, str) or not text.strip():
-        return []
+    return parse_asos_csv_for_stations(text, [station]).get(station, [])
 
+
+def parse_asos_csv_for_stations(
+    text: str,
+    stations: list[str],
+) -> dict[str, list[AsosHourlyObservation]]:
+    """Parse one ASOS CSV blob into per-station observation lists.
+
+    This is used by the nowcast pipeline to batch multiple station requests into
+    a small number of IEM calls instead of one request per station.
+    """
+    requested = [_normalize_requested_station(station) for station in stations]
+    out = {station: [] for station in requested}
+    if not isinstance(text, str) or not text.strip() or not requested:
+        return out
+
+    station_map = {
+        _asos_station_key(station): station
+        for station in requested
+    }
     cleaned = "\n".join(
         line for line in text.splitlines() if not line.lstrip().startswith("#")
     )
     reader = csv.DictReader(io.StringIO(cleaned))
     if reader.fieldnames is None:
-        return []
+        return out
 
     has_station_col = "station" in reader.fieldnames
-    wanted = _asos_station_key(station)
-    out: list[AsosHourlyObservation] = []
     for row in reader:
-        if has_station_col and _asos_station_key(row.get("station") or "") != wanted:
-            continue
+        station = requested[0]
+        if has_station_col:
+            station = station_map.get(_asos_station_key(row.get("station") or ""), "")
+            if not station:
+                continue
         valid_time = _parse_valid(row.get("valid", ""))
         if valid_time is None:
             continue
-        out.append(
+        out[station].append(
             AsosHourlyObservation(
                 station=station,
                 valid_time=valid_time,
@@ -220,6 +239,39 @@ def fetch_asos_observation_csv(station: str, start: date, end: date) -> str:
         response = client.get(ASOS_CSV_URL, params=params)
         response.raise_for_status()
         return response.text
+
+
+def fetch_asos_observation_csv_multi(
+    stations: list[str],
+    start: date,
+    end: date,
+) -> str:
+    """Fetch richer ASOS observations for multiple stations in one request."""
+    params: list[tuple[str, object]] = [
+        *[("station", station) for station in stations],
+        ("year1", start.year),
+        ("month1", start.month),
+        ("day1", start.day),
+        ("year2", end.year),
+        ("month2", end.month),
+        ("day2", end.day),
+        ("tz", "Etc/UTC"),
+        ("format", "onlycomma"),
+        ("latlon", "no"),
+        ("missing", "M"),
+        ("trace", "T"),
+        ("direct", "no"),
+        ("report_type", 3),
+    ]
+    params.extend(("data", field) for field in ASOS_OBSERVATION_FIELDS)
+    with httpx.Client(timeout=30.0) as client:
+        response = client.get(ASOS_CSV_URL, params=params)
+        response.raise_for_status()
+        return response.text
+
+
+def _normalize_requested_station(station: str) -> str:
+    return normalize_station(station)
 
 
 def _cloud_cover(row: dict[str, str]) -> str | None:
