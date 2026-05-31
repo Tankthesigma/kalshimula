@@ -12,7 +12,9 @@ from src.fetchers.asos import (
     daily_high_from_hourly,
     fetch_asos_csv,
     fetch_asos_observation_csv,
+    fetch_asos_observation_csv_multi,
     parse_asos_csv,
+    parse_asos_csv_for_stations,
 )
 
 STATION = "KORD"
@@ -321,3 +323,26 @@ class TestFetchAsosCsv:
         assert ("data", "dwpf") in params
         assert ("data", "sknt") in params
         assert ("data", "skyc1") in params
+
+    def test_multi_station_observation_fetch_repeats_station_params(self, monkeypatch):
+        client = _FakeClient(text=CSV_RICH_OBS)
+        monkeypatch.setattr(asos.httpx, "Client", client)
+
+        text = fetch_asos_observation_csv_multi(["KORD", "KMDW"], TARGET, TARGET)
+
+        assert text == CSV_RICH_OBS
+        _, params = client.calls[0]
+        stations = [value for key, value in params if key == "station"]
+        assert stations == ["KORD", "KMDW"]
+
+
+def test_parse_asos_csv_for_stations_groups_rows_by_requested_station() -> None:
+    grouped = parse_asos_csv_for_stations(
+        "station,valid,tmpf\nORD,2025-01-02 13:53,32.0\nMDW,2025-01-02 13:54,33.0\n",
+        ["KORD", "KMDW"],
+    )
+
+    assert [obs.station for obs in grouped["KORD"]] == ["KORD"]
+    assert [obs.temp_f for obs in grouped["KORD"]] == [32.0]
+    assert [obs.station for obs in grouped["KMDW"]] == ["KMDW"]
+    assert [obs.temp_f for obs in grouped["KMDW"]] == [33.0]
