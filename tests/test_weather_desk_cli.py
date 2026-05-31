@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.weather_desk_cli import main
+from src.weather_desk_cli import _nws_guarded_fallback_rows, main
 
 
 def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -382,3 +382,122 @@ def test_weather_desk_cli_skips_nbm_candidate_when_guidance_unavailable(
     assert any("NBM guidance unavailable for this run" in note for note in manifest["notes"])
     assert manifest["row_counts"]["nbm_guidance_rows"] == 0
     assert manifest["row_counts"]["nbm_prediction_rows"] == 0
+
+
+def test_nws_guarded_fallback_rows_flags_when_adjusted_is_much_worse() -> None:
+    raw = pd.DataFrame(
+        [
+            {
+                "city": "nyc",
+                "platform": "kalshi",
+                "market_type": "high",
+                "station_id": "KNYC",
+                "target_date": "2026-05-31",
+                "decision_time_label": "05",
+                "source_policy": "gfs_ens",
+                "point_f": 75.1,
+                "q10_f": 74.0,
+                "q90_f": 76.0,
+                "top_bin_label": "75",
+                "top_bin_probability": 0.52,
+            }
+        ]
+    )
+    adjusted = pd.DataFrame(
+        [
+            {
+                "city": "nyc",
+                "platform": "kalshi",
+                "market_type": "high",
+                "station_id": "KNYC",
+                "target_date": "2026-05-31",
+                "decision_time_label": "05",
+                "source_policy": "gfs_ens",
+                "point_f": 73.0,
+                "q10_f": 73.0,
+                "q90_f": 73.0,
+                "top_bin_label": "73",
+                "top_bin_probability": 1.0,
+            }
+        ]
+    )
+    guidance = pd.DataFrame(
+        [
+            {
+                "city": "nyc",
+                "market_type": "high",
+                "station_id": "KNYC",
+                "target_date": "2026-05-31",
+                "guidance_point_f": 76.0,
+            }
+        ]
+    )
+
+    fallback = _nws_guarded_fallback_rows(
+        raw_summary=raw,
+        adjusted_summary=adjusted,
+        guidance_latest=guidance,
+    )
+
+    assert fallback["city"].tolist() == ["nyc"]
+    assert fallback["fallback_reason"].tolist() == [
+        "adjusted_degrades_nws_agreement_vs_raw_by_gt_1.5f"
+    ]
+
+
+def test_nws_guarded_fallback_rows_skips_small_degradation() -> None:
+    raw = pd.DataFrame(
+        [
+            {
+                "city": "houston",
+                "platform": "kalshi",
+                "market_type": "high",
+                "station_id": "KHOU",
+                "target_date": "2026-05-31",
+                "decision_time_label": "05",
+                "source_policy": "gfs_ens",
+                "point_f": 93.6,
+                "q10_f": 92.0,
+                "q90_f": 96.0,
+                "top_bin_label": "93",
+                "top_bin_probability": 0.32,
+            }
+        ]
+    )
+    adjusted = pd.DataFrame(
+        [
+            {
+                "city": "houston",
+                "platform": "kalshi",
+                "market_type": "high",
+                "station_id": "KHOU",
+                "target_date": "2026-05-31",
+                "decision_time_label": "05",
+                "source_policy": "gfs_ens",
+                "point_f": 93.8,
+                "q10_f": 92.0,
+                "q90_f": 96.0,
+                "top_bin_label": "93",
+                "top_bin_probability": 0.32,
+            }
+        ]
+    )
+    guidance = pd.DataFrame(
+        [
+            {
+                "city": "houston",
+                "market_type": "high",
+                "station_id": "KHOU",
+                "target_date": "2026-05-31",
+                "guidance_point_f": 91.0,
+            }
+        ]
+    )
+
+    fallback = _nws_guarded_fallback_rows(
+        raw_summary=raw,
+        adjusted_summary=adjusted,
+        guidance_latest=guidance,
+    )
+
+    assert fallback.empty
