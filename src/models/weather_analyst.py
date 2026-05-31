@@ -47,12 +47,14 @@ def build_weather_analyst_packet(
     nowcast_summary: pd.DataFrame,
     *,
     guidance_comparison: pd.DataFrame | None = None,
+    calibration_coverage: set[tuple[str, str]] | None = None,
     git_commit: str | None = None,
 ) -> WeatherAnalystPacket:
     """Build a deterministic weather-desk analyst packet."""
     rows = summarize_weather_analyst_rows(
         nowcast_summary,
         guidance_comparison=guidance_comparison,
+        calibration_coverage=calibration_coverage,
     )
     priority_counts = _priority_counts(rows)
     clean_rows = rows.loc[rows["desk_priority"] == "clean"].copy()
@@ -83,6 +85,7 @@ def summarize_weather_analyst_rows(
     nowcast_summary: pd.DataFrame,
     *,
     guidance_comparison: pd.DataFrame | None = None,
+    calibration_coverage: set[tuple[str, str]] | None = None,
 ) -> pd.DataFrame:
     """Return one operator-readable analyst row per nowcast summary row."""
     if nowcast_summary.empty:
@@ -92,7 +95,11 @@ def summarize_weather_analyst_rows(
     for row in nowcast_summary.to_dict(orient="records"):
         key = _key(row)
         guidance_row = guidance.get(key, {})
-        flags = _risk_flags(row, guidance_row)
+        flags = _risk_flags(
+            row,
+            guidance_row,
+            calibration_coverage=calibration_coverage,
+        )
         priority = _desk_priority(flags)
         output.append(
             {
@@ -165,6 +172,8 @@ def write_weather_analyst_packet(
     nowcast_summary_path: Path,
     output_dir: Path,
     guidance_comparison_path: Path | None = None,
+    bias_table_path: Path | None = None,
+    interval_table_path: Path | None = None,
     git_commit: str | None = None,
 ) -> WeatherAnalystPacket:
     """Read weather desk artifacts and write analyst CSV/markdown/manifest."""
@@ -174,9 +183,14 @@ def write_weather_analyst_packet(
         if guidance_comparison_path is not None and guidance_comparison_path.exists()
         else None
     )
+    calibration_coverage = _calibration_coverage(
+        bias_table_path=bias_table_path,
+        interval_table_path=interval_table_path,
+    )
     result = build_weather_analyst_packet(
         nowcast_summary,
         guidance_comparison=guidance,
+        calibration_coverage=calibration_coverage,
         git_commit=git_commit,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -212,7 +226,12 @@ def _key(row: dict[str, Any]) -> tuple[str, str, str, str, str]:
     )
 
 
-def _risk_flags(row: dict[str, Any], guidance_row: dict[str, Any]) -> list[str]:
+def _risk_flags(
+    row: dict[str, Any],
+    guidance_row: dict[str, Any],
+    *,
+    calibration_coverage: set[tuple[str, str]] | None = None,
+) -> list[str]:
     flags: list[str] = []
     if _bool(row.get("nowcast_veto_flag")) or str(row.get("priority")) == "veto":
         flags.append("weather_veto")
@@ -220,6 +239,11 @@ def _risk_flags(row: dict[str, Any], guidance_row: dict[str, Any]) -> list[str]:
         flags.append("station_rule_review")
     if _num(row.get("source_independence_score")) < 0.5:
         flags.append("source_not_independent")
+    if calibration_coverage is not None:
+        city = str(row.get("city", "")).lower()
+        source_policy = str(row.get("source_policy", "")).strip()
+        if source_policy and (city, source_policy) not in calibration_coverage:
+            flags.append("uncalibrated_source_policy")
     if _num(row.get("top_bin_probability")) < 0.35:
         flags.append("diffuse_distribution")
     agreement = str(guidance_row.get("guidance_agreement", "missing"))
@@ -247,6 +271,8 @@ def _analyst_note(priority: str, flags: list[str]) -> str:
         return "Do not use this row for model review until weather veto clears."
     if "nws_watch" in flags:
         return "Model differs from NWS by more than 2F; inspect before relying on it."
+    if "uncalibrated_source_policy" in flags:
+        return "Selected source lacks bias/interval calibration coverage; keep this row out of clean promotion."
     if "station_rule_review" in flags:
         return "Station/rule confidence needs validation before promotion."
     if "diffuse_distribution" in flags:
@@ -269,6 +295,34 @@ def _priority_counts(rows: pd.DataFrame) -> dict[str, int]:
     for priority, count in rows["desk_priority"].value_counts().items():
         counts[str(priority)] = int(count)
     return counts
+
+
+def _calibration_coverage(
+    *,
+    bias_table_path: Path | None,
+    interval_table_path: Path | None,
+) -> set[tuple[str, str]] | None:
+    if (
+        bias_table_path is None
+        or interval_table_path is None
+        or not bias_table_path.exists()
+        or not interval_table_path.exists()
+    ):
+        return None
+    bias = pd.read_csv(bias_table_path)
+    interval = pd.read_csv(interval_table_path)
+    required = {"city", "source"}
+    if required - set(bias.columns) or required - set(interval.columns):
+        return None
+    bias_pairs = {
+        (str(row["city"]).lower(), str(row["source"]).strip())
+        for _, row in bias.iterrows()
+    }
+    interval_pairs = {
+        (str(row["city"]).lower(), str(row["source"]).strip())
+        for _, row in interval.iterrows()
+    }
+    return bias_pairs & interval_pairs
 
 
 def _num(value: object) -> float:
