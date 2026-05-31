@@ -22,6 +22,8 @@ ANALYST_COLUMNS = [
     "station_id",
     "target_date",
     "decision_time_label",
+    "source_policy",
+    "calibration_supported",
     "desk_priority",
     "point_f",
     "q10_f",
@@ -69,6 +71,9 @@ def build_weather_analyst_packet(
             ),
             "analyst_rows": int(len(rows)),
             "clean_rows": int(len(clean_rows)),
+            "uncalibrated_rows": int(
+                rows["risk_flags"].fillna("").str.contains("uncalibrated_source_policy").sum()
+            ),
         },
         "priority_counts": priority_counts,
         "clean_cities": clean_rows["city"].tolist(),
@@ -109,6 +114,11 @@ def summarize_weather_analyst_rows(
                 "station_id": row["station_id"],
                 "target_date": row["target_date"],
                 "decision_time_label": row["decision_time_label"],
+                "source_policy": row.get("source_policy", ""),
+                "calibration_supported": _calibration_supported(
+                    row,
+                    calibration_coverage=calibration_coverage,
+                ),
                 "desk_priority": priority,
                 "point_f": _num(row.get("point_f")),
                 "q10_f": _num(row.get("q10_f")),
@@ -140,13 +150,14 @@ def render_weather_analyst_packet(rows: pd.DataFrame) -> str:
         return "\n".join([*lines, "No rows.", ""])
     lines.extend(
         [
-            "| priority | city | market | point | q10-q90 | top bin | NWS delta | flags | note |",
-            "|---|---|---|---:|---:|---|---:|---|---|",
+            "| priority | city | market | source | calibrated | point | q10-q90 | top bin | NWS delta | flags | note |",
+            "|---|---|---|---|---|---:|---:|---|---:|---|---|",
         ]
     )
     for row in rows.itertuples(index=False):
         lines.append(
             f"| {row.desk_priority} | {row.city} | {row.market_type} | "
+            f"{row.source_policy} | {row.calibration_supported} | "
             f"{row.point_f:.1f} | {row.q10_f:.0f}-{row.q90_f:.0f} | "
             f"{row.top_bin_label} ({_pct(row.top_bin_probability)}) | "
             f"{_signed(row.model_minus_nws_f)} | {row.risk_flags} | "
@@ -256,6 +267,20 @@ def _risk_flags(
     return flags
 
 
+def _calibration_supported(
+    row: dict[str, Any],
+    *,
+    calibration_coverage: set[tuple[str, str]] | None = None,
+) -> str:
+    if calibration_coverage is None:
+        return "unknown"
+    city = str(row.get("city", "")).lower()
+    source_policy = str(row.get("source_policy", "")).strip()
+    if not source_policy:
+        return "unknown"
+    return "yes" if (city, source_policy) in calibration_coverage else "no"
+
+
 def _desk_priority(flags: list[str]) -> str:
     if "weather_veto" in flags or "nws_divergent" in flags:
         return "veto"
@@ -269,10 +294,10 @@ def _analyst_note(priority: str, flags: list[str]) -> str:
         if "nws_divergent" in flags and "weather_veto" not in flags:
             return "Do not use this row for model review until the model/NWS divergence clears."
         return "Do not use this row for model review until weather veto clears."
-    if "nws_watch" in flags:
-        return "Model differs from NWS by more than 2F; inspect before relying on it."
     if "uncalibrated_source_policy" in flags:
         return "Selected source lacks bias/interval calibration coverage; keep this row out of clean promotion."
+    if "nws_watch" in flags:
+        return "Model differs from NWS by more than 2F; inspect before relying on it."
     if "station_rule_review" in flags:
         return "Station/rule confidence needs validation before promotion."
     if "diffuse_distribution" in flags:
