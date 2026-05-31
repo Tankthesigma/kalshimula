@@ -64,6 +64,7 @@ def test_weather_analyst_marks_uncalibrated_source_policy_as_review() -> None:
     )
 
     assert rows.iloc[0]["desk_priority"] == "review"
+    assert rows.iloc[0]["calibration_supported"] == "no"
     assert "uncalibrated_source_policy" in rows.iloc[0]["risk_flags"]
     assert "lacks bias/interval calibration coverage" in rows.iloc[0]["analyst_note"]
 
@@ -76,6 +77,22 @@ def test_weather_analyst_keeps_calibrated_source_policy_clean() -> None:
     )
 
     assert rows.iloc[0]["desk_priority"] == "clean"
+    assert rows.iloc[0]["calibration_supported"] == "yes"
+
+
+def test_weather_analyst_packet_counts_uncalibrated_rows() -> None:
+    summary = _summary()
+    summary.loc[0, "source_policy"] = "openmeteo_naive"
+
+    packet = build_weather_analyst_packet(
+        summary,
+        guidance_comparison=_guidance(1.0),
+        calibration_coverage={("chicago", "gfs_ens")},
+    )
+
+    assert packet.manifest["row_counts"]["uncalibrated_rows"] == 1
+    assert "source_policy" in packet.markdown
+    assert "calibrated" in packet.markdown
 
 
 def _summary() -> pd.DataFrame:
