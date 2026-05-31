@@ -6,6 +6,47 @@ import pandas as pd
 from src.weather_desk_cli import _nws_guarded_fallback_rows, main
 
 
+def test_summarize_prediction_rows_empty_is_well_formed() -> None:
+    from src.weather_desk_cli import _summarize_prediction_rows
+
+    predictions = pd.DataFrame(
+        columns=[
+            "city",
+            "platform",
+            "market_type",
+            "station_id",
+            "target_date",
+            "decision_time_label",
+            "source_policy",
+            "point_f",
+            "q10_f",
+            "q90_f",
+            "bin_label",
+            "calibrated_probability",
+            "model_probability",
+            "bin_lower_f",
+        ]
+    )
+
+    summary = _summarize_prediction_rows(predictions)
+
+    assert summary.empty
+    assert summary.columns.tolist() == [
+        "city",
+        "platform",
+        "market_type",
+        "station_id",
+        "target_date",
+        "decision_time_label",
+        "source_policy",
+        "point_f",
+        "q10_f",
+        "q90_f",
+        "top_bin_label",
+        "top_bin_probability",
+    ]
+
+
 def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monkeypatch) -> None:
     predictions = tmp_path / "predictions.json"
     observations = tmp_path / "observations.csv"
