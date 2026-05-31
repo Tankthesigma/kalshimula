@@ -50,15 +50,27 @@ PY
 
 CSV="${OUT_ROOT}/weather_packet/weather_desk/weather_analyst/weather_analyst_packet.csv"
 SUMMARY="${OUT_ROOT}/discord_summary.txt"
+REFRESH_MANIFEST="${OUT_ROOT}/weather_packet/weather_desk_refresh_manifest.json"
 
-"${PYTHON_BIN}" - "$CSV" "$SUMMARY" "$OUT_ROOT" <<'PY'
+"${PYTHON_BIN}" - "$CSV" "$SUMMARY" "$OUT_ROOT" "$REFRESH_MANIFEST" <<'PY'
 import csv
+import json
 import sys
 from pathlib import Path
 
 csv_path = Path(sys.argv[1])
 summary_path = Path(sys.argv[2])
 out_root = Path(sys.argv[3])
+manifest_path = Path(sys.argv[4])
+
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+git_commit = manifest.get("git_commit") or "unknown"
+as_of_ts = manifest.get("as_of_ts_utc") or "unknown"
+manifest_notes = manifest.get("notes") or []
+nbm_note = next(
+    (note for note in manifest_notes if "NBM guidance unavailable" in str(note)),
+    None,
+)
 
 rows = list(csv.DictReader(csv_path.open(newline="", encoding="utf-8")))
 rank = {"clean": 0, "review": 1, "veto": 2}
@@ -79,10 +91,19 @@ lines = [
     "Label: WEATHER-ONLY / PAPER-ONLY / NOT REAL MONEY.",
     "This is NOT the trade sheet. Bobby-private must add executable Kalshi odds, $10 economics, and the final PAPER TRACK picks.",
     f"Output: {out_root}",
+    f"Mainline git: {git_commit} | as_of_utc: {as_of_ts}",
     f"Priority counts: {counts}",
     "",
     "CODEX CLEAN WEATHER TARGETS FOR BOBBY TO PRICE:",
 ]
+
+if nbm_note:
+    lines.extend(
+        [
+            f"NBM status: {nbm_note}",
+            "",
+        ]
+    )
 
 usable = [
     r for r in rows
