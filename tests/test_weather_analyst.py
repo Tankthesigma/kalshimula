@@ -80,6 +80,21 @@ def test_weather_analyst_keeps_calibrated_source_policy_clean() -> None:
     assert rows.iloc[0]["calibration_supported"] == "yes"
 
 
+def test_weather_analyst_keeps_diffuse_distribution_clean_with_caution() -> None:
+    summary = _summary()
+    summary.loc[0, "top_bin_probability"] = 0.3
+
+    rows = summarize_weather_analyst_rows(
+        summary,
+        guidance_comparison=_guidance(1.0),
+        calibration_coverage={("chicago", "gfs_ens")},
+    )
+
+    assert rows.iloc[0]["desk_priority"] == "clean"
+    assert "diffuse_distribution" in rows.iloc[0]["risk_flags"]
+    assert "distribution is broad" in rows.iloc[0]["analyst_note"]
+
+
 def test_weather_analyst_packet_counts_uncalibrated_rows() -> None:
     summary = _summary()
     summary.loc[0, "source_policy"] = "openmeteo_naive"
