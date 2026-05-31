@@ -16,9 +16,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.models.forward_packet import write_forward_packet_payload
 from src.models.guidance import write_guidance_diagnostics
 from src.models.heat_regime_correction import write_heat_regime_correction
 from src.models.lone_outlier_correction import write_lone_outlier_correction
+from src.models.lst_vulnerability import write_lst_vulnerability_scan
 from src.models.nbm_candidate import write_nbm_candidate_predictions
 from src.models.nbm_guidance import NOMADS_BLEND_BASE_URL, write_nbm_guidance_rows
 from src.models.nbm_probability_calibration import write_nbm_calibrated_predictions
@@ -107,15 +109,40 @@ def main(argv: list[str] | None = None) -> int:
         model_version=args.model_version,
         git_commit=git_commit,
     )
+    raw_packet_v2 = _write_forward_packet_v2(
+        out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
+        station_rules_path=args.station_rules,
+        git_commit=git_commit,
+    )
+    vulnerability_result = write_lst_vulnerability_scan(
+        observations_path=out_dir / "nowcast_features" / "asos_observations.csv",
+        output_dir=out_dir / "lst_vulnerability",
+        start_date=date.fromisoformat(args.target_date),
+        end_date=date.fromisoformat(args.target_date),
+        station_rules_path=args.station_rules,
+        cities=cities,
+        market_types=[args.market_type],
+        git_commit=git_commit,
+    )
     heat_result = write_heat_regime_correction(
         predictions_path=out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
         output_dir=out_dir / "predictions_nowcast_heat_corrected",
+        git_commit=git_commit,
+    )
+    heat_packet_v2 = _write_forward_packet_v2(
+        out_dir / "predictions_nowcast_heat_corrected" / "predictions_nowcast.csv",
+        station_rules_path=args.station_rules,
         git_commit=git_commit,
     )
     adjusted_result = write_nowcast_adjusted_predictions(
         predictions_path=out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
         features_path=out_dir / "nowcast_features" / "nowcast_features.csv",
         output_dir=out_dir / "predictions_nowcast_adjusted",
+        git_commit=git_commit,
+    )
+    adjusted_packet_v2 = _write_forward_packet_v2(
+        out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv",
+        station_rules_path=args.station_rules,
         git_commit=git_commit,
     )
     report_result = write_nowcast_report(
@@ -127,10 +154,14 @@ def main(argv: list[str] | None = None) -> int:
     guidance_latest = pd.DataFrame()
     guidance_comparison = pd.DataFrame()
     lone_outlier_corrections = pd.DataFrame()
+    lone_outlier_packet_v2_count = 0
     nbm_guidance_rows = pd.DataFrame()
     nbm_latest = pd.DataFrame()
     nbm_result = None
+    nbm_packet_v2_count = 0
     nbm_calibrated_rows = pd.DataFrame()
+    nbm_calibrated_packet_v2_count = 0
+    nbm_guidance_error: str | None = None
     if args.include_nws_guidance:
         guidance_path = out_dir / "guidance" / "nws_guidance_rows.csv"
         guidance_path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,42 +200,69 @@ def main(argv: list[str] | None = None) -> int:
             git_commit=git_commit,
         )
         lone_outlier_corrections = lone_outlier_result.corrections
+        lone_outlier_packet_v2_count = len(
+            _write_forward_packet_v2(
+                out_dir / "predictions_nowcast_lone_outlier" / "predictions_nowcast.csv",
+                station_rules_path=args.station_rules,
+                git_commit=git_commit,
+            ).packets
+        )
     if args.include_nbm_guidance:
         nbm_guidance_path = out_dir / "guidance" / "nbm_guidance_rows.csv"
         nbm_guidance_path.parent.mkdir(parents=True, exist_ok=True)
-        nbm_guidance_rows = write_nbm_guidance_rows(
-            output_path=nbm_guidance_path,
-            target=date.fromisoformat(args.target_date),
-            as_of_ts=_parse_as_of(args.as_of),
-            station_rules_path=args.station_rules,
-            cities=cities,
-            market_types=[args.market_type],
-            base_url=args.nbm_base_url,
-        )
-        nbm_guidance_result = write_guidance_diagnostics(
-            input_path=nbm_guidance_path,
-            output_dir=out_dir / "nbm_guidance_diagnostics",
-            as_of_ts=args.as_of,
-            target_date=args.target_date,
-            git_commit=git_commit,
-        )
-        nbm_latest = nbm_guidance_result.latest
-        nbm_result = write_nbm_candidate_predictions(
-            raw_predictions_path=out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
-            guidance_path=nbm_guidance_path,
-            output_dir=out_dir / "predictions_nowcast_nbm",
-            as_of_ts=args.as_of,
-            git_commit=git_commit,
-        )
-        if args.nbm_calibration_params is not None:
-            nbm_calibrated_rows = write_nbm_calibrated_predictions(
-                input_predictions_path=(
-                    out_dir / "predictions_nowcast_nbm" / "predictions_nowcast.csv"
-                ),
-                output_dir=out_dir / "predictions_nowcast_nbm_calibrated",
-                calibration_params_path=args.nbm_calibration_params,
+        try:
+            nbm_guidance_rows = write_nbm_guidance_rows(
+                output_path=nbm_guidance_path,
+                target=date.fromisoformat(args.target_date),
+                as_of_ts=_parse_as_of(args.as_of),
+                station_rules_path=args.station_rules,
+                cities=cities,
+                market_types=[args.market_type],
+                base_url=args.nbm_base_url,
+            )
+            nbm_guidance_result = write_guidance_diagnostics(
+                input_path=nbm_guidance_path,
+                output_dir=out_dir / "nbm_guidance_diagnostics",
+                as_of_ts=args.as_of,
+                target_date=args.target_date,
                 git_commit=git_commit,
             )
+            nbm_latest = nbm_guidance_result.latest
+            nbm_result = write_nbm_candidate_predictions(
+                raw_predictions_path=out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
+                guidance_path=nbm_guidance_path,
+                output_dir=out_dir / "predictions_nowcast_nbm",
+                as_of_ts=args.as_of,
+                git_commit=git_commit,
+            )
+            nbm_packet_v2_count = len(
+                _write_forward_packet_v2(
+                    out_dir / "predictions_nowcast_nbm" / "predictions_nowcast.csv",
+                    station_rules_path=args.station_rules,
+                    git_commit=git_commit,
+                ).packets
+            )
+            if args.nbm_calibration_params is not None:
+                nbm_calibrated_rows = write_nbm_calibrated_predictions(
+                    input_predictions_path=(
+                        out_dir / "predictions_nowcast_nbm" / "predictions_nowcast.csv"
+                    ),
+                    output_dir=out_dir / "predictions_nowcast_nbm_calibrated",
+                    calibration_params_path=args.nbm_calibration_params,
+                    git_commit=git_commit,
+                )
+                nbm_calibrated_packet_v2_count = len(
+                    _write_forward_packet_v2(
+                        out_dir
+                        / "predictions_nowcast_nbm_calibrated"
+                        / "predictions_nowcast.csv",
+                        station_rules_path=args.station_rules,
+                        git_commit=git_commit,
+                    ).packets
+                )
+        except FileNotFoundError as exc:
+            nbm_guidance_error = str(exc)
+            print(f"NBM guidance unavailable; skipping NBM candidate mode: {exc}")
     analyst_result = write_weather_analyst_packet(
         nowcast_summary_path=out_dir / "nowcast_report" / "nowcast_report_summary.csv",
         guidance_comparison_path=(
@@ -228,15 +286,28 @@ def main(argv: list[str] | None = None) -> int:
         "artifacts": {
             "nowcast_features": "nowcast_features/nowcast_features.csv",
             "predictions_nowcast_raw": "predictions_nowcast_raw/predictions_nowcast.csv",
+            "forward_packet_v2_raw": "predictions_nowcast_raw/forward_packet_v2.json",
             "predictions_nowcast_adjusted": (
                 "predictions_nowcast_adjusted/predictions_nowcast.csv"
+            ),
+            "forward_packet_v2_adjusted": (
+                "predictions_nowcast_adjusted/forward_packet_v2.json"
             ),
             "predictions_nowcast_heat_corrected": (
                 "predictions_nowcast_heat_corrected/predictions_nowcast.csv"
             ),
+            "forward_packet_v2_heat_corrected": (
+                "predictions_nowcast_heat_corrected/forward_packet_v2.json"
+            ),
             "heat_corrections": "predictions_nowcast_heat_corrected/heat_corrections.csv",
             "nowcast_report": "nowcast_report/nowcast_report.md",
             "weather_analyst_packet": "weather_analyst/weather_analyst_packet.md",
+            "lst_vulnerability": (
+                "lst_vulnerability/settlement_vulnerability_days.csv"
+            ),
+            "lst_vulnerability_report": (
+                "lst_vulnerability/settlement_vulnerability_days.md"
+            ),
             **(
                 {
                     "nws_guidance": "guidance/nws_guidance_rows.csv",
@@ -245,6 +316,9 @@ def main(argv: list[str] | None = None) -> int:
                     "model_vs_nws_guidance_report": "guidance/model_vs_nws_guidance.md",
                     "predictions_nowcast_lone_outlier": (
                         "predictions_nowcast_lone_outlier/predictions_nowcast.csv"
+                    ),
+                    "forward_packet_v2_lone_outlier": (
+                        "predictions_nowcast_lone_outlier/forward_packet_v2.json"
                     ),
                     "lone_outlier_corrections": (
                         "predictions_nowcast_lone_outlier/lone_outlier_corrections.csv"
@@ -260,10 +334,16 @@ def main(argv: list[str] | None = None) -> int:
                     "predictions_nowcast_nbm": (
                         "predictions_nowcast_nbm/predictions_nowcast.csv"
                     ),
+                    "forward_packet_v2_nbm": (
+                        "predictions_nowcast_nbm/forward_packet_v2.json"
+                    ),
                     **(
                         {
                             "predictions_nowcast_nbm_calibrated": (
                                 "predictions_nowcast_nbm_calibrated/predictions_nowcast.csv"
+                            ),
+                            "forward_packet_v2_nbm_calibrated": (
+                                "predictions_nowcast_nbm_calibrated/forward_packet_v2.json"
                             ),
                         }
                         if args.nbm_calibration_params is not None
@@ -278,28 +358,45 @@ def main(argv: list[str] | None = None) -> int:
             "observations": int(len(feature_result.observations)),
             "features": int(len(feature_result.features)),
             "raw_prediction_rows": int(len(raw_result.predictions)),
+            "raw_forward_packet_v2": int(len(raw_packet_v2.packets)),
+            "lst_vulnerability_rows": int(len(vulnerability_result.rows)),
             "adjusted_prediction_rows": int(len(adjusted_result.predictions)),
+            "adjusted_forward_packet_v2": int(len(adjusted_packet_v2.packets)),
             "heat_corrected_prediction_rows": int(len(heat_result.predictions)),
+            "heat_corrected_forward_packet_v2": int(len(heat_packet_v2.packets)),
             "heat_corrections": int(len(heat_result.corrections)),
             "report_rows": int(len(report_result.summary)),
             "nws_guidance_rows": int(len(guidance_rows)),
             "nws_latest_rows": int(len(guidance_latest)),
             "model_vs_nws_guidance_rows": int(len(guidance_comparison)),
             "lone_outlier_corrections": int(len(lone_outlier_corrections)),
+            "lone_outlier_forward_packet_v2": int(lone_outlier_packet_v2_count),
             "nbm_guidance_rows": int(len(nbm_guidance_rows)),
             "nbm_latest_rows": int(len(nbm_latest)),
             "nbm_prediction_rows": int(len(nbm_result.predictions)) if nbm_result else 0,
+            "nbm_forward_packet_v2": int(nbm_packet_v2_count),
             "nbm_calibrated_prediction_rows": int(len(nbm_calibrated_rows)),
+            "nbm_calibrated_forward_packet_v2": int(nbm_calibrated_packet_v2_count),
             "weather_analyst_rows": int(len(analyst_result.rows)),
         },
         "notes": [
-            "Mainline weather-only pipeline. No market prices, order books, private PnL labels, or trade instructions.",
-            "Raw and adjusted nowcast predictions are separate model modes; adjusted is a weather-aware candidate, not a promoted default.",
+            "Mainline weather-only pipeline. No market prices, order books, private "
+            "PnL labels, or trade instructions.",
+            "Raw and adjusted nowcast predictions are separate model modes; adjusted "
+            "is a weather-aware candidate, not a promoted default.",
             "Lone-outlier correction is a candidate packet only; it is not a promoted default.",
             "Heat-regime correction is a candidate packet only; it is not a promoted default.",
             "NBM packet is a candidate mode only; it is not a promoted default.",
             "NBM calibrated packet is a candidate mode only; it is not a promoted default.",
-            "Bobby/private audit may consume predictions_nowcast_adjusted to validate paper PnL before any operational promotion.",
+            "forward_packet_v2 JSON artifacts are market-free weather packets joined "
+            "privately on city/station/date/type/as_of.",
+            "Bobby/private audit may consume forward_packet_v2 artifacts for "
+            "market-side validation before any operational promotion.",
+            *(
+                [f"NBM guidance unavailable for this run; candidate NBM outputs were skipped: {nbm_guidance_error}"]
+                if nbm_guidance_error
+                else []
+            ),
         ],
     }
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -313,6 +410,20 @@ def main(argv: list[str] | None = None) -> int:
         f"{len(report_result.summary)} report rows"
     )
     return 0
+
+
+def _write_forward_packet_v2(
+    predictions_path: Path,
+    *,
+    station_rules_path: Path,
+    git_commit: str | None,
+):
+    return write_forward_packet_payload(
+        predictions_path=predictions_path,
+        output_path=predictions_path.parent / "forward_packet_v2.json",
+        station_rules_path=station_rules_path,
+        git_commit=git_commit,
+    )
 
 
 def _parse_as_of(value: str) -> datetime:
@@ -444,7 +555,10 @@ def _render_guidance_comparison(comparison: pd.DataFrame) -> str:
             "- `watch`: model and NWS differ by more than 2F but less than 3F.",
             "- `divergent`: model and NWS differ by 3F or more.",
             "",
-            "Use this as a weather-desk sanity check only. Bobby/private audit decides whether any divergence is market-relevant.",
+            (
+                "Use this as a weather-desk sanity check only. Bobby/private audit "
+                "decides whether any divergence is market-relevant."
+            ),
         ]
     )
     return "\n".join(lines) + "\n"
