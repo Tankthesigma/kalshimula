@@ -9,6 +9,7 @@ TARGET_DATE="${TARGET_DATE:-$(TZ=America/Chicago date +%F)}"
 STAMP="${STAMP:-$(TZ=America/Chicago date +%H%M%S)}"
 MODEL_RUN_DIR="${MODEL_RUN_DIR:-data/runs/may2024_apr2026_10city_openmeteo_sources_2yr}"
 SOURCE_REPO_ROOT="${SOURCE_REPO_ROOT:-/mnt/c/Users/vasud/OneDrive/Documents/kalshimula/kalshimula-model-longrun}"
+DECISION_TIME_LABEL="${DECISION_TIME_LABEL:-}"
 CITIES="${CITIES:-nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston,dc,atlanta,las_vegas,sf,dallas,seattle,minneapolis,new_orleans,okc,san_antonio}"
 OUT_ROOT="${OUT_ROOT:-outputs/private_pink_sheets/${TARGET_DATE}/${STAMP}}"
 BRIDGE_ENV="${BRIDGE_ENV:-/mnt/c/Users/vasud/OneDrive/Documents/discord-agent-bridge-wsl/.env}"
@@ -26,6 +27,16 @@ fi
 if [[ ! -d "${MODEL_RUN_DIR}" ]]; then
   echo "missing model run dir: ${MODEL_RUN_DIR}"
   exit 1
+fi
+
+if [[ -z "${DECISION_TIME_LABEL}" ]]; then
+  CT_HOUR="$(TZ=America/Chicago date +%H)"
+  CT_MINUTE="$(TZ=America/Chicago date +%M)"
+  if [[ "${CT_MINUTE}" -ge 55 ]]; then
+    DECISION_TIME_LABEL="$(TZ=America/Chicago date -d '+1 hour' +%H)"
+  else
+    DECISION_TIME_LABEL="${CT_HOUR}"
+  fi
 fi
 
 mkdir -p "${OUT_ROOT}"
@@ -55,6 +66,7 @@ PY
   --multi-source-mode single \
   --station-rules config/station_rule_table.csv \
   --market-type high \
+  --decision-time-label "${DECISION_TIME_LABEL}" \
   --observation-store "${OUT_ROOT}/asos_store.csv" \
   --fetch-live \
   --update-observation-store \
