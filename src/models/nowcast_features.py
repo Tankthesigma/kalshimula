@@ -13,7 +13,9 @@ import pandas as pd
 from src.fetchers.asos import (
     AsosHourlyObservation,
     fetch_asos_observation_csv,
+    fetch_asos_observation_csv_multi,
     parse_asos_csv,
+    parse_asos_csv_for_stations,
 )
 from src.models.station_rules import (
     DEFAULT_STATION_RULES_PATH,
@@ -102,12 +104,17 @@ class NowcastFeatureResult:
 def observations_to_frame(
     observations: list[AsosHourlyObservation],
     *,
+    lst_offset_hours: int = 0,
     availability_lag_minutes: int = DEFAULT_OBSERVATION_AVAILABILITY_LAG_MINUTES,
 ) -> pd.DataFrame:
     """Convert parsed ASOS observations to the canonical observation store shape."""
     rows = []
     for obs in observations:
-        obs_ts = _as_utc_naive(obs.valid_time)
+        # IEM `valid` timestamps arrive in station local-standard-style clock
+        # time even when the request asks for `tz=Etc/UTC`. Convert them into
+        # canonical UTC using the station LST offset before downstream
+        # settlement-date and staleness checks.
+        obs_ts = _as_utc_naive(obs.valid_time - timedelta(hours=lst_offset_hours))
         available_ts = obs_ts + timedelta(minutes=availability_lag_minutes)
         rows.append(
             {
@@ -133,17 +140,36 @@ def fetch_observations_for_rules(
 ) -> pd.DataFrame:
     """Fetch ASOS observations for station rules and return canonical rows."""
     all_observations: list[pd.DataFrame] = []
-    seen_stations: set[str] = set()
+    stations: list[str] = []
+    rule_by_station: dict[str, StationRule] = {}
     for rule in rules:
-        if rule.settlement_station in seen_stations:
+        if rule.settlement_station in stations:
             continue
-        seen_stations.add(rule.settlement_station)
-        try:
-            text = fetch_asos_observation_csv(rule.settlement_station, start, end)
-            parsed = parse_asos_csv(text, rule.settlement_station)
-            all_observations.append(observations_to_frame(parsed))
-        except Exception:  # noqa: BLE001
-            all_observations.append(pd.DataFrame(columns=OBSERVATION_COLUMNS))
+        stations.append(rule.settlement_station)
+        rule_by_station[rule.settlement_station] = rule
+    try:
+        text = fetch_asos_observation_csv_multi(stations, start, end)
+        parsed_by_station = parse_asos_csv_for_stations(text, stations)
+        for station in stations:
+            all_observations.append(
+                observations_to_frame(
+                    parsed_by_station.get(station, []),
+                    lst_offset_hours=rule_by_station[station].lst_offset,
+                )
+            )
+    except Exception:  # noqa: BLE001
+        for station in stations:
+            try:
+                text = fetch_asos_observation_csv(station, start, end)
+                parsed = parse_asos_csv(text, station)
+                all_observations.append(
+                    observations_to_frame(
+                        parsed,
+                        lst_offset_hours=rule_by_station[station].lst_offset,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                all_observations.append(pd.DataFrame(columns=OBSERVATION_COLUMNS))
     if not all_observations:
         return pd.DataFrame(columns=OBSERVATION_COLUMNS)
     return pd.concat(all_observations, ignore_index=True)
@@ -761,6 +787,7 @@ def _coverage_summary(coverage: pd.DataFrame) -> dict[str, object]:
         "coverage_ok_rows": int(ok.sum()),
         "thin_or_missing_rows": int((~ok).sum()),
     }
+
 
 
 def _reconcile_feature_coverage(
