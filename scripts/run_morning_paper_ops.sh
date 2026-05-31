@@ -148,7 +148,7 @@ if not usable:
         "- NO PAPER SHORT LIST TODAY. Do not manufacture picks from this packet.",
     ])
 else:
-    for idx, row in enumerate(usable[:5], start=1):
+    for idx, row in enumerate(usable, start=1):
         delta = row.get("model_minus_nws_f") or "NA"
         flags = row.get("risk_flags") or ""
         lines.append(
