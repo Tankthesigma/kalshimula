@@ -139,7 +139,7 @@ def fetch_observations_for_rules(
     rules: list[StationRule], *, start: date, end: date
 ) -> pd.DataFrame:
     """Fetch ASOS observations for station rules and return canonical rows."""
-    all_observations: list[pd.DataFrame] = []
+    observation_rows: list[dict[str, object]] = []
     stations: list[str] = []
     rule_by_station: dict[str, StationRule] = {}
     for rule in rules:
@@ -151,28 +151,28 @@ def fetch_observations_for_rules(
         text = fetch_asos_observation_csv_multi(stations, start, end)
         parsed_by_station = parse_asos_csv_for_stations(text, stations)
         for station in stations:
-            all_observations.append(
+            observation_rows.extend(
                 observations_to_frame(
                     parsed_by_station.get(station, []),
                     lst_offset_hours=rule_by_station[station].lst_offset,
-                )
+                ).to_dict(orient="records")
             )
     except Exception:  # noqa: BLE001
         for station in stations:
             try:
                 text = fetch_asos_observation_csv(station, start, end)
                 parsed = parse_asos_csv(text, station)
-                all_observations.append(
+                observation_rows.extend(
                     observations_to_frame(
                         parsed,
                         lst_offset_hours=rule_by_station[station].lst_offset,
-                    )
+                    ).to_dict(orient="records")
                 )
             except Exception:  # noqa: BLE001
-                all_observations.append(pd.DataFrame(columns=OBSERVATION_COLUMNS))
-    if not all_observations:
+                continue
+    if not observation_rows:
         return pd.DataFrame(columns=OBSERVATION_COLUMNS)
-    return pd.concat(all_observations, ignore_index=True)
+    return pd.DataFrame(observation_rows, columns=OBSERVATION_COLUMNS)
 
 
 def load_observation_store(path: Path) -> pd.DataFrame:
@@ -787,8 +787,6 @@ def _coverage_summary(coverage: pd.DataFrame) -> dict[str, object]:
         "coverage_ok_rows": int(ok.sum()),
         "thin_or_missing_rows": int((~ok).sum()),
     }
-
-
 
 def _reconcile_feature_coverage(
     features: pd.DataFrame,
