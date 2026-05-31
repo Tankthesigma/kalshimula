@@ -284,6 +284,8 @@ def _calibration_supported(
 def _desk_priority(flags: list[str]) -> str:
     if "weather_veto" in flags or "nws_divergent" in flags:
         return "veto"
+    if flags and set(flags) == {"diffuse_distribution"}:
+        return "clean"
     if flags:
         return "review"
     return "clean"
@@ -294,6 +296,8 @@ def _analyst_note(priority: str, flags: list[str]) -> str:
         if "nws_divergent" in flags and "weather_veto" not in flags:
             return "Do not use this row for model review until the model/NWS divergence clears."
         return "Do not use this row for model review until weather veto clears."
+    if priority == "clean" and "diffuse_distribution" in flags:
+        return "Weather checks are clean, but the distribution is broad; private audit still decides market relevance."
     if "uncalibrated_source_policy" in flags:
         return "Selected source lacks bias/interval calibration coverage; keep this row out of clean promotion."
     if "nws_watch" in flags:
