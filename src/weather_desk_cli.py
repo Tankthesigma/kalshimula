@@ -230,14 +230,6 @@ def main(argv: list[str] | None = None) -> int:
                 git_commit=git_commit,
             ).packets
         )
-    else:
-        report_result = write_nowcast_report(
-            predictions_path=(
-                out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv"
-            ),
-            output_dir=out_dir / "nowcast_report",
-            git_commit=git_commit,
-        )
     if args.include_nbm_guidance:
         nbm_guidance_path = out_dir / "guidance" / "nbm_guidance_rows.csv"
         nbm_guidance_path.parent.mkdir(parents=True, exist_ok=True)
@@ -294,6 +286,13 @@ def main(argv: list[str] | None = None) -> int:
         except FileNotFoundError as exc:
             nbm_guidance_error = str(exc)
             print(f"NBM guidance unavailable; skipping NBM candidate mode: {exc}")
+    report_result = write_nowcast_report(
+        predictions_path=(
+            out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv"
+        ),
+        output_dir=out_dir / "nowcast_report",
+        git_commit=git_commit,
+    )
     analyst_result = write_weather_analyst_packet(
         nowcast_summary_path=out_dir / "nowcast_report" / "nowcast_report_summary.csv",
         guidance_comparison_path=(
