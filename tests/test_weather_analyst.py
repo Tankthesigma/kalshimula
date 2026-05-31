@@ -53,6 +53,31 @@ def test_weather_analyst_packet_tracks_zero_clean_rows() -> None:
     assert packet.manifest["clean_cities"] == []
 
 
+def test_weather_analyst_marks_uncalibrated_source_policy_as_review() -> None:
+    summary = _summary()
+    summary.loc[0, "source_policy"] = "openmeteo_naive"
+
+    rows = summarize_weather_analyst_rows(
+        summary,
+        guidance_comparison=_guidance(1.0),
+        calibration_coverage={("chicago", "gfs_ens")},
+    )
+
+    assert rows.iloc[0]["desk_priority"] == "review"
+    assert "uncalibrated_source_policy" in rows.iloc[0]["risk_flags"]
+    assert "lacks bias/interval calibration coverage" in rows.iloc[0]["analyst_note"]
+
+
+def test_weather_analyst_keeps_calibrated_source_policy_clean() -> None:
+    rows = summarize_weather_analyst_rows(
+        _summary(),
+        guidance_comparison=_guidance(1.0),
+        calibration_coverage={("chicago", "gfs_ens")},
+    )
+
+    assert rows.iloc[0]["desk_priority"] == "clean"
+
+
 def _summary() -> pd.DataFrame:
     return pd.DataFrame(
         [
