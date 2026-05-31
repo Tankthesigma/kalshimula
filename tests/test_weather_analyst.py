@@ -37,8 +37,20 @@ def test_weather_analyst_packet_renders_weather_only_markdown() -> None:
     packet = build_weather_analyst_packet(_summary(), guidance_comparison=_guidance(2.5))
 
     assert "Weather-only risk triage" in packet.markdown
+    assert "weather_analyst_clean_rows.csv" in packet.markdown
     assert "private audit" in packet.markdown
     assert packet.manifest["row_counts"]["analyst_rows"] == 1
+    assert packet.manifest["row_counts"]["clean_rows"] == 1
+    assert packet.manifest["priority_counts"] == {"clean": 1, "review": 0, "veto": 0}
+    assert packet.manifest["clean_cities"] == ["chicago"]
+
+
+def test_weather_analyst_packet_tracks_zero_clean_rows() -> None:
+    packet = build_weather_analyst_packet(_summary(), guidance_comparison=_guidance(3.2))
+
+    assert packet.manifest["row_counts"]["clean_rows"] == 0
+    assert packet.manifest["priority_counts"] == {"clean": 0, "review": 0, "veto": 1}
+    assert packet.manifest["clean_cities"] == []
 
 
 def _summary() -> pd.DataFrame:
