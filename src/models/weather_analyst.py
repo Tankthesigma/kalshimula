@@ -54,6 +54,8 @@ def build_weather_analyst_packet(
         nowcast_summary,
         guidance_comparison=guidance_comparison,
     )
+    priority_counts = _priority_counts(rows)
+    clean_rows = rows.loc[rows["desk_priority"] == "clean"].copy()
     markdown = render_weather_analyst_packet(rows)
     manifest = {
         "generated_at": datetime.now(UTC).isoformat(),
@@ -64,10 +66,14 @@ def build_weather_analyst_packet(
                 0 if guidance_comparison is None else len(guidance_comparison)
             ),
             "analyst_rows": int(len(rows)),
+            "clean_rows": int(len(clean_rows)),
         },
+        "priority_counts": priority_counts,
+        "clean_cities": clean_rows["city"].tolist(),
         "notes": [
             "Weather-only analyst packet. No market prices, order books, private PnL labels, or trade instructions.",
             "This is deterministic risk triage, not numeric prediction and not a trading signal.",
+            "weather_analyst_clean_rows.csv is the only promotable subset for downstream paper pricing; an empty file means no clean rows passed the weather gate.",
         ],
     }
     return WeatherAnalystPacket(rows=rows, markdown=markdown, manifest=manifest)
@@ -146,6 +152,7 @@ def render_weather_analyst_packet(rows: pd.DataFrame) -> str:
             "- `clean`: station/source/nowcast checks are usable and no large NWS divergence was found.",
             "- `review`: weather evidence is usable but has a station, source, confidence, or NWS-divergence flag.",
             "- `veto`: weather-only checks say the row is stale or unsafe for model review at this decision time.",
+            "- Machine-readable promotable subset: `weather_analyst_clean_rows.csv`.",
             "",
             "Bobby/private audit decides whether any clean or divergent weather setup has market edge.",
         ]
@@ -174,6 +181,8 @@ def write_weather_analyst_packet(
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     result.rows.to_csv(output_dir / "weather_analyst_packet.csv", index=False)
+    clean_rows = result.rows.loc[result.rows["desk_priority"] == "clean"].copy()
+    clean_rows.to_csv(output_dir / "weather_analyst_clean_rows.csv", index=False)
     (output_dir / "weather_analyst_packet.md").write_text(
         result.markdown,
         encoding="utf-8",
@@ -250,6 +259,16 @@ def _analyst_note(priority: str, flags: list[str]) -> str:
 def _priority_sort_key(values: pd.Series) -> pd.Series:
     order = {"clean": 0, "review": 1, "veto": 2}
     return values.map(order).fillna(99)
+
+
+def _priority_counts(rows: pd.DataFrame) -> dict[str, int]:
+    order = ("clean", "review", "veto")
+    counts = {priority: 0 for priority in order}
+    if rows.empty:
+        return counts
+    for priority, count in rows["desk_priority"].value_counts().items():
+        counts[str(priority)] = int(count)
+    return counts
 
 
 def _num(value: object) -> float:
