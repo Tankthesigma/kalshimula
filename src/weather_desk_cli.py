@@ -270,6 +270,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.include_nws_guidance
             else None
         ),
+        bias_table_path=model_run_dir / "model_policy" / "bias_table.csv",
+        interval_table_path=model_run_dir / "model_policy" / "interval_table.csv",
         output_dir=out_dir / "weather_analyst",
         git_commit=git_commit,
     )
