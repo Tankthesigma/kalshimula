@@ -118,6 +118,7 @@ lines = [
     "Label: WEATHER-ONLY / PAPER-ONLY / NOT REAL MONEY.",
     "This is NOT the trade sheet. Bobby-private must add executable Kalshi odds, $10 economics, and the final PAPER TRACK picks.",
     f"Output: {out_root}",
+    f"Promotable clean subset: {out_root}/weather_packet/weather_desk/weather_analyst/weather_analyst_clean_rows.csv",
     f"Mainline git: {git_commit} | as_of_utc: {as_of_ts}",
     f"Priority counts: {counts}",
     "",
