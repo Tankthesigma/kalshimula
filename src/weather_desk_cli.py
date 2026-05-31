@@ -78,6 +78,9 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     out_dir = args.out_dir
     git_commit = _git_commit()
+    prediction_payload = json.loads(args.predictions_json.read_text(encoding="utf-8"))
+    bias_table_path = _artifact_path(prediction_payload, "bias_table")
+    interval_table_path = _artifact_path(prediction_payload, "interval_table")
     observations = (
         pd.read_csv(args.observations_csv)
         if args.observations_csv is not None
@@ -270,8 +273,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.include_nws_guidance
             else None
         ),
-        bias_table_path=model_run_dir / "model_policy" / "bias_table.csv",
-        interval_table_path=model_run_dir / "model_policy" / "interval_table.csv",
+        bias_table_path=bias_table_path,
+        interval_table_path=interval_table_path,
         output_dir=out_dir / "weather_analyst",
         git_commit=git_commit,
     )
@@ -575,6 +578,16 @@ def _git_commit() -> str | None:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None
+
+
+def _artifact_path(payload: dict[str, object], key: str) -> Path | None:
+    artifact_paths = payload.get("artifact_paths")
+    if not isinstance(artifact_paths, dict):
+        return None
+    value = artifact_paths.get(key)
+    if not value:
+        return None
+    return Path(str(value))
 
 
 if __name__ == "__main__":
