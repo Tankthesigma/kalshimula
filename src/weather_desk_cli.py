@@ -148,11 +148,6 @@ def main(argv: list[str] | None = None) -> int:
         station_rules_path=args.station_rules,
         git_commit=git_commit,
     )
-    report_result = write_nowcast_report(
-        predictions_path=out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv",
-        output_dir=out_dir / "nowcast_report",
-        git_commit=git_commit,
-    )
     guidance_rows = pd.DataFrame()
     guidance_latest = pd.DataFrame()
     guidance_comparison = pd.DataFrame()
@@ -165,6 +160,9 @@ def main(argv: list[str] | None = None) -> int:
     nbm_calibrated_rows = pd.DataFrame()
     nbm_calibrated_packet_v2_count = 0
     nbm_guidance_error: str | None = None
+    guarded_rows = pd.DataFrame()
+    guarded_packet_v2_count = 0
+    guarded_fallbacks = pd.DataFrame()
     if args.include_nws_guidance:
         guidance_path = out_dir / "guidance" / "nws_guidance_rows.csv"
         guidance_path.parent.mkdir(parents=True, exist_ok=True)
@@ -183,6 +181,28 @@ def main(argv: list[str] | None = None) -> int:
             git_commit=git_commit,
         )
         guidance_latest = guidance_result.latest
+        guarded_rows, guarded_fallbacks = _write_nws_guarded_predictions(
+            raw_predictions_path=out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv",
+            adjusted_predictions_path=(
+                out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv"
+            ),
+            guidance_latest=guidance_latest,
+            output_dir=out_dir / "predictions_nowcast_nws_guarded",
+        )
+        guarded_packet_v2_count = len(
+            _write_forward_packet_v2(
+                out_dir / "predictions_nowcast_nws_guarded" / "predictions_nowcast.csv",
+                station_rules_path=args.station_rules,
+                git_commit=git_commit,
+            ).packets
+        )
+        report_result = write_nowcast_report(
+            predictions_path=(
+                out_dir / "predictions_nowcast_nws_guarded" / "predictions_nowcast.csv"
+            ),
+            output_dir=out_dir / "nowcast_report",
+            git_commit=git_commit,
+        )
         guidance_comparison = _guidance_comparison(
             report_result.summary,
             guidance_latest,
@@ -209,6 +229,14 @@ def main(argv: list[str] | None = None) -> int:
                 station_rules_path=args.station_rules,
                 git_commit=git_commit,
             ).packets
+        )
+    else:
+        report_result = write_nowcast_report(
+            predictions_path=(
+                out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv"
+            ),
+            output_dir=out_dir / "nowcast_report",
+            git_commit=git_commit,
         )
     if args.include_nbm_guidance:
         nbm_guidance_path = out_dir / "guidance" / "nbm_guidance_rows.csv"
@@ -328,6 +356,15 @@ def main(argv: list[str] | None = None) -> int:
                     "lone_outlier_corrections": (
                         "predictions_nowcast_lone_outlier/lone_outlier_corrections.csv"
                     ),
+                    "predictions_nowcast_nws_guarded": (
+                        "predictions_nowcast_nws_guarded/predictions_nowcast.csv"
+                    ),
+                    "forward_packet_v2_nws_guarded": (
+                        "predictions_nowcast_nws_guarded/forward_packet_v2.json"
+                    ),
+                    "nws_guarded_fallbacks": (
+                        "predictions_nowcast_nws_guarded/nws_guarded_fallbacks.csv"
+                    ),
                 }
                 if args.include_nws_guidance
                 else {}
@@ -376,6 +413,9 @@ def main(argv: list[str] | None = None) -> int:
             "model_vs_nws_guidance_rows": int(len(guidance_comparison)),
             "lone_outlier_corrections": int(len(lone_outlier_corrections)),
             "lone_outlier_forward_packet_v2": int(lone_outlier_packet_v2_count),
+            "nws_guarded_prediction_rows": int(len(guarded_rows)),
+            "nws_guarded_forward_packet_v2": int(guarded_packet_v2_count),
+            "nws_guarded_fallback_rows": int(len(guarded_fallbacks)),
             "nbm_guidance_rows": int(len(nbm_guidance_rows)),
             "nbm_latest_rows": int(len(nbm_latest)),
             "nbm_prediction_rows": int(len(nbm_result.predictions)) if nbm_result else 0,
@@ -389,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
             "PnL labels, or trade instructions.",
             "Raw and adjusted nowcast predictions are separate model modes; adjusted "
             "is a weather-aware candidate, not a promoted default.",
+            "NWS-guarded predictions fall back to raw only when the adjustment layer "
+            "clearly worsens same-day agreement with public NWS guidance.",
             "Lone-outlier correction is a candidate packet only; it is not a promoted default.",
             "Heat-regime correction is a candidate packet only; it is not a promoted default.",
             "NBM packet is a candidate mode only; it is not a promoted default.",
@@ -524,6 +566,172 @@ def _guidance_agreement(abs_delta: object) -> str:
     if value > 2.0:
         return "watch"
     return "aligned"
+
+
+def _write_nws_guarded_predictions(
+    *,
+    raw_predictions_path: Path,
+    adjusted_predictions_path: Path,
+    guidance_latest: pd.DataFrame,
+    output_dir: Path,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    raw_predictions = pd.read_csv(raw_predictions_path)
+    adjusted_predictions = pd.read_csv(adjusted_predictions_path)
+    raw_summary = _summarize_prediction_rows(raw_predictions)
+    adjusted_summary = _summarize_prediction_rows(adjusted_predictions)
+    fallback_rows = _nws_guarded_fallback_rows(
+        raw_summary=raw_summary,
+        adjusted_summary=adjusted_summary,
+        guidance_latest=guidance_latest,
+    )
+    use_raw_cities = set(fallback_rows["city"].tolist())
+    guarded_predictions = adjusted_predictions.copy()
+    if use_raw_cities:
+        guarded_predictions = pd.concat(
+            [
+                adjusted_predictions.loc[
+                    ~adjusted_predictions["city"].isin(use_raw_cities)
+                ],
+                raw_predictions.loc[raw_predictions["city"].isin(use_raw_cities)],
+            ],
+            ignore_index=True,
+        )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    guarded_predictions.to_csv(output_dir / "predictions_nowcast.csv", index=False)
+    fallback_rows.to_csv(output_dir / "nws_guarded_fallbacks.csv", index=False)
+    return guarded_predictions, fallback_rows
+
+
+def _summarize_prediction_rows(predictions: pd.DataFrame) -> pd.DataFrame:
+    group_cols = [
+        "city",
+        "platform",
+        "market_type",
+        "station_id",
+        "target_date",
+        "decision_time_label",
+    ]
+    ordered = predictions.sort_values(
+        ["city", "calibrated_probability", "model_probability", "bin_lower_f"],
+        ascending=[True, False, False, True],
+    )
+    rows: list[dict[str, object]] = []
+    for keys, group in ordered.groupby(group_cols, sort=True, dropna=False):
+        top = group.iloc[0]
+        rows.append(
+            {
+                "city": keys[0],
+                "platform": keys[1],
+                "market_type": keys[2],
+                "station_id": keys[3],
+                "target_date": keys[4],
+                "decision_time_label": keys[5],
+                "source_policy": top["source_policy"],
+                "point_f": float(top["point_f"]),
+                "q10_f": float(top["q10_f"]),
+                "q90_f": float(top["q90_f"]),
+                "top_bin_label": top["bin_label"],
+                "top_bin_probability": float(top["calibrated_probability"]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _nws_guarded_fallback_rows(
+    *,
+    raw_summary: pd.DataFrame,
+    adjusted_summary: pd.DataFrame,
+    guidance_latest: pd.DataFrame,
+) -> pd.DataFrame:
+    keys = ["city", "market_type", "station_id", "target_date"]
+    latest = guidance_latest.loc[:, keys + ["guidance_point_f"]].copy()
+    merged = adjusted_summary.merge(
+        raw_summary,
+        on=[
+            "city",
+            "platform",
+            "market_type",
+            "station_id",
+            "target_date",
+            "decision_time_label",
+        ],
+        how="inner",
+        suffixes=("_adjusted", "_raw"),
+    ).merge(latest, on=keys, how="inner")
+    if merged.empty:
+        return pd.DataFrame(
+            columns=[
+                "city",
+                "market_type",
+                "station_id",
+                "target_date",
+                "adjusted_point_f",
+                "raw_point_f",
+                "nws_guidance_point_f",
+                "adjusted_abs_model_minus_nws_f",
+                "raw_abs_model_minus_nws_f",
+                "fallback_reason",
+            ]
+        )
+    merged["adjusted_abs_model_minus_nws_f"] = (
+        pd.to_numeric(merged["point_f_adjusted"], errors="coerce")
+        - pd.to_numeric(merged["guidance_point_f"], errors="coerce")
+    ).abs()
+    merged["raw_abs_model_minus_nws_f"] = (
+        pd.to_numeric(merged["point_f_raw"], errors="coerce")
+        - pd.to_numeric(merged["guidance_point_f"], errors="coerce")
+    ).abs()
+    fallback = merged.loc[
+        (
+            pd.to_numeric(merged["point_f_adjusted"], errors="coerce").notna()
+            & pd.to_numeric(merged["point_f_raw"], errors="coerce").notna()
+            & pd.to_numeric(merged["guidance_point_f"], errors="coerce").notna()
+            & (merged["source_policy_adjusted"] == merged["source_policy_raw"])
+            & (
+                merged["adjusted_abs_model_minus_nws_f"]
+                > merged["raw_abs_model_minus_nws_f"] + 1.5
+            )
+        )
+    ].copy()
+    if fallback.empty:
+        return pd.DataFrame(
+            columns=[
+                "city",
+                "market_type",
+                "station_id",
+                "target_date",
+                "adjusted_point_f",
+                "raw_point_f",
+                "nws_guidance_point_f",
+                "adjusted_abs_model_minus_nws_f",
+                "raw_abs_model_minus_nws_f",
+                "fallback_reason",
+            ]
+        )
+    fallback["fallback_reason"] = (
+        "adjusted_degrades_nws_agreement_vs_raw_by_gt_1.5f"
+    )
+    return fallback.loc[
+        :,
+        [
+            "city",
+            "market_type",
+            "station_id",
+            "target_date",
+            "point_f_adjusted",
+            "point_f_raw",
+            "guidance_point_f",
+            "adjusted_abs_model_minus_nws_f",
+            "raw_abs_model_minus_nws_f",
+            "fallback_reason",
+        ],
+    ].rename(
+        columns={
+            "point_f_adjusted": "adjusted_point_f",
+            "point_f_raw": "raw_point_f",
+            "guidance_point_f": "nws_guidance_point_f",
+        }
+    ).sort_values(["city", "market_type"]).reset_index(drop=True)
 
 
 def _render_guidance_comparison(comparison: pd.DataFrame) -> str:
