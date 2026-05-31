@@ -121,6 +121,11 @@ lines = [
     f"Promotable clean subset: {out_root}/weather_packet/weather_desk/weather_analyst/weather_analyst_clean_rows.csv",
     f"Mainline git: {git_commit} | as_of_utc: {as_of_ts}",
     f"Priority counts: {counts}",
+    (
+        "Calibration coverage: "
+        f"{sum('uncalibrated_source_policy' in (row.get('risk_flags') or '') for row in rows)} "
+        "rows excluded from clean promotion for missing bias/interval coverage."
+    ),
     "",
     "CODEX CLEAN WEATHER TARGETS FOR BOBBY TO PRICE:",
 ]
@@ -147,11 +152,14 @@ else:
         delta = row.get("model_minus_nws_f") or "NA"
         flags = row.get("risk_flags") or ""
         lines.append(
-            "{idx}. {city} {market}: target top={top} ({prob:.0%}), point={point:.1f}, "
-            "q10-q90={q10:.0f}-{q90:.0f}, priority={priority}, NWS_delta={delta}, flags={flags}".format(
+            "{idx}. {city} {market}: source={source} calibrated={calibrated} "
+            "target top={top} ({prob:.0%}), point={point:.1f}, q10-q90={q10:.0f}-{q90:.0f}, "
+            "priority={priority}, NWS_delta={delta}, flags={flags}".format(
                 idx=idx,
                 city=row.get("city"),
                 market=row.get("market_type"),
+                source=row.get("source_policy"),
+                calibrated=row.get("calibration_supported"),
                 top=row.get("top_bin_label"),
                 prob=float(row.get("top_bin_probability") or 0),
                 point=float(row.get("point_f") or 0),
@@ -177,11 +185,14 @@ for row in rows:
     delta = row.get("model_minus_nws_f") or "NA"
     flags = row.get("risk_flags") or ""
     lines.append(
-        "- {city} {market}: {priority} point={point:.1f} q10-q90={q10:.0f}-{q90:.0f} "
-        "top={top} ({prob:.0%}) NWS_delta={delta} flags={flags}".format(
+        "- {city} {market}: {priority} source={source} calibrated={calibrated} "
+        "point={point:.1f} q10-q90={q10:.0f}-{q90:.0f} top={top} ({prob:.0%}) "
+        "NWS_delta={delta} flags={flags}".format(
             city=row.get("city"),
             market=row.get("market_type"),
             priority=row.get("desk_priority"),
+            source=row.get("source_policy"),
+            calibrated=row.get("calibration_supported"),
             point=float(row.get("point_f") or 0),
             q10=float(row.get("q10_f") or 0),
             q90=float(row.get("q90_f") or 0),
