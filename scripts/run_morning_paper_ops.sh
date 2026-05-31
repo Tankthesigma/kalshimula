@@ -10,7 +10,13 @@ STAMP="${STAMP:-$(TZ=America/Chicago date +%H%M%S)}"
 MODEL_RUN_DIR="${MODEL_RUN_DIR:-data/runs/may2024_apr2026_10city_openmeteo_sources_2yr}"
 SOURCE_REPO_ROOT="${SOURCE_REPO_ROOT:-/mnt/c/Users/vasud/OneDrive/Documents/kalshimula/kalshimula-model-longrun}"
 DECISION_TIME_LABEL="${DECISION_TIME_LABEL:-}"
-CITIES="${CITIES:-nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston,dc,atlanta,las_vegas,sf,dallas,seattle,minneapolis,new_orleans,okc,san_antonio}"
+# Operational (Bobby handoff) scope = the traded-high set ONLY (10 cities). The model run's
+# recommended_sources.csv selects a source for exactly these 10 (all gfs_ens); the other 10
+# research cities have NO selected source, so each one fans out to all 7 Open-Meteo models
+# (predict._fetch_all_parallel) — that fanout, not the 10 traded gfs_ens requests, is what
+# saturates the ensemble endpoint and 429-collapses the morning run. Research/backfill paths
+# can still override CITIES explicitly for the full 20-city sweep.
+CITIES="${CITIES:-nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston}"
 OUT_ROOT="${OUT_ROOT:-outputs/private_pink_sheets/${TARGET_DATE}/${STAMP}}"
 BRIDGE_ENV="${BRIDGE_ENV:-/mnt/c/Users/vasud/OneDrive/Documents/discord-agent-bridge-wsl/.env}"
 BRIDGE_CLI="${BRIDGE_CLI:-/mnt/c/Users/vasud/OneDrive/Documents/discord-agent-bridge-wsl/bridge/discord_mailbox.py}"
@@ -73,6 +79,7 @@ PY
   --include-nws-guidance \
   --include-nbm-guidance \
   --no-require-gate \
+  --allow-source-fallback \
   --out-dir "${OUT_ROOT}/weather_packet"
 
 CSV="${OUT_ROOT}/weather_packet/weather_desk/weather_analyst/weather_analyst_packet.csv"
