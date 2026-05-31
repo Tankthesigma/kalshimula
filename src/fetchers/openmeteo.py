@@ -17,15 +17,20 @@ that's fine — we only need today/tomorrow.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass
 from datetime import date, timedelta
 from email.utils import parsedate_to_datetime
+from pathlib import Path
+from tempfile import gettempdir
 from typing import Final
 
 import httpx
 import pandas as pd
+
+from src.cache import JsonCache
 
 ENSEMBLE_URL: Final = "https://ensemble-api.open-meteo.com/v1/ensemble"
 FORECAST_URL: Final = "https://api.open-meteo.com/v1/forecast"
@@ -173,6 +178,29 @@ def _monotonic() -> float:
     return time.monotonic()
 
 
+def _response_cache() -> JsonCache:
+    root = Path(
+        os.environ.get(
+            "OPENMETEO_RESPONSE_CACHE_DIR",
+            str(Path(gettempdir()) / "kalshimula-openmeteo-response-cache"),
+        )
+    )
+    return JsonCache(root)
+
+
+def _cache_params(url: str, params: dict) -> dict[str, object]:
+    return {"url": url, **params}
+
+
+def _cached_payload(url: str, params: dict) -> dict | None:
+    payload = _response_cache().get("openmeteo_response", _cache_params(url, params))
+    return payload if isinstance(payload, dict) else None
+
+
+def _store_cached_payload(url: str, params: dict, payload: dict) -> None:
+    _response_cache().set("openmeteo_response", _cache_params(url, params), payload)
+
+
 def _common_params(lat: float, lon: float, target: date) -> dict:
     return _range_params(lat, lon, start=target, end=target)
 
@@ -285,11 +313,22 @@ def fetch_source(
     params = _common_params(lat, lon, target) | {"models": model_param}
     try:
         payload = _get(url, params)
+        _store_cached_payload(url, params, payload)
     except httpx.HTTPStatusError as e:
         # 400 from a model that doesn't support the date range — treat as empty.
         if e.response.status_code in (400, 404):
             return ModelDailyHigh(source=source_slug, target_date=target, members_f=[])
-        raise
+        cached = _cached_payload(url, params)
+        if cached is not None:
+            payload = cached
+        else:
+            raise
+    except (httpx.TransportError, httpx.TimeoutException):
+        cached = _cached_payload(url, params)
+        if cached is not None:
+            payload = cached
+        else:
+            raise
 
     if kind == "ensemble":
         return _parse_ensemble(payload, target, source_slug)
@@ -315,13 +354,24 @@ def fetch_source_range(
     params = _range_params(lat, lon, start=start, end=end) | {"models": model_param}
     try:
         payload = _get(url, params)
+        _store_cached_payload(url, params, payload)
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (400, 404):
             return [
                 ModelDailyHigh(source=source_slug, target_date=target, members_f=[])
                 for target in _date_range(start, end)
             ]
-        raise
+        cached = _cached_payload(url, params)
+        if cached is not None:
+            payload = cached
+        else:
+            raise
+    except (httpx.TransportError, httpx.TimeoutException):
+        cached = _cached_payload(url, params)
+        if cached is not None:
+            payload = cached
+        else:
+            raise
 
     if kind == "ensemble":
         return _parse_ensemble_range(payload, source_slug)

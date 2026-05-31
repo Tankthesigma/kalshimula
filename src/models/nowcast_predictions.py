@@ -344,7 +344,7 @@ def _source_policy(prediction: dict[str, Any]) -> str:
     selected = str(prediction.get("selected_source") or "").strip()
     if prediction.get("selected_source_applied") and selected:
         return selected
-    return selected or "openmeteo_naive"
+    return "openmeteo_naive"
 
 
 def _source_independence_score(source_policy: str) -> float:

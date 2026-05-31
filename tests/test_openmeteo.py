@@ -156,3 +156,29 @@ def test_fetch_source_range_treats_unsupported_range_as_empty(monkeypatch) -> No
         openmeteo.ModelDailyHigh(source="aifs", target_date=date(2025, 1, 1), members_f=[]),
         openmeteo.ModelDailyHigh(source="aifs", target_date=date(2025, 1, 2), members_f=[]),
     ]
+
+
+def test_fetch_source_uses_cached_payload_after_rate_limit(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENMETEO_RESPONSE_CACHE_DIR", str(tmp_path))
+
+    payload = {
+        "daily": {
+            "time": ["2025-01-01"],
+            "temperature_2m_max": [70.0],
+            "temperature_2m_max_member01": [69.0],
+        }
+    }
+
+    monkeypatch.setattr(openmeteo, "_get", lambda url, params: payload)
+    first = openmeteo.fetch_source("gfs_ens", lat=1, lon=2, target=date(2025, 1, 1))
+    assert first.members_f == [70.0, 69.0]
+
+    request = httpx.Request("GET", openmeteo.ENSEMBLE_URL)
+    response = httpx.Response(429, request=request)
+
+    def rate_limited(url, params):
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    monkeypatch.setattr(openmeteo, "_get", rate_limited)
+    second = openmeteo.fetch_source("gfs_ens", lat=1, lon=2, target=date(2025, 1, 1))
+    assert second.members_f == [70.0, 69.0]

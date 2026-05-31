@@ -112,6 +112,20 @@ def test_build_nowcast_prediction_rows_carries_weather_only_feature_flags() -> N
     assert set(rows["feature_hash"]) == {"abc123"}
 
 
+def test_build_nowcast_prediction_rows_reports_fallback_source_when_selected_not_applied() -> None:
+    payload = _payload()
+    payload["predictions"][0]["selected_source_applied"] = False
+
+    rows = build_nowcast_prediction_rows(
+        payload,
+        station_rules=[_rule()],
+        decision_time_label="10",
+        as_of_ts_utc="2026-05-24T14:00:00Z",
+    )
+
+    assert set(rows["source_policy"]) == {"openmeteo_naive"}
+
+
 def test_build_nowcast_prediction_rows_rejects_low_market_rows() -> None:
     with pytest.raises(ValueError, match="supports only high-temperature"):
         build_nowcast_prediction_rows(
