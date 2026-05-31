@@ -39,12 +39,37 @@ def test_observations_to_frame_uses_canonical_columns() -> None:
     assert frame.loc[0, "cloud_cover"] == "CLR"
 
 
+def test_observations_to_frame_converts_lst_clock_to_utc() -> None:
+    frame = observations_to_frame(
+        [
+            AsosHourlyObservation(
+                station="KMDW",
+                valid_time=datetime(2026, 5, 31, 3, 53),
+                temp_f=59.0,
+            )
+        ],
+        lst_offset_hours=-6,
+    )
+
+    assert frame.loc[0, "obs_ts_utc"] == "2026-05-31T09:53:00"
+    assert frame.loc[0, "available_ts_utc"] == "2026-05-31T10:03:00"
+
+
 def test_fetch_observations_for_rules_degrades_failed_station(monkeypatch) -> None:
+    def fake_fetch_multi(stations, start, end):
+        if "KMDW" in stations:
+            raise RuntimeError("rate limited")
+        return "station,valid,tmpf\nKNYC,2026-05-24 10:00,70\n"
+
     def fake_fetch(station, start, end):
         if station == "KMDW":
             raise RuntimeError("rate limited")
         return "station,valid,tmpf\nKNYC,2026-05-24 10:00,70\n"
 
+    monkeypatch.setattr(
+        "src.models.nowcast_features.fetch_asos_observation_csv_multi",
+        fake_fetch_multi,
+    )
     monkeypatch.setattr(
         "src.models.nowcast_features.fetch_asos_observation_csv",
         fake_fetch,
@@ -58,6 +83,37 @@ def test_fetch_observations_for_rules_degrades_failed_station(monkeypatch) -> No
 
     assert observations["station_id"].tolist() == ["KNYC"]
     assert observations["temperature_f"].tolist() == [70.0]
+
+
+def test_fetch_observations_for_rules_prefers_batched_fetch(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_fetch_multi(stations, start, end):
+        calls.append(list(stations))
+        return (
+            "station,valid,tmpf\n"
+            "MDW,2026-05-24 10:00,70\n"
+            "NYC,2026-05-24 10:00,66\n"
+        )
+
+    monkeypatch.setattr(
+        "src.models.nowcast_features.fetch_asos_observation_csv_multi",
+        fake_fetch_multi,
+    )
+    monkeypatch.setattr(
+        "src.models.nowcast_features.fetch_asos_observation_csv",
+        lambda station, start, end: (_ for _ in ()).throw(RuntimeError("should not fallback")),
+    )
+
+    observations = fetch_observations_for_rules(
+        [station_rule_by_key(city="chicago"), station_rule_by_key(city="nyc")],
+        start=datetime(2026, 5, 24).date(),
+        end=datetime(2026, 5, 24).date(),
+    )
+
+    assert calls == [["KMDW", "KNYC"]]
+    assert observations["station_id"].tolist() == ["KMDW", "KNYC"]
+    assert observations["temperature_f"].tolist() == [70.0, 66.0]
 
 
 def test_observation_store_merges_and_deduplicates(tmp_path) -> None:
