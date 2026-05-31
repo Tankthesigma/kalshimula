@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
+TARGET_DATE="${TARGET_DATE:-$(TZ=America/Chicago date +%F)}"
+STAMP="${STAMP:-$(TZ=America/Chicago date +%H%M%S)}"
+MODEL_RUN_DIR="${MODEL_RUN_DIR:-data/runs/may2024_apr2026_10city_openmeteo_sources_2yr}"
+CITIES="${CITIES:-nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston,dc,atlanta,las_vegas,sf,dallas,seattle,minneapolis,new_orleans,okc,san_antonio}"
+OUT_ROOT="${OUT_ROOT:-outputs/private_pink_sheets/${TARGET_DATE}/${STAMP}}"
+BRIDGE_ENV="${BRIDGE_ENV:-/mnt/c/Users/vasud/OneDrive/Documents/discord-agent-bridge-wsl/.env}"
+BRIDGE_CLI="${BRIDGE_CLI:-/mnt/c/Users/vasud/OneDrive/Documents/discord-agent-bridge-wsl/bridge/discord_mailbox.py}"
+
+mkdir -p "${OUT_ROOT}"
+
+LOCK_FILE="${LOCK_FILE:-outputs/private_pink_sheets/morning_ops.lock}"
+mkdir -p "$(dirname "${LOCK_FILE}")"
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+  echo "morning paper ops already running; skipping ${TARGET_DATE}/${STAMP}"
+  exit 0
+fi
+
+PYTHON_BIN="${PYTHON_BIN:-/home/vasud/miniconda3/bin/python3}"
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  PYTHON_BIN="$(command -v python3)"
+fi
+
+"${PYTHON_BIN}" - <<'PY'
+import pandas  # noqa: F401
+PY
+
+"${PYTHON_BIN}" -m src.weather_desk_refresh_cli \
+  --model-run-dir "${MODEL_RUN_DIR}" \
+  --cities "${CITIES}" \
+  --date "${TARGET_DATE}" \
+  --threshold-offsets=-6,-4,-2,0,2,4,6 \
+  --multi-source-mode single \
+  --station-rules config/station_rule_table.csv \
+  --market-type high \
+  --observation-store "${OUT_ROOT}/asos_store.csv" \
+  --fetch-live \
+  --update-observation-store \
+  --include-nws-guidance \
+  --include-nbm-guidance \
+  --no-require-gate \
+  --out-dir "${OUT_ROOT}/weather_packet"
+
+CSV="${OUT_ROOT}/weather_packet/weather_desk/weather_analyst/weather_analyst_packet.csv"
+SUMMARY="${OUT_ROOT}/discord_summary.txt"
+
+"${PYTHON_BIN}" - "$CSV" "$SUMMARY" "$OUT_ROOT" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+csv_path = Path(sys.argv[1])
+summary_path = Path(sys.argv[2])
+out_root = Path(sys.argv[3])
+
+rows = list(csv.DictReader(csv_path.open(newline="", encoding="utf-8")))
+rank = {"clean": 0, "review": 1, "veto": 2}
+rows.sort(
+    key=lambda r: (
+        rank.get((r.get("desk_priority") or "").lower(), 9),
+        -float(r.get("top_bin_probability") or 0),
+        r.get("city") or "",
+    )
+)
+
+counts: dict[str, int] = {}
+for row in rows:
+    counts[row.get("desk_priority") or "unknown"] = counts.get(row.get("desk_priority") or "unknown", 0) + 1
+
+lines = [
+    "CODEX WEATHER TARGETS READY",
+    "Label: WEATHER-ONLY / PAPER-ONLY / NOT REAL MONEY.",
+    "This is NOT the trade sheet. Bobby-private must add executable Kalshi odds, $10 economics, and the final PAPER TRACK picks.",
+    f"Output: {out_root}",
+    f"Priority counts: {counts}",
+    "",
+    "CODEX CLEAN WEATHER TARGETS FOR BOBBY TO PRICE:",
+]
+
+usable = [
+    r for r in rows
+    if (r.get("desk_priority") or "").lower() == "clean"
+]
+if not usable:
+    lines.extend([
+        "- NONE: no clean rows passed the weather gate.",
+        "- NO PAPER SHORT LIST TODAY. Do not manufacture picks from this packet.",
+    ])
+else:
+    for idx, row in enumerate(usable[:5], start=1):
+        delta = row.get("model_minus_nws_f") or "NA"
+        flags = row.get("risk_flags") or ""
+        lines.append(
+            "{idx}. {city} {market}: target top={top} ({prob:.0%}), point={point:.1f}, "
+            "q10-q90={q10:.0f}-{q90:.0f}, priority={priority}, NWS_delta={delta}, flags={flags}".format(
+                idx=idx,
+                city=row.get("city"),
+                market=row.get("market_type"),
+                top=row.get("top_bin_label"),
+                prob=float(row.get("top_bin_probability") or 0),
+                point=float(row.get("point_f") or 0),
+                q10=float(row.get("q10_f") or 0),
+                q90=float(row.get("q90_f") or 0),
+                priority=row.get("desk_priority"),
+                delta=delta,
+                flags=flags,
+            )
+        )
+
+lines.extend([
+    "",
+    "Instruction to Bobby-private: price only clean rows for any short paper list, then attach the full board.",
+    "If there are zero clean rows, post no short list at all.",
+    "Rows marked review or veto are DO-NOT-TRADE weather audit rows. Do not promote them into picks or a short list.",
+    "Do not call this an edge unless executable $10 economics and the frozen ranking rule are shown.",
+    "",
+    "Full city board:",
+])
+
+for row in rows:
+    delta = row.get("model_minus_nws_f") or "NA"
+    flags = row.get("risk_flags") or ""
+    lines.append(
+        "- {city} {market}: {priority} point={point:.1f} q10-q90={q10:.0f}-{q90:.0f} "
+        "top={top} ({prob:.0%}) NWS_delta={delta} flags={flags}".format(
+            city=row.get("city"),
+            market=row.get("market_type"),
+            priority=row.get("desk_priority"),
+            point=float(row.get("point_f") or 0),
+            q10=float(row.get("q10_f") or 0),
+            q90=float(row.get("q90_f") or 0),
+            top=row.get("top_bin_label"),
+            prob=float(row.get("top_bin_probability") or 0),
+            delta=delta,
+            flags=flags,
+        )
+    )
+
+lines.extend(
+    [
+        "",
+        "Operational rule: scheduled rows only count if generated before the entry window; late screenshots are discretionary.",
+    ]
+)
+summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+print(summary_path)
+PY
+
+cat "${SUMMARY}"
+
+if [[ -f "${BRIDGE_ENV}" && -f "${BRIDGE_CLI}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "${BRIDGE_ENV}"
+  set +a
+  "${PYTHON_BIN}" "${BRIDGE_CLI}" reply "$(cat "${SUMMARY}")"
+fi
