@@ -224,7 +224,7 @@ def _risk_flags(row: dict[str, Any], guidance_row: dict[str, Any]) -> list[str]:
 
 
 def _desk_priority(flags: list[str]) -> str:
-    if "weather_veto" in flags:
+    if "weather_veto" in flags or "nws_divergent" in flags:
         return "veto"
     if flags:
         return "review"
@@ -233,9 +233,9 @@ def _desk_priority(flags: list[str]) -> str:
 
 def _analyst_note(priority: str, flags: list[str]) -> str:
     if priority == "veto":
+        if "nws_divergent" in flags and "weather_veto" not in flags:
+            return "Do not use this row for model review until the model/NWS divergence clears."
         return "Do not use this row for model review until weather veto clears."
-    if "nws_divergent" in flags:
-        return "Model is a 3F+ outlier versus NWS; inspect source divergence."
     if "nws_watch" in flags:
         return "Model differs from NWS by more than 2F; inspect before relying on it."
     if "station_rule_review" in flags:
