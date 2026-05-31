@@ -37,6 +37,7 @@ def _prediction_for_city(
     threshold_offsets: tuple[int, ...] | None,
     multi_source_mode: str,
     generated_at: datetime,
+    allow_source_fallback: bool = False,
 ) -> dict:
     station = get_station(city)
     use_historical = target < date.today() - timedelta(days=2)
@@ -53,6 +54,7 @@ def _prediction_for_city(
         use_historical=use_historical,
         selected_source=selected_source,
         multi_source_mode=multi_source_mode,
+        allow_source_fallback=allow_source_fallback,
     )
     all_members = members_dataframe(sources)
     if all_members.empty:
@@ -158,6 +160,7 @@ def _forecast_sources_for_city(
     use_historical: bool,
     selected_source: str | None,
     multi_source_mode: str,
+    allow_source_fallback: bool = False,
 ) -> list[ModelDailyHigh]:
     """Fetch the minimum source set needed for the requested prediction mode."""
     if (
@@ -180,11 +183,24 @@ def _forecast_sources_for_city(
                 file=sys.stderr,
             )
         except (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException) as error:
+            # On a rate-limited morning the selected ensemble source (e.g. gfs_ens) 429s
+            # with a cold cache. By default we re-raise rather than fan out to all sources,
+            # so one rate-limited request does not amplify into a multi-source storm
+            # (mainline 38a608e). But the OPERATIONAL weather-desk path prefers a degraded
+            # fallback prediction over zeroing the whole run: with allow_source_fallback we
+            # fall through to the full-source sweep, where the deterministic endpoints
+            # (different host, not saturated) can still produce a row. Downstream flags it
+            # selected_source_applied=false -> openmeteo_naive -> review (never silently clean).
+            if not allow_source_fallback:
+                print(
+                    f"  ! {station.slug}: selected source {selected_source} failed without cache; not fanning out to all sources: {error}",
+                    file=sys.stderr,
+                )
+                raise
             print(
-                f"  ! {station.slug}: selected source {selected_source} failed without cache; not fanning out to all sources: {error}",
+                f"  ! {station.slug}: selected source {selected_source} failed; allow-source-fallback set -> full source sweep: {error}",
                 file=sys.stderr,
             )
-            raise
         except Exception as error:  # noqa: BLE001
             print(
                 f"  ! {station.slug}: selected source {selected_source} failed, falling back to full source sweep: {error}",
@@ -306,6 +322,7 @@ def build_batch_payload(
     multi_source_mode: str = "single",
     model_gate: dict | None = None,
     generated_at: datetime | None = None,
+    allow_source_fallback: bool = False,
 ) -> tuple[dict, int]:
     predictions = []
     errors = []
@@ -325,6 +342,7 @@ def build_batch_payload(
                     threshold_offsets=threshold_offsets,
                     multi_source_mode=multi_source_mode,
                     generated_at=created_at,
+                    allow_source_fallback=allow_source_fallback,
                 )
             )
         except Exception as error:  # noqa: BLE001
@@ -384,6 +402,15 @@ def main(argv: list[str] | None = None) -> int:
         "--require-gate",
         action="store_true",
         help="Fail without predictions unless --model-run-dir passes the readiness gate.",
+    )
+    parser.add_argument(
+        "--allow-source-fallback",
+        action="store_true",
+        help=(
+            "When the selected source 429s/errors with no cache, fall back to the full "
+            "source sweep (degraded openmeteo_naive -> review row) instead of failing the "
+            "city. Operational weather-desk path uses this to avoid zero-prediction runs."
+        ),
     )
     parser.add_argument("--out", type=Path, help="Optional JSON output path.")
     args = parser.parse_args(argv)
@@ -491,6 +518,7 @@ def main(argv: list[str] | None = None) -> int:
         multi_source_mode=args.multi_source_mode,
         model_gate=gate_payload,
         generated_at=created_at,
+        allow_source_fallback=args.allow_source_fallback,
     )
     text = json.dumps(payload, indent=2, sort_keys=True)
     if args.out is not None:
