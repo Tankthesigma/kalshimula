@@ -194,10 +194,8 @@ def test_predict_batch_cli_falls_back_to_full_sweep_when_selected_source_fails(
     selected_sources = tmp_path / "selected_sources.csv"
     selected_sources.write_text("city,selected_source\ndenver,gfs_ens\n", encoding="utf-8")
 
-    response = httpx.Response(429, request=httpx.Request("GET", "https://example.test"))
-
     def fail_selected(*args, **kwargs):
-        raise httpx.HTTPStatusError("rate limited", request=response.request, response=response)
+        raise RuntimeError("unexpected selected-source failure")
 
     def fake_fetch_all_parallel(station, target, *, use_historical):
         return [ModelDailyHigh(source="aifs", target_date=target, members_f=[71.0])]
@@ -220,6 +218,41 @@ def test_predict_batch_cli_falls_back_to_full_sweep_when_selected_source_fails(
     assert code == 0
     assert payload["predictions"][0]["selected_source"] == "gfs_ens"
     assert payload["predictions"][0]["selected_source_applied"] is False
+
+
+def test_predict_batch_cli_does_not_fan_out_on_selected_source_rate_limit(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    selected_sources = tmp_path / "selected_sources.csv"
+    selected_sources.write_text("city,selected_source\ndenver,gfs_ens\n", encoding="utf-8")
+
+    response = httpx.Response(429, request=httpx.Request("GET", "https://example.test"))
+
+    def fail_selected(*args, **kwargs):
+        raise httpx.HTTPStatusError("rate limited", request=response.request, response=response)
+
+    def fail_fetch_all_parallel(*args, **kwargs):
+        raise AssertionError("rate-limited selected source should not trigger full sweep")
+
+    monkeypatch.setattr("src.predict.fetch_source", fail_selected)
+    monkeypatch.setattr("src.predict._fetch_all_parallel", fail_fetch_all_parallel)
+
+    code = predict_batch_cli.main(
+        [
+            "--cities",
+            "denver",
+            "--date",
+            "2025-01-01",
+            "--selected-sources",
+            str(selected_sources),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 1
+    assert payload["n_predictions"] == 0
+    assert payload["n_errors"] == 1
+    assert payload["errors"][0]["city"] == "denver"
 
 
 def test_predict_batch_cli_adds_multi_source_prediction(

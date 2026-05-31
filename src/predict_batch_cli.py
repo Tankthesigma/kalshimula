@@ -8,6 +8,7 @@ import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pandas as pd
 
 from src import model_gate_cli, predict
@@ -165,15 +166,25 @@ def _forecast_sources_for_city(
         and selected_source != "openmeteo_naive"
     ):
         try:
-            return [
-                predict.fetch_source(
-                    selected_source,
-                    lat=station.lat,
-                    lon=station.lon,
-                    target=target,
-                    use_historical=use_historical,
-                )
-            ]
+            direct = predict.fetch_source(
+                selected_source,
+                lat=station.lat,
+                lon=station.lon,
+                target=target,
+                use_historical=use_historical,
+            )
+            if direct.members_f:
+                return [direct]
+            print(
+                f"  ! {station.slug}: selected source {selected_source} returned empty, falling back to full source sweep",
+                file=sys.stderr,
+            )
+        except (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException) as error:
+            print(
+                f"  ! {station.slug}: selected source {selected_source} failed without cache; not fanning out to all sources: {error}",
+                file=sys.stderr,
+            )
+            raise
         except Exception as error:  # noqa: BLE001
             print(
                 f"  ! {station.slug}: selected source {selected_source} failed, falling back to full source sweep: {error}",
