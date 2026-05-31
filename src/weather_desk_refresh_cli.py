@@ -45,6 +45,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--nbm-calibration-params", type=Path)
     parser.add_argument("--no-require-gate", action="store_true")
+    parser.add_argument(
+        "--allow-source-fallback",
+        action="store_true",
+        help=(
+            "Forward to predict_batch: on a selected-source 429/error with cold cache, emit "
+            "a degraded fallback prediction (-> review) instead of zeroing the city. "
+            "Recommended for the live operational weather-desk path."
+        ),
+    )
     parser.add_argument("--model-version", default="mainline-nowcast-v1")
     return parser
 
@@ -72,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     ]
     if not args.no_require_gate:
         batch_args.append("--require-gate")
+    if args.allow_source_fallback:
+        batch_args.append("--allow-source-fallback")
 
     batch_code = predict_batch_cli.main(batch_args)
     desk_args = [
