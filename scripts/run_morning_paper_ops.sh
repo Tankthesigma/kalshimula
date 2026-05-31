@@ -8,10 +8,25 @@ cd "${REPO_ROOT}"
 TARGET_DATE="${TARGET_DATE:-$(TZ=America/Chicago date +%F)}"
 STAMP="${STAMP:-$(TZ=America/Chicago date +%H%M%S)}"
 MODEL_RUN_DIR="${MODEL_RUN_DIR:-data/runs/may2024_apr2026_10city_openmeteo_sources_2yr}"
+SOURCE_REPO_ROOT="${SOURCE_REPO_ROOT:-/mnt/c/Users/vasud/OneDrive/Documents/kalshimula/kalshimula-model-longrun}"
 CITIES="${CITIES:-nyc,chicago,miami,austin,la,denver,philadelphia,houston,phoenix,boston,dc,atlanta,las_vegas,sf,dallas,seattle,minneapolis,new_orleans,okc,san_antonio}"
 OUT_ROOT="${OUT_ROOT:-outputs/private_pink_sheets/${TARGET_DATE}/${STAMP}}"
 BRIDGE_ENV="${BRIDGE_ENV:-/mnt/c/Users/vasud/OneDrive/Documents/discord-agent-bridge-wsl/.env}"
 BRIDGE_CLI="${BRIDGE_CLI:-/mnt/c/Users/vasud/OneDrive/Documents/discord-agent-bridge-wsl/bridge/discord_mailbox.py}"
+
+if [[ "${MODEL_RUN_DIR}" != /* ]]; then
+  MODEL_RUN_DIR="${REPO_ROOT}/${MODEL_RUN_DIR}"
+fi
+if [[ ! -d "${MODEL_RUN_DIR}" ]]; then
+  FALLBACK_MODEL_RUN_DIR="${SOURCE_REPO_ROOT}/data/runs/may2024_apr2026_10city_openmeteo_sources_2yr"
+  if [[ -d "${FALLBACK_MODEL_RUN_DIR}" ]]; then
+    MODEL_RUN_DIR="${FALLBACK_MODEL_RUN_DIR}"
+  fi
+fi
+if [[ ! -d "${MODEL_RUN_DIR}" ]]; then
+  echo "missing model run dir: ${MODEL_RUN_DIR}"
+  exit 1
+fi
 
 mkdir -p "${OUT_ROOT}"
 
