@@ -145,20 +145,34 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     assert exit_code == 0
     assert (out_dir / "nowcast_features" / "nowcast_features.csv").exists()
     assert (out_dir / "predictions_nowcast_raw" / "predictions_nowcast.csv").exists()
+    assert (out_dir / "predictions_nowcast_raw" / "forward_packet_v2.json").exists()
     assert (
         out_dir / "predictions_nowcast_heat_corrected" / "predictions_nowcast.csv"
+    ).exists()
+    assert (
+        out_dir / "predictions_nowcast_heat_corrected" / "forward_packet_v2.json"
     ).exists()
     assert (
         out_dir / "predictions_nowcast_heat_corrected" / "heat_corrections.csv"
     ).exists()
     adjusted_path = out_dir / "predictions_nowcast_adjusted" / "predictions_nowcast.csv"
     assert adjusted_path.exists()
+    assert (out_dir / "predictions_nowcast_adjusted" / "forward_packet_v2.json").exists()
     assert (out_dir / "nowcast_report" / "nowcast_report.md").exists()
     assert (out_dir / "weather_analyst" / "weather_analyst_packet.md").exists()
+    assert (
+        out_dir / "lst_vulnerability" / "settlement_vulnerability_days.csv"
+    ).exists()
+    assert (
+        out_dir / "lst_vulnerability" / "settlement_vulnerability_days.md"
+    ).exists()
     assert (out_dir / "guidance" / "nws_guidance_rows.csv").exists()
     assert (out_dir / "guidance_diagnostics" / "guidance_report.md").exists()
     assert (
         out_dir / "predictions_nowcast_lone_outlier" / "predictions_nowcast.csv"
+    ).exists()
+    assert (
+        out_dir / "predictions_nowcast_lone_outlier" / "forward_packet_v2.json"
     ).exists()
     assert (
         out_dir / "predictions_nowcast_lone_outlier" / "lone_outlier_corrections.csv"
@@ -166,6 +180,7 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     assert (out_dir / "guidance" / "nbm_guidance_rows.csv").exists()
     assert (out_dir / "nbm_guidance_diagnostics" / "guidance_report.md").exists()
     assert (out_dir / "predictions_nowcast_nbm" / "predictions_nowcast.csv").exists()
+    assert (out_dir / "predictions_nowcast_nbm" / "forward_packet_v2.json").exists()
     comparison_path = out_dir / "guidance" / "model_vs_nws_guidance.csv"
     assert comparison_path.exists()
     assert (out_dir / "weather_desk_manifest.json").exists()
@@ -183,10 +198,29 @@ def test_weather_desk_cli_writes_end_to_end_packet(tmp_path: Path, capsys, monke
     assert "Weather-only guidance comparison" in comparison_md
     assert "divergent" in comparison_md
     analyst = pd.read_csv(out_dir / "weather_analyst" / "weather_analyst_packet.csv")
-    assert analyst["desk_priority"].tolist() == ["review"]
+    assert analyst["desk_priority"].tolist() == ["veto"]
     assert "nws_divergent" in analyst.iloc[0]["risk_flags"]
+    vulnerability = pd.read_csv(
+        out_dir / "lst_vulnerability" / "settlement_vulnerability_days.csv"
+    )
+    assert vulnerability["city"].tolist() == ["chicago"]
+    assert vulnerability["settlement_station"].tolist() == ["KMDW"]
+    assert vulnerability["market_type"].tolist() == ["high"]
     nbm = pd.read_csv(out_dir / "predictions_nowcast_nbm" / "predictions_nowcast.csv")
     assert nbm["source_policy"].unique().tolist() == ["nbm_text"]
+    packet_v2 = json.loads(
+        (out_dir / "predictions_nowcast_nbm" / "forward_packet_v2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert packet_v2["schema_version"] == "2.0"
+    assert packet_v2["packets"][0]["join_key"] == {
+        "city": "chicago",
+        "settlement_station": "KMDW",
+        "target_date": "2026-05-24",
+        "market_type": "high",
+        "as_of_utc": "2026-05-24T15:00:00+00:00",
+    }
     assert "Wrote weather desk packet" in capsys.readouterr().out
 
 
