@@ -12,7 +12,7 @@ import pandas as pd
 
 from src import model_gate_cli, predict
 from src.config import get_station, load_stations
-from src.fetchers.openmeteo import members_dataframe
+from src.fetchers.openmeteo import ModelDailyHigh, members_dataframe
 from src.models.ensemble import naive_forecast_from_members
 
 
@@ -39,22 +39,27 @@ def _prediction_for_city(
 ) -> dict:
     station = get_station(city)
     use_historical = target < date.today() - timedelta(days=2)
+    selected_source = None
+    if selected_sources_path:
+        selected_source = predict._load_selected_source(selected_sources_path, city)
     print(
         f"Fetching {station.name} on {target}...",
         file=sys.stderr,
     )
-    sources = predict._fetch_all_parallel(
-        station, target, use_historical=use_historical
+    sources = _forecast_sources_for_city(
+        station=station,
+        target=target,
+        use_historical=use_historical,
+        selected_source=selected_source,
+        multi_source_mode=multi_source_mode,
     )
     all_members = members_dataframe(sources)
     if all_members.empty:
         raise ValueError("every Open-Meteo source returned empty")
     members = all_members
 
-    selected_source = None
     selected_applied = False
-    if selected_sources_path:
-        selected_source = predict._load_selected_source(selected_sources_path, city)
+    if selected_source is not None:
         members, selected_applied = predict._members_for_selected_source(
             members, selected_source
         )
@@ -143,6 +148,40 @@ def _prediction_for_city(
             threshold_offsets=threshold_offsets,
         )
     return payload
+
+
+def _forecast_sources_for_city(
+    *,
+    station,
+    target,
+    use_historical: bool,
+    selected_source: str | None,
+    multi_source_mode: str,
+) -> list[ModelDailyHigh]:
+    """Fetch the minimum source set needed for the requested prediction mode."""
+    if (
+        multi_source_mode == "single"
+        and selected_source
+        and selected_source != "openmeteo_naive"
+    ):
+        try:
+            return [
+                predict.fetch_source(
+                    selected_source,
+                    lat=station.lat,
+                    lon=station.lon,
+                    target=target,
+                    use_historical=use_historical,
+                )
+            ]
+        except Exception as error:  # noqa: BLE001
+            print(
+                f"  ! {station.slug}: selected source {selected_source} failed, falling back to full source sweep: {error}",
+                file=sys.stderr,
+            )
+    return predict._fetch_all_parallel(
+        station, target, use_historical=use_historical
+    )
 
 
 def _artifact_paths_payload(

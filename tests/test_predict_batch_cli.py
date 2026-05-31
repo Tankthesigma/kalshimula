@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 
+import httpx
 import pandas as pd
 
 from src import predict_batch_cli
@@ -95,19 +96,25 @@ def test_predict_batch_cli_writes_json(monkeypatch, tmp_path, capsys) -> None:
         encoding="utf-8",
     )
 
-    def fake_fetch_all_parallel(station, target, *, use_historical):
-        base = 70.0 if station.slug == "denver" else 40.0
-        return [
-            ModelDailyHigh(
-                source="gfs_ens",
-                target_date=target,
-                members_f=[base, base + 2.0],
-            )
-        ]
+    def fake_fetch_source(source_slug, *, lat, lon, target, use_historical):
+        station = "denver" if lon < -90 else "boston"
+        base = 70.0 if station == "denver" else 40.0
+        return ModelDailyHigh(
+            source="gfs_ens",
+            target_date=target,
+            members_f=[base, base + 2.0],
+        )
+
+    def fail_fetch_all_parallel(station, target, *, use_historical):
+        raise AssertionError("single-source path should not fan out to all sources")
 
     monkeypatch.setattr(
+        "src.predict.fetch_source",
+        fake_fetch_source,
+    )
+    monkeypatch.setattr(
         "src.predict._fetch_all_parallel",
-        fake_fetch_all_parallel,
+        fail_fetch_all_parallel,
     )
 
     code = predict_batch_cli.main(
@@ -142,6 +149,77 @@ def test_predict_batch_cli_writes_json(monkeypatch, tmp_path, capsys) -> None:
     assert payload["predictions"][0]["artifact_paths"]["selected_sources"] == str(selected_sources)
     assert payload["predictions"][0]["threshold_probabilities"][0]["threshold_f"] == 73
     assert payload["predictions"][1]["calibration"]["corrected_point_f"] == 40.0
+
+
+def test_predict_batch_cli_fetches_selected_source_only_for_single_mode(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    selected_sources = tmp_path / "selected_sources.csv"
+    selected_sources.write_text("city,selected_source\ndenver,gfs_ens\n", encoding="utf-8")
+
+    calls = {"fetch_source": 0, "fetch_all": 0}
+
+    def fake_fetch_source(source_slug, *, lat, lon, target, use_historical):
+        calls["fetch_source"] += 1
+        assert source_slug == "gfs_ens"
+        return ModelDailyHigh(source="gfs_ens", target_date=target, members_f=[70.0, 72.0])
+
+    def fake_fetch_all_parallel(station, target, *, use_historical):
+        calls["fetch_all"] += 1
+        raise AssertionError("single-source path should not fetch every source")
+
+    monkeypatch.setattr("src.predict.fetch_source", fake_fetch_source)
+    monkeypatch.setattr("src.predict._fetch_all_parallel", fake_fetch_all_parallel)
+
+    code = predict_batch_cli.main(
+        [
+            "--cities",
+            "denver",
+            "--date",
+            "2025-01-01",
+            "--selected-sources",
+            str(selected_sources),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["n_predictions"] == 1
+    assert calls == {"fetch_source": 1, "fetch_all": 0}
+
+
+def test_predict_batch_cli_falls_back_to_full_sweep_when_selected_source_fails(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    selected_sources = tmp_path / "selected_sources.csv"
+    selected_sources.write_text("city,selected_source\ndenver,gfs_ens\n", encoding="utf-8")
+
+    response = httpx.Response(429, request=httpx.Request("GET", "https://example.test"))
+
+    def fail_selected(*args, **kwargs):
+        raise httpx.HTTPStatusError("rate limited", request=response.request, response=response)
+
+    def fake_fetch_all_parallel(station, target, *, use_historical):
+        return [ModelDailyHigh(source="aifs", target_date=target, members_f=[71.0])]
+
+    monkeypatch.setattr("src.predict.fetch_source", fail_selected)
+    monkeypatch.setattr("src.predict._fetch_all_parallel", fake_fetch_all_parallel)
+
+    code = predict_batch_cli.main(
+        [
+            "--cities",
+            "denver",
+            "--date",
+            "2025-01-01",
+            "--selected-sources",
+            str(selected_sources),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["predictions"][0]["selected_source"] == "gfs_ens"
+    assert payload["predictions"][0]["selected_source_applied"] is False
 
 
 def test_predict_batch_cli_adds_multi_source_prediction(
@@ -310,21 +388,12 @@ def test_predict_batch_cli_continues_after_city_error(monkeypatch, tmp_path, cap
         encoding="utf-8",
     )
 
-    def fake_fetch_all_parallel(station, target, *, use_historical):
-        if station.slug == "boston":
-            return []
-        return [
-            ModelDailyHigh(
-                source="gfs_ens",
-                target_date=target,
-                members_f=[70.0],
-            )
-        ]
+    def fake_fetch_source(source_slug, *, lat, lon, target, use_historical):
+        if lon > -90:
+            return ModelDailyHigh(source="gfs_ens", target_date=target, members_f=[])
+        return ModelDailyHigh(source="gfs_ens", target_date=target, members_f=[70.0])
 
-    monkeypatch.setattr(
-        "src.predict._fetch_all_parallel",
-        fake_fetch_all_parallel,
-    )
+    monkeypatch.setattr("src.predict.fetch_source", fake_fetch_source)
 
     code = predict_batch_cli.main(
         [
