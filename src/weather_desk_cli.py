@@ -602,6 +602,23 @@ def _write_nws_guarded_predictions(
 
 
 def _summarize_prediction_rows(predictions: pd.DataFrame) -> pd.DataFrame:
+    summary_columns = [
+        "city",
+        "platform",
+        "market_type",
+        "station_id",
+        "target_date",
+        "decision_time_label",
+        "source_policy",
+        "point_f",
+        "q10_f",
+        "q90_f",
+        "top_bin_label",
+        "top_bin_probability",
+    ]
+    if predictions.empty:
+        return pd.DataFrame(columns=summary_columns)
+
     group_cols = [
         "city",
         "platform",
@@ -633,7 +650,9 @@ def _summarize_prediction_rows(predictions: pd.DataFrame) -> pd.DataFrame:
                 "top_bin_probability": float(top["calibrated_probability"]),
             }
         )
-    return pd.DataFrame(rows)
+    if not rows:
+        return pd.DataFrame(columns=summary_columns)
+    return pd.DataFrame(rows, columns=summary_columns)
 
 
 def _nws_guarded_fallback_rows(
