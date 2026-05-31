@@ -14,12 +14,12 @@ def test_weather_analyst_marks_clean_row_when_weather_inputs_align() -> None:
     assert "clean" in rows.iloc[0]["analyst_note"]
 
 
-def test_weather_analyst_marks_nws_divergence_for_review() -> None:
+def test_weather_analyst_marks_nws_divergence_for_veto() -> None:
     rows = summarize_weather_analyst_rows(_summary(), guidance_comparison=_guidance(3.2))
 
-    assert rows.iloc[0]["desk_priority"] == "review"
+    assert rows.iloc[0]["desk_priority"] == "veto"
     assert "nws_divergent" in rows.iloc[0]["risk_flags"]
-    assert "3F+ outlier" in rows.iloc[0]["analyst_note"]
+    assert "divergence clears" in rows.iloc[0]["analyst_note"]
 
 
 def test_weather_analyst_veto_overrides_other_flags() -> None:
